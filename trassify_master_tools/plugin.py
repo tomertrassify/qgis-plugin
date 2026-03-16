@@ -18,7 +18,9 @@ from .settings_dialog import MasterSettingsDialog
 from .shared_settings import (
     build_postgres_ogr_uri,
     has_saved_shared_settings,
+    load_favorite_module_keys,
     load_shared_settings,
+    save_favorite_module_keys,
     save_shared_settings,
     sync_attribution_butler_settings,
 )
@@ -53,9 +55,18 @@ class TrassifyMasterToolsPlugin:
         self.load_errors = []
         self.conflicts = []
         self.load_actions = {}
+        self.favorite_actions = {}
         self._registry_keys = []
         self._added_import_paths = []
         self._module_metadata_cache = {}
+        stored_favorite_keys = load_favorite_module_keys()
+        self.favorite_module_keys = self._sanitize_favorite_module_keys(
+            stored_favorite_keys
+        )
+        if self.favorite_module_keys != stored_favorite_keys:
+            self.favorite_module_keys = save_favorite_module_keys(
+                self.favorite_module_keys
+            )
         self._unloaded = False
 
     def initGui(self):
@@ -86,6 +97,7 @@ class TrassifyMasterToolsPlugin:
         self._refresh_conflicts()
         background_summary = self._load_background_modules()
         self._refresh_conflicts()
+        self._rebuild_favorite_toolbar_actions()
         self._show_startup_message(background_summary)
 
     def unload(self):
@@ -104,6 +116,7 @@ class TrassifyMasterToolsPlugin:
         overview_dialog = self.overview_dialog
         overview_action = self.overview_action
         load_actions = list(self.load_actions.values())
+        favorite_actions = list(self.favorite_actions.values())
         loaded_plugins = list(self.loaded_plugins)
         toolbar_created = self._toolbar_created
 
@@ -123,6 +136,12 @@ class TrassifyMasterToolsPlugin:
             self._safe_qt_call(toolbar.removeAction, overview_action)
         if self._is_qt_object_alive(overview_action):
             self._safe_qt_call(overview_action.deleteLater)
+
+        for action in favorite_actions:
+            if self._is_qt_object_alive(toolbar) and self._is_qt_object_alive(action):
+                self._safe_qt_call(toolbar.removeAction, action)
+            if self._is_qt_object_alive(action):
+                self._safe_qt_call(action.deleteLater)
 
         for action in load_actions:
             if self._is_qt_object_alive(action):
@@ -253,6 +272,28 @@ class TrassifyMasterToolsPlugin:
             duration=6 if conflict_count or error_count else 5,
         )
 
+    def is_favorite(self, key):
+        return key in self.favorite_module_keys
+
+    def toggle_favorite_by_key(self, key):
+        favorite_keys = self._sanitize_favorite_module_keys(self.favorite_module_keys)
+        valid_keys = {spec["key"] for spec in BUNDLED_PLUGINS}
+        if key not in valid_keys:
+            return False
+
+        if key in favorite_keys:
+            favorite_keys = [
+                favorite_key
+                for favorite_key in favorite_keys
+                if favorite_key != key
+            ]
+        else:
+            favorite_keys.append(key)
+
+        self.favorite_module_keys = save_favorite_module_keys(favorite_keys)
+        self._refresh_ui_state()
+        return key in self.favorite_module_keys
+
     def _load_single_module(self, spec, announce=True):
         if self._is_loaded(spec):
             return True
@@ -268,7 +309,7 @@ class TrassifyMasterToolsPlugin:
                     level=Qgis.Warning,
                     duration=6,
                 )
-            self._refresh_overview_dialog()
+            self._refresh_ui_state()
             return False
 
         self._purge_bundled_package(spec["package"])
@@ -297,7 +338,7 @@ class TrassifyMasterToolsPlugin:
                     level=Qgis.Info,
                     duration=4,
                 )
-            self._refresh_overview_dialog()
+            self._refresh_ui_state()
             return True
         except Exception:
             self._unregister_bundled_plugin(spec["package"])
@@ -311,7 +352,7 @@ class TrassifyMasterToolsPlugin:
                     level=Qgis.Warning,
                     duration=6,
                 )
-            self._refresh_overview_dialog()
+            self._refresh_ui_state()
             return False
 
     def _register_bundled_plugin(self, package_name, plugin):
@@ -432,6 +473,10 @@ class TrassifyMasterToolsPlugin:
         if self.overview_dialog is not None:
             self.overview_dialog.refresh()
 
+    def _refresh_ui_state(self):
+        self._rebuild_favorite_toolbar_actions()
+        self._refresh_overview_dialog()
+
     def get_module_rows(self):
         self._refresh_conflicts()
 
@@ -495,6 +540,7 @@ class TrassifyMasterToolsPlugin:
                     "homepage": metadata.get("homepage") or "",
                     "tracker": metadata.get("tracker") or "",
                     "repository": metadata.get("repository") or "",
+                    "is_favorite": self.is_favorite(spec["key"]),
                     "icon_path": self._resolve_module_icon_path(
                         spec, metadata.get("icon") or ""
                     ),
@@ -508,6 +554,16 @@ class TrassifyMasterToolsPlugin:
             if spec["key"] == key:
                 return self._load_single_module(spec)
         return False
+
+    def _favorite_specs(self):
+        specs_by_key = {
+            spec["key"]: spec for spec in BUNDLED_PLUGINS
+        }
+        return [
+            specs_by_key[key]
+            for key in self.favorite_module_keys
+            if key in specs_by_key
+        ]
 
     def _purge_bundled_package(self, package_name):
         removable_modules = []
@@ -705,6 +761,73 @@ class TrassifyMasterToolsPlugin:
                     return str(fallback_path)
 
         return str(self.plugin_dir / "icon.svg")
+
+    def _sanitize_favorite_module_keys(self, keys):
+        valid_keys = {spec["key"] for spec in BUNDLED_PLUGINS}
+        normalized = []
+        seen = set()
+
+        for key in keys:
+            text = str(key or "").strip()
+            if not text or text not in valid_keys or text in seen:
+                continue
+            normalized.append(text)
+            seen.add(text)
+
+        return normalized
+
+    def _rebuild_favorite_toolbar_actions(self):
+        toolbar = self._find_master_toolbar() or self.toolbar
+        self._clear_favorite_toolbar_actions(toolbar)
+        if not self._is_qt_object_alive(toolbar):
+            return
+
+        rows_by_key = {
+            row["key"]: row for row in self.get_module_rows()
+        }
+        new_actions = {}
+
+        for spec in self._favorite_specs():
+            row = rows_by_key.get(spec["key"])
+            if row is None or row["tool_type"] == BACKGROUND_TOOL:
+                continue
+
+            action = QAction(
+                QIcon(row["icon_path"]),
+                row["label"],
+                self.iface.mainWindow(),
+            )
+            action.setToolTip(self._favorite_toolbar_tooltip(row))
+            action.setStatusTip(action.toolTip())
+            action.setEnabled(row["status_code"] == "ready")
+            action.triggered.connect(
+                lambda _checked=False, key=spec["key"]: self.load_module_by_key(key)
+            )
+            toolbar.addAction(action)
+            new_actions[spec["key"]] = action
+
+        self.favorite_actions = new_actions
+
+    def _clear_favorite_toolbar_actions(self, toolbar=None):
+        favorite_actions = list(self.favorite_actions.values())
+        if not favorite_actions:
+            return
+
+        resolved_toolbar = toolbar or self._find_master_toolbar() or self.toolbar
+        for action in favorite_actions:
+            if self._is_qt_object_alive(resolved_toolbar) and self._is_qt_object_alive(action):
+                self._safe_qt_call(resolved_toolbar.removeAction, action)
+            if self._is_qt_object_alive(action):
+                self._safe_qt_call(action.deleteLater)
+
+        self.favorite_actions = {}
+
+    def _favorite_toolbar_tooltip(self, row):
+        if row["status_code"] == "ready":
+            return f"{row['label']} laden"
+        if row["status_code"] == "loaded":
+            return f"{row['label']} ist bereits geladen"
+        return f"{row['label']}: {row['detail']}"
 
     def _module_directory_candidates(self, spec):
         yield self._bundled_plugin_dir(spec)

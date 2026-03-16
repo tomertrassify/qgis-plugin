@@ -6,6 +6,7 @@ from qgis.PyQt.QtCore import QSize, Qt
 from qgis.PyQt.QtGui import QFont, QIcon
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -30,10 +31,14 @@ class MasterOverviewDialog(QDialog):
         ("all", "Alle", QStyle.SP_FileDialogDetailedView),
         ("interactive", "Normale Tools", QStyle.SP_FileDialogListView),
         ("background", "Hintergrundtools", QStyle.SP_ComputerIcon),
-        ("ready", "Bereit", QStyle.SP_DialogApplyButton),
-        ("loaded", "Geladen", QStyle.SP_DialogYesButton),
-        ("conflict", "Blockiert", QStyle.SP_MessageBoxWarning),
-        ("error", "Fehler", QStyle.SP_MessageBoxCritical),
+        ("favorites", "Favoriten", QStyle.SP_DirHomeIcon),
+    )
+    STATUS_FILTERS = (
+        ("all", "Alle Stati"),
+        ("ready", "Bereit"),
+        ("loaded", "Geladen"),
+        ("conflict", "Blockiert"),
+        ("error", "Fehler"),
     )
 
     def __init__(self, plugin_controller, parent=None):
@@ -50,11 +55,25 @@ class MasterOverviewDialog(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(8)
+        layout.addLayout(controls_layout)
+
         self.search_field = QLineEdit(self)
         self.search_field.setPlaceholderText("Suchen...")
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self._apply_filters)
-        layout.addWidget(self.search_field)
+        controls_layout.addWidget(self.search_field, 1)
+
+        status_label = QLabel("Status", self)
+        controls_layout.addWidget(status_label)
+
+        self.status_filter = QComboBox(self)
+        self.status_filter.setMinimumWidth(170)
+        for filter_key, label in self.STATUS_FILTERS:
+            self.status_filter.addItem(label, filter_key)
+        self.status_filter.currentIndexChanged.connect(self._apply_filters)
+        controls_layout.addWidget(self.status_filter)
 
         content_layout = QHBoxLayout()
         content_layout.setSpacing(8)
@@ -138,6 +157,7 @@ class MasterOverviewDialog(QDialog):
 
         self.category_value = self._create_value_label(detail_panel)
         self.type_value = self._create_value_label(detail_panel)
+        self.favorite_value = self._create_value_label(detail_panel)
         self.package_value = self._create_value_label(detail_panel)
         self.tags_value = self._create_value_label(detail_panel)
         self.author_value = self._create_value_label(detail_panel)
@@ -146,6 +166,7 @@ class MasterOverviewDialog(QDialog):
 
         self.metadata_form.addRow("Kategorie", self.category_value)
         self.metadata_form.addRow("Typ", self.type_value)
+        self.metadata_form.addRow("Favorit", self.favorite_value)
         self.metadata_form.addRow("Paket", self.package_value)
         self.metadata_form.addRow("Tags", self.tags_value)
         self.metadata_form.addRow("Autor", self.author_value)
@@ -170,6 +191,10 @@ class MasterOverviewDialog(QDialog):
         actions_layout.addWidget(self.settings_button)
 
         actions_layout.addStretch(1)
+
+        self.favorite_button = QPushButton("Zu Favoriten", self)
+        self.favorite_button.clicked.connect(self._toggle_selected_favorite)
+        actions_layout.addWidget(self.favorite_button)
 
         self.load_button = QPushButton("Ausgewaehltes Modul laden", self)
         self.load_button.clicked.connect(self._load_selected_module)
@@ -208,17 +233,8 @@ class MasterOverviewDialog(QDialog):
             "background": sum(
                 1 for row in self._all_rows if row["tool_type"] == "background"
             ),
-            "ready": sum(
-                1 for row in self._all_rows if row["status_code"] == "ready"
-            ),
-            "loaded": sum(
-                1 for row in self._all_rows if row["status_code"] == "loaded"
-            ),
-            "conflict": sum(
-                1 for row in self._all_rows if row["status_code"] == "conflict"
-            ),
-            "error": sum(
-                1 for row in self._all_rows if row["status_code"] == "error"
+            "favorites": sum(
+                1 for row in self._all_rows if row["is_favorite"]
             ),
         }
 
@@ -246,8 +262,12 @@ class MasterOverviewDialog(QDialog):
             return "all"
         return current_item.data(Qt.UserRole) or "all"
 
+    def _active_status_filter_key(self):
+        return self.status_filter.currentData() or "all"
+
     def _apply_filters(self, *_args, preferred_key=None):
         filter_key = self._active_filter_key()
+        status_filter_key = self._active_status_filter_key()
         search_term = self.search_field.text().strip().lower()
 
         self.module_list.blockSignals(True)
@@ -257,12 +277,18 @@ class MasterOverviewDialog(QDialog):
         for row in self._all_rows:
             if not self._matches_filter(row, filter_key):
                 continue
+            if not self._matches_status_filter(row, status_filter_key):
+                continue
             if search_term and not self._matches_search(row, search_term):
                 continue
             visible_rows.append(row)
 
         for row in visible_rows:
-            item = QTreeWidgetItem([row["label"]])
+            display_label = row["label"]
+            if row["is_favorite"]:
+                display_label = f"[Favorit] {display_label}"
+
+            item = QTreeWidgetItem([display_label])
             item.setData(0, Qt.UserRole, row["key"])
             item.setData(0, Qt.UserRole + 1, row["status_code"])
             item.setToolTip(0, f"{row['status_text']}: {row['detail']}")
@@ -295,6 +321,13 @@ class MasterOverviewDialog(QDialog):
             return True
         if filter_key in {"interactive", "background"}:
             return row["tool_type"] == filter_key
+        if filter_key == "favorites":
+            return row["is_favorite"]
+        return False
+
+    def _matches_status_filter(self, row, filter_key):
+        if filter_key == "all":
+            return True
         return row["status_code"] == filter_key
 
     def _matches_search(self, row, search_term):
@@ -308,6 +341,7 @@ class MasterOverviewDialog(QDialog):
                 row["category"],
                 row["tool_type_label"],
                 row["detail"],
+                "favorit" if row["is_favorite"] else "",
                 " ".join(row["tags"]),
             ]
         ).lower()
@@ -323,14 +357,23 @@ class MasterOverviewDialog(QDialog):
     def _sync_details(self):
         item = self.module_list.currentItem()
         if item is None:
+            self.favorite_button.setEnabled(False)
+            self.favorite_button.setText("Zu Favoriten")
             self.load_button.setEnabled(False)
             return
 
         row = self._rows_by_key.get(item.data(0, Qt.UserRole))
         if row is None:
+            self.favorite_button.setEnabled(False)
+            self.favorite_button.setText("Zu Favoriten")
             self.load_button.setEnabled(False)
             return
 
+        self.favorite_button.setEnabled(True)
+        if row["is_favorite"]:
+            self.favorite_button.setText("Aus Favoriten entfernen")
+        else:
+            self.favorite_button.setText("Zu Favoriten")
         self.load_button.setEnabled(row["status_code"] == "ready")
         if row["tool_type"] == "background":
             self.load_button.setText("Hintergrundtool laden")
@@ -352,6 +395,7 @@ class MasterOverviewDialog(QDialog):
         )
         self.category_value.setText("-")
         self.type_value.setText("-")
+        self.favorite_value.setText("-")
         self.package_value.setText("-")
         self.tags_value.setText("-")
         self.author_value.setText("-")
@@ -372,20 +416,34 @@ class MasterOverviewDialog(QDialog):
         self.status_label.setTextFormat(Qt.RichText)
 
         about_text = row["about"]
+        favorite_hint = ""
+        if row["is_favorite"] and row["tool_type"] == "background":
+            favorite_hint = (
+                " Dieses Hintergrundtool ist als Favorit gespeichert und erscheint in der Favoritenliste, "
+                "aber nicht als extra Toolbar-Button."
+            )
+        elif row["is_favorite"]:
+            favorite_hint = (
+                " Dieses Tool ist als Favorit gespeichert und erscheint zusaetzlich als Icon in der Master-Toolbar."
+            )
+
         if about_text and about_text != row["description"]:
-            self.about_label.setText(about_text)
+            self.about_label.setText(about_text + favorite_hint)
         elif row["tool_type"] == "background":
             self.about_label.setText(
                 "Dieses Modul ist als Hintergrundtool vorgesehen und wird automatisch geladen, "
                 "damit Kontextmenues oder stille Hilfsfunktionen ohne zusaetzlichen Button verfuegbar sind."
+                + favorite_hint
             )
         else:
             self.about_label.setText(
                 "Dieses Modul ist im Master-Plugin enthalten und kann bei Bedarf geladen werden."
+                + favorite_hint
             )
 
         self.category_value.setText(row["category"] or "-")
         self.type_value.setText(row["tool_type_label"] or "-")
+        self.favorite_value.setText("Ja" if row["is_favorite"] else "Nein")
         self.package_value.setText(row["package"] or "-")
         self.tags_value.setText(", ".join(row["tags"]) or "-")
         self.author_value.setText(row["author"] or "-")
@@ -437,3 +495,14 @@ class MasterOverviewDialog(QDialog):
         if item.data(0, Qt.UserRole + 1) != "ready":
             return
         self._load_selected_module()
+
+    def _toggle_selected_favorite(self):
+        item = self.module_list.currentItem()
+        if item is None:
+            return
+
+        key = item.data(0, Qt.UserRole)
+        if key is None:
+            return
+
+        self.plugin_controller.toggle_favorite_by_key(key)

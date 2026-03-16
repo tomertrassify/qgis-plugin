@@ -6,6 +6,7 @@ from qgis.PyQt.QtCore import QSettings
 
 
 SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
+UI_SETTINGS_PREFIX = "TrassifyMasterTools/ui"
 ATTRIBUTION_BUTTLER_PREFIX = "AttributionButler/user_config"
 
 DEFAULT_SHARED_SETTINGS = {
@@ -43,6 +44,10 @@ def attribution_butler_key(name: str) -> str:
     return f"{ATTRIBUTION_BUTTLER_PREFIX}/{name}"
 
 
+def ui_setting_key(name: str) -> str:
+    return f"{UI_SETTINGS_PREFIX}/{name}"
+
+
 def load_shared_settings() -> dict:
     settings = QSettings()
     config = dict(DEFAULT_SHARED_SETTINGS)
@@ -67,6 +72,28 @@ def has_saved_shared_settings() -> bool:
         settings.contains(setting_key(key))
         for key in DEFAULT_SHARED_SETTINGS
     )
+
+
+def load_favorite_module_keys() -> list[str]:
+    settings = QSettings()
+    raw = settings.value(ui_setting_key("favorite_module_keys"), "[]")
+    return _parse_string_list(raw)
+
+
+def save_favorite_module_keys(keys: list[str] | tuple[str, ...]) -> list[str]:
+    settings = QSettings()
+    normalized = []
+    seen = set()
+
+    for key in keys:
+        text = str(key or "").strip()
+        if not text or text in seen:
+            continue
+        normalized.append(text)
+        seen.add(text)
+
+    settings.setValue(ui_setting_key("favorite_module_keys"), json.dumps(normalized))
+    return normalized
 
 
 def save_shared_settings(config: dict) -> dict:
