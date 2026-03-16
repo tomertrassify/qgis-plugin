@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import configparser
 import importlib
 import sys
 import traceback
@@ -36,6 +37,7 @@ class TrassifyMasterToolsPlugin:
         self._bundled_plugins_root_str = str(self.bundled_plugins_root)
         self._registry_keys = []
         self._path_added = False
+        self._module_metadata_cache = {}
 
     def initGui(self):
         self.overview_action = QAction(
@@ -321,14 +323,18 @@ class TrassifyMasterToolsPlugin:
 
         rows = []
         for spec in BUNDLED_PLUGINS:
-            detail = spec["label"]
+            metadata = self._get_module_metadata(spec)
+            label = metadata.get("name") or spec["label"]
+            description = metadata.get("description") or metadata.get("about") or ""
+            about = metadata.get("about") or description
+            detail = label
             status_code = "ready"
             status_text = "Bereit"
 
             if self._is_loaded(spec):
                 status_code = "loaded"
                 status_text = "Geladen"
-                detail = f"{spec['label']} ist bereits ueber das Master-Plugin aktiv."
+                detail = f"{label} ist bereits ueber das Master-Plugin aktiv."
             elif spec["key"] in conflict_by_key:
                 status_code = "conflict"
                 status_text = "Blockiert"
@@ -338,16 +344,28 @@ class TrassifyMasterToolsPlugin:
                 status_text = "Fehler"
                 detail = error_by_key[spec["key"]]
             else:
-                detail = f"{spec['label']} kann jetzt ueber das Master-Plugin geladen werden."
+                detail = f"{label} kann jetzt ueber das Master-Plugin geladen werden."
 
             rows.append(
                 {
                     "key": spec["key"],
-                    "label": spec["label"],
+                    "label": label,
                     "package": spec["package"],
                     "status_code": status_code,
                     "status_text": status_text,
                     "detail": detail,
+                    "description": description,
+                    "about": about,
+                    "author": metadata.get("author") or "",
+                    "version": metadata.get("version") or "",
+                    "category": metadata.get("category") or "Plugins",
+                    "tags": self._split_tags(metadata.get("tags")),
+                    "homepage": metadata.get("homepage") or "",
+                    "tracker": metadata.get("tracker") or "",
+                    "repository": metadata.get("repository") or "",
+                    "icon_path": self._resolve_module_icon_path(
+                        spec, metadata.get("icon") or ""
+                    ),
                 }
             )
 
@@ -414,3 +432,64 @@ class TrassifyMasterToolsPlugin:
         if exc_value is None:
             return exc_type.__name__
         return f"{exc_type.__name__}: {exc_value}"
+
+    def _get_module_metadata(self, spec):
+        cached = self._module_metadata_cache.get(spec["key"])
+        if cached is not None:
+            return cached
+
+        metadata = {}
+        metadata_path = self._resolve_module_metadata_path(spec)
+        if metadata_path is not None and metadata_path.is_file():
+            parser = configparser.ConfigParser(interpolation=None)
+            try:
+                parser.read(metadata_path, encoding="utf-8")
+            except UnicodeDecodeError:
+                parser.read(metadata_path, encoding="latin-1")
+
+            if parser.has_section("general"):
+                metadata = {
+                    key: value.strip()
+                    for key, value in parser.items("general")
+                }
+
+        self._module_metadata_cache[spec["key"]] = metadata
+        return metadata
+
+    def _resolve_module_metadata_path(self, spec):
+        for candidate_dir in self._module_directory_candidates(spec):
+            candidate_path = candidate_dir / "metadata.txt"
+            if candidate_path.is_file():
+                return candidate_path
+        return None
+
+    def _resolve_module_icon_path(self, spec, icon_name):
+        for candidate_dir in self._module_directory_candidates(spec):
+            if icon_name:
+                explicit_path = candidate_dir / icon_name
+                if explicit_path.is_file():
+                    return str(explicit_path)
+
+            for fallback_name in ("icon.svg", "icon.png", "icon.ico"):
+                fallback_path = candidate_dir / fallback_name
+                if fallback_path.is_file():
+                    return str(fallback_path)
+
+        return str(self.plugin_dir / "icon.svg")
+
+    def _module_directory_candidates(self, spec):
+        yield self.bundled_plugins_root / spec["package"]
+
+        source_root = self.plugin_dir.parent / "plugin_sources" / spec["source_path"]
+        if source_root.is_dir():
+            yield source_root
+
+    def _split_tags(self, raw_tags):
+        if not raw_tags:
+            return []
+
+        return [
+            tag.strip()
+            for tag in raw_tags.replace(";", ",").split(",")
+            if tag.strip()
+        ]
