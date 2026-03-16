@@ -88,6 +88,18 @@ class TrassifyMasterToolsPlugin:
         self._show_startup_message(background_summary)
 
     def unload(self):
+        toolbar = self._find_master_toolbar()
+        overview_dialog = self.overview_dialog
+        overview_action = self.overview_action
+        load_actions = list(self.load_actions.values())
+
+        self.overview_dialog = None
+        self.overview_action = None
+        self.load_actions = {}
+        self.toolbar = None
+        toolbar_created = self._toolbar_created
+        self._toolbar_created = False
+
         for spec, plugin in reversed(self.loaded_plugins):
             try:
                 plugin.unload()
@@ -98,55 +110,24 @@ class TrassifyMasterToolsPlugin:
         self.load_errors.clear()
         self._unregister_bundled_plugins()
 
-        if self.overview_dialog is not None:
-            if self._is_qt_object_alive(self.overview_dialog):
-                try:
-                    self.overview_dialog.close()
-                    self.overview_dialog.deleteLater()
-                except RuntimeError:
-                    pass
-            self.overview_dialog = None
+        if self._is_qt_object_alive(overview_dialog):
+            self._safe_qt_call(overview_dialog.close)
+            self._safe_qt_call(overview_dialog.deleteLater)
 
-        if self.overview_action is not None:
-            if (
-                self._is_qt_object_alive(self.toolbar)
-                and self._is_qt_object_alive(self.overview_action)
-            ):
-                try:
-                    self.toolbar.removeAction(self.overview_action)
-                except RuntimeError:
-                    pass
-            if self._is_qt_object_alive(self.overview_action):
-                try:
-                    self.overview_action.deleteLater()
-                except RuntimeError:
-                    pass
-            self.overview_action = None
+        if self._is_qt_object_alive(toolbar) and self._is_qt_object_alive(overview_action):
+            self._safe_qt_call(toolbar.removeAction, overview_action)
+        if self._is_qt_object_alive(overview_action):
+            self._safe_qt_call(overview_action.deleteLater)
 
-        for action in self.load_actions.values():
+        for action in load_actions:
             if self._is_qt_object_alive(action):
-                try:
-                    self.iface.removePluginMenu(self.MENU_TITLE, action)
-                except RuntimeError:
-                    pass
-                try:
-                    action.deleteLater()
-                except RuntimeError:
-                    pass
-        self.load_actions.clear()
+                self._safe_qt_call(self.iface.removePluginMenu, self.MENU_TITLE, action)
+                self._safe_qt_call(action.deleteLater)
         self.conflicts.clear()
 
-        if self._is_qt_object_alive(self.toolbar) and self._toolbar_created:
-            try:
-                self.iface.mainWindow().removeToolBar(self.toolbar)
-            except RuntimeError:
-                pass
-            try:
-                self.toolbar.deleteLater()
-            except RuntimeError:
-                pass
-        self.toolbar = None
-        self._toolbar_created = False
+        if self._is_qt_object_alive(toolbar) and toolbar_created:
+            self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
+            self._safe_qt_call(toolbar.deleteLater)
 
         for path_text in reversed(self._added_import_paths):
             if path_text in sys.path:
@@ -655,10 +636,7 @@ class TrassifyMasterToolsPlugin:
         return enriched
 
     def _ensure_toolbar(self):
-        toolbar = self.iface.mainWindow().findChild(
-            QToolBar,
-            self.TOOLBAR_OBJECT_NAME,
-        )
+        toolbar = self._find_master_toolbar()
         if toolbar is None:
             toolbar = self.iface.mainWindow().addToolBar(self.MENU_TITLE)
             toolbar.setObjectName(self.TOOLBAR_OBJECT_NAME)
@@ -747,4 +725,35 @@ class TrassifyMasterToolsPlugin:
         ]
 
     def _is_qt_object_alive(self, obj):
-        return obj is not None and not sip.isdeleted(obj)
+        if obj is None:
+            return False
+        try:
+            return not sip.isdeleted(obj)
+        except Exception:
+            return False
+
+    def _safe_qt_call(self, func, *args):
+        try:
+            return func(*args)
+        except RuntimeError:
+            return None
+        except ReferenceError:
+            return None
+
+    def _find_master_toolbar(self):
+        try:
+            main_window = self.iface.mainWindow()
+        except RuntimeError:
+            return None
+        except ReferenceError:
+            return None
+
+        if main_window is None:
+            return None
+
+        try:
+            return main_window.findChild(QToolBar, self.TOOLBAR_OBJECT_NAME)
+        except RuntimeError:
+            return None
+        except ReferenceError:
+            return None
