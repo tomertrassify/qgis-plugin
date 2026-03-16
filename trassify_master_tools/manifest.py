@@ -11,13 +11,6 @@ BUNDLED_PLUGINS = (
         "tool_type": INTERACTIVE_TOOL,
     },
     {
-        "key": "custom_tool_leiste",
-        "label": "Custom Tool Leiste",
-        "package": "custom_tool_leiste",
-        "source_path": "custom-tool-leiste",
-        "tool_type": INTERACTIVE_TOOL,
-    },
-    {
         "key": "schutzrohr",
         "label": "Schutzrohr",
         "package": "live_corridor_tool",
@@ -64,13 +57,6 @@ BUNDLED_PLUGINS = (
         "label": "Layer Fuser",
         "package": "layer_fuser",
         "source_path": "layer-fuser/layer_fuser",
-        "tool_type": INTERACTIVE_TOOL,
-    },
-    {
-        "key": "map_search_pro",
-        "label": "Map Search Pro",
-        "package": "map_search_pro",
-        "source_path": "map-search-pro/map_search_pro",
         "tool_type": INTERACTIVE_TOOL,
     },
     {

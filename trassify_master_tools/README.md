@@ -4,7 +4,6 @@ Ein einzelnes QGIS-Plugin, das mehrere vorhandene Tools als eingebettete Module 
 
 Enthaltene Module:
 - AttributionButler
-- Custom Tool Leiste
 - Schutzrohr
 - Freehand raster georeferencer
 - GeoBasis Loader
@@ -12,7 +11,6 @@ Enthaltene Module:
 - QuickMapServices
 - Grid Quick GeoJSON Export
 - Layer Fuser
-- Map Search Pro
 - Projektstarter
 - Quickrule
 - Export Pro
