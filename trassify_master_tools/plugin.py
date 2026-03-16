@@ -56,6 +56,7 @@ class TrassifyMasterToolsPlugin:
         self._registry_keys = []
         self._added_import_paths = []
         self._module_metadata_cache = {}
+        self._unloaded = False
 
     def initGui(self):
         if has_saved_shared_settings():
@@ -88,6 +89,10 @@ class TrassifyMasterToolsPlugin:
         self._show_startup_message(background_summary)
 
     def unload(self):
+        if self._unloaded:
+            return
+
+        self._unloaded = True
         try:
             self._unload_impl()
         except BaseException as exc:
@@ -99,16 +104,15 @@ class TrassifyMasterToolsPlugin:
         overview_dialog = self.overview_dialog
         overview_action = self.overview_action
         load_actions = list(self.load_actions.values())
+        loaded_plugins = list(self.loaded_plugins)
         toolbar_created = self._toolbar_created
 
-        for spec, plugin in reversed(self.loaded_plugins):
+        for spec, plugin in reversed(loaded_plugins):
             try:
                 plugin.unload()
             except Exception:
                 self._log_exception(spec["label"], "Fehler beim Entladen")
 
-        self.loaded_plugins.clear()
-        self.load_errors.clear()
         self._unregister_bundled_plugins()
 
         if self._is_qt_object_alive(overview_dialog):
@@ -130,17 +134,9 @@ class TrassifyMasterToolsPlugin:
             self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
             self._safe_qt_call(toolbar.deleteLater)
 
-        # Clear Python-side references only after all Qt cleanup finished.
-        self.overview_dialog = None
-        self.overview_action = None
-        self.load_actions = {}
-        self.toolbar = None
-        self._toolbar_created = False
-
         for path_text in reversed(self._added_import_paths):
             if path_text in sys.path:
                 sys.path.remove(path_text)
-        self._added_import_paths.clear()
 
     def show_overview(self):
         if not self.bundled_plugins_root.is_dir():
