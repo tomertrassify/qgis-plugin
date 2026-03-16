@@ -6,6 +6,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from qgis.PyQt import sip
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar
@@ -98,25 +99,52 @@ class TrassifyMasterToolsPlugin:
         self._unregister_bundled_plugins()
 
         if self.overview_dialog is not None:
-            self.overview_dialog.close()
-            self.overview_dialog.deleteLater()
+            if self._is_qt_object_alive(self.overview_dialog):
+                try:
+                    self.overview_dialog.close()
+                    self.overview_dialog.deleteLater()
+                except RuntimeError:
+                    pass
             self.overview_dialog = None
 
         if self.overview_action is not None:
-            if self.toolbar is not None:
-                self.toolbar.removeAction(self.overview_action)
-            self.overview_action.deleteLater()
+            if (
+                self._is_qt_object_alive(self.toolbar)
+                and self._is_qt_object_alive(self.overview_action)
+            ):
+                try:
+                    self.toolbar.removeAction(self.overview_action)
+                except RuntimeError:
+                    pass
+            if self._is_qt_object_alive(self.overview_action):
+                try:
+                    self.overview_action.deleteLater()
+                except RuntimeError:
+                    pass
             self.overview_action = None
 
         for action in self.load_actions.values():
-            self.iface.removePluginMenu(self.MENU_TITLE, action)
-            action.deleteLater()
+            if self._is_qt_object_alive(action):
+                try:
+                    self.iface.removePluginMenu(self.MENU_TITLE, action)
+                except RuntimeError:
+                    pass
+                try:
+                    action.deleteLater()
+                except RuntimeError:
+                    pass
         self.load_actions.clear()
         self.conflicts.clear()
 
-        if self.toolbar is not None and self._toolbar_created:
-            self.iface.mainWindow().removeToolBar(self.toolbar)
-            self.toolbar.deleteLater()
+        if self._is_qt_object_alive(self.toolbar) and self._toolbar_created:
+            try:
+                self.iface.mainWindow().removeToolBar(self.toolbar)
+            except RuntimeError:
+                pass
+            try:
+                self.toolbar.deleteLater()
+            except RuntimeError:
+                pass
         self.toolbar = None
         self._toolbar_created = False
 
@@ -717,3 +745,6 @@ class TrassifyMasterToolsPlugin:
             for tag in raw_tags.replace(";", ",").split(",")
             if tag.strip()
         ]
+
+    def _is_qt_object_alive(self, obj):
+        return obj is not None and not sip.isdeleted(obj)
