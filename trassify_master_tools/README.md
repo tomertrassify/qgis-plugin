@@ -18,10 +18,11 @@ Enthaltene Module:
 - Export Pro
 
 Hinweise:
-- Die eingebetteten Modulpakete liegen gesammelt unter `trassify_master_tools/modules/`.
-- Fuer `Coordinatify` ist die erweiterte Variante aus `modules/geobasis-pro/coordinatify` gebuendelt.
-- Doppelte Temp-Kopien aus `modules/googlemaps/` und `modules/max-wild/funktionen-temp/` wurden bewusst nicht mehrfach eingebunden.
-- Das Master-Plugin laedt die Module gesammelt. In QGIS sollte die Einzelinstallation derselben Plugins deaktiviert bleiben, damit keine doppelten Menueeintraege entstehen.
+- Die eingebetteten Modulpakete liegen gesammelt unter `trassify_master_tools/bundled_plugins/`.
+- Fuer `Coordinatify` ist die erweiterte Variante aus `plugin_sources/geobasis-pro/coordinatify` gebuendelt.
+- Doppelte Temp-Kopien aus `plugin_sources/googlemaps/` und `plugin_sources/max-wild/funktionen-temp/` wurden bewusst nicht mehrfach eingebunden.
+- Das Master-Plugin laedt beim Aktivieren keine eingebetteten Module automatisch mehr. Jedes Modul wird gezielt ueber das Master-Menue geladen.
+- Wenn ein gleichnamiges Einzelplugin bereits separat in QGIS aktiv ist, blockiert das Master-Plugin das Nachladen bewusst, damit keine doppelten Menueeintraege oder Paketkonflikte entstehen.
 
 Build:
 - `./build_zip.sh`

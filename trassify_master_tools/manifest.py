@@ -1,4 +1,4 @@
-EMBEDDED_PLUGINS = (
+BUNDLED_PLUGINS = (
     {
         "key": "attribution_buttler",
         "label": "AttributionButler",
@@ -16,7 +16,7 @@ EMBEDDED_PLUGINS = (
     },
     {
         "key": "freehand_raster_georeferencer",
-        "label": "Freehand raster georeferencer",
+        "label": "Freehand Raster Georeferencer",
         "package": "FreehandGeoreferencer",
     },
     {
