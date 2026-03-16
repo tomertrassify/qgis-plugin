@@ -10,11 +10,12 @@ from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.core import Qgis, QgsMessageLog
 
 from .manifest import BUNDLED_PLUGINS
+from .overview_dialog import MasterOverviewDialog
 
 
 class TrassifyMasterToolsPlugin:
     MENU_TITLE = "Trassify Master Tools"
-    STATUS_ACTION_TEXT = "Modulstatus anzeigen"
+    OVERVIEW_ACTION_TEXT = "Master-Uebersicht oeffnen"
     LOAD_ACTION_PREFIX = "Modul laden: "
     BUNDLE_MISSING_MESSAGE = (
         "Gebuendelte Module fehlen in diesem Quell-Checkout. "
@@ -26,7 +27,8 @@ class TrassifyMasterToolsPlugin:
         self.iface = iface
         self.plugin_dir = Path(__file__).resolve().parent
         self.bundled_plugins_root = self.plugin_dir / "bundled_plugins"
-        self.status_action = None
+        self.overview_action = None
+        self.overview_dialog = None
         self.loaded_plugins = []
         self.load_errors = []
         self.conflicts = []
@@ -36,13 +38,14 @@ class TrassifyMasterToolsPlugin:
         self._path_added = False
 
     def initGui(self):
-        self.status_action = QAction(
+        self.overview_action = QAction(
             QIcon(str(self.plugin_dir / "icon.svg")),
-            self.STATUS_ACTION_TEXT,
+            self.OVERVIEW_ACTION_TEXT,
             self.iface.mainWindow(),
         )
-        self.status_action.triggered.connect(self.show_status)
-        self.iface.addPluginToMenu(self.MENU_TITLE, self.status_action)
+        self.overview_action.triggered.connect(self.show_overview)
+        self.iface.addToolBarIcon(self.overview_action)
+        self.iface.addPluginToMenu(self.MENU_TITLE, self.overview_action)
 
         if not self.bundled_plugins_root.is_dir():
             self.iface.messageBar().pushMessage(
@@ -75,10 +78,16 @@ class TrassifyMasterToolsPlugin:
         self.load_errors.clear()
         self._unregister_bundled_plugins()
 
-        if self.status_action is not None:
-            self.iface.removePluginMenu(self.MENU_TITLE, self.status_action)
-            self.status_action.deleteLater()
-            self.status_action = None
+        if self.overview_dialog is not None:
+            self.overview_dialog.close()
+            self.overview_dialog.deleteLater()
+            self.overview_dialog = None
+
+        if self.overview_action is not None:
+            self.iface.removeToolBarIcon(self.overview_action)
+            self.iface.removePluginMenu(self.MENU_TITLE, self.overview_action)
+            self.overview_action.deleteLater()
+            self.overview_action = None
 
         for action in self.load_actions.values():
             self.iface.removePluginMenu(self.MENU_TITLE, action)
@@ -90,7 +99,7 @@ class TrassifyMasterToolsPlugin:
             sys.path.remove(self._bundled_plugins_root_str)
             self._path_added = False
 
-    def show_status(self):
+    def show_overview(self):
         if not self.bundled_plugins_root.is_dir():
             QMessageBox.information(
                 self.iface.mainWindow(),
@@ -99,46 +108,16 @@ class TrassifyMasterToolsPlugin:
             )
             return
 
-        self._refresh_conflicts()
+        if self.overview_dialog is None:
+            self.overview_dialog = MasterOverviewDialog(
+                self, self.iface.mainWindow()
+            )
+        else:
+            self.overview_dialog.refresh()
 
-        lines = [
-            f"Geladen: {len(self.loaded_plugins)}/{len(BUNDLED_PLUGINS)}",
-            "",
-        ]
-
-        if self.loaded_plugins:
-            lines.append("Aktive Module:")
-            for spec, _plugin in self.loaded_plugins:
-                lines.append(f"- {spec['label']}")
-            lines.append("")
-
-        pending_modules = [
-            spec["label"]
-            for spec in BUNDLED_PLUGINS
-            if not self._is_loaded(spec) and not self._has_conflict(spec)
-        ]
-        if pending_modules:
-            lines.append("Noch nicht geladen:")
-            for label in pending_modules:
-                lines.append(f"- {label}")
-            lines.append("")
-
-        if self.conflicts:
-            lines.append("Konflikte:")
-            for spec, message in self.conflicts:
-                lines.append(f"- {spec['label']}: {message}")
-            lines.append("")
-
-        if self.load_errors:
-            lines.append("Fehler:")
-            for spec, message in self.load_errors:
-                lines.append(f"- {spec['label']}: {message}")
-
-        QMessageBox.information(
-            self.iface.mainWindow(),
-            self.MENU_TITLE,
-            "\n".join(lines).strip(),
-        )
+        self.overview_dialog.show()
+        self.overview_dialog.raise_()
+        self.overview_dialog.activateWindow()
 
     def _ensure_bundle_import_path(self):
         if self._bundled_plugins_root_str not in sys.path:
@@ -171,6 +150,7 @@ class TrassifyMasterToolsPlugin:
                 level=Qgis.Warning,
                 duration=6,
             )
+            self._refresh_overview_dialog()
             return False
 
         self._purge_bundled_package(spec["package"])
@@ -195,6 +175,7 @@ class TrassifyMasterToolsPlugin:
                 level=Qgis.Info,
                 duration=4,
             )
+            self._refresh_overview_dialog()
             return True
         except Exception:
             self._unregister_bundled_plugin(spec["package"])
@@ -207,6 +188,7 @@ class TrassifyMasterToolsPlugin:
                 level=Qgis.Warning,
                 duration=6,
             )
+            self._refresh_overview_dialog()
             return False
 
     def _register_bundled_plugin(self, package_name, plugin):
@@ -322,6 +304,60 @@ class TrassifyMasterToolsPlugin:
         if action is not None:
             action.setEnabled(False)
             action.setText(f"Geladen: {spec['label']}")
+
+    def _refresh_overview_dialog(self):
+        if self.overview_dialog is not None:
+            self.overview_dialog.refresh()
+
+    def get_module_rows(self):
+        self._refresh_conflicts()
+
+        error_by_key = {
+            spec["key"]: message for spec, message in self.load_errors
+        }
+        conflict_by_key = {
+            spec["key"]: message for spec, message in self.conflicts
+        }
+
+        rows = []
+        for spec in BUNDLED_PLUGINS:
+            detail = spec["label"]
+            status_code = "ready"
+            status_text = "Bereit"
+
+            if self._is_loaded(spec):
+                status_code = "loaded"
+                status_text = "Geladen"
+                detail = f"{spec['label']} ist bereits ueber das Master-Plugin aktiv."
+            elif spec["key"] in conflict_by_key:
+                status_code = "conflict"
+                status_text = "Blockiert"
+                detail = conflict_by_key[spec["key"]]
+            elif spec["key"] in error_by_key:
+                status_code = "error"
+                status_text = "Fehler"
+                detail = error_by_key[spec["key"]]
+            else:
+                detail = f"{spec['label']} kann jetzt ueber das Master-Plugin geladen werden."
+
+            rows.append(
+                {
+                    "key": spec["key"],
+                    "label": spec["label"],
+                    "package": spec["package"],
+                    "status_code": status_code,
+                    "status_text": status_text,
+                    "detail": detail,
+                }
+            )
+
+        return rows
+
+    def load_module_by_key(self, key):
+        for spec in BUNDLED_PLUGINS:
+            if spec["key"] == key:
+                return self._load_single_module(spec)
+        return False
 
     def _purge_bundled_package(self, package_name):
         removable_modules = []
