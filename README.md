@@ -19,6 +19,7 @@ Wichtig:
 - Wenn du nur ein Plugin in QGIS installieren willst, nutze das Bundle aus `trassify_master_tools/`.
 - Die eingebetteten Modulkopien fuer das Bundle werden beim Build aus `plugin_sources/` erzeugt und liegen nicht mehr doppelt im Git-Repo.
 - Die Originalquellen bleiben unter `plugin_sources/`, damit jede Plugin-Datei nur noch einmal im Repository gepflegt wird.
+- Nicht mehr verwendete Tool-Kopien und alte Plugin-ZIPs werden aus `plugin_sources/` entfernt, damit der Source-Baum dem aktiven Bundle entspricht.
 - In QGIS oeffnet das Master-Plugin ueber sein Toolbar-Icon eine Uebersicht aller enthaltenen Module.
 - Das Master-Plugin unterscheidet jetzt zwischen normalen Tools und Hintergrundtools.
 - Normale Tools werden gezielt ueber die Master-Uebersicht geladen.
