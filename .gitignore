@@ -2,3 +2,4 @@
 __pycache__/
 *.py[cod]
 *.zip
+!trassify_master_tools.zip

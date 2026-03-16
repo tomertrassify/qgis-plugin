@@ -1,6 +1,7 @@
 [general]
 name=Trassify Master Tools
 qgisMinimumVersion=3.28
+qgisMaximumVersion=3.99
 description=Ein Bundle-Plugin, das die enthaltenen Trassify-Tools in einer einzigen Installation laedt.
 version=0.1.0
 author=Tomer Maith
@@ -9,9 +10,9 @@ about=Installiere ein Plugin und aktiviere AttributionButler, Schutzrohr, GeoBas
 category=Plugins
 icon=icon.svg
 tags=trassify,bundle,suite,tools,qgis
-homepage=
-tracker=
-repository=
+homepage=https://github.com/tomertrassify/qgis-plugin
+tracker=https://github.com/tomertrassify/qgis-plugin/issues
+repository=https://github.com/tomertrassify/qgis-plugin
 experimental=False
 deprecated=False
 hasProcessingProvider=False
