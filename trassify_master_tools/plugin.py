@@ -6,18 +6,29 @@ import sys
 import traceback
 from pathlib import Path
 
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox
-from qgis.core import Qgis, QgsMessageLog
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QStyle, QToolBar
+from qgis.core import Qgis, QgsApplication, QgsMessageLog
 
 from .manifest import BUNDLED_PLUGINS
 from .overview_dialog import MasterOverviewDialog
+from .settings_dialog import MasterSettingsDialog
+from .shared_settings import (
+    build_postgres_ogr_uri,
+    has_saved_shared_settings,
+    load_shared_settings,
+    save_shared_settings,
+    sync_attribution_butler_settings,
+)
 
 
 class TrassifyMasterToolsPlugin:
     MENU_TITLE = "Trassify Master Tools"
     OVERVIEW_ACTION_TEXT = "Master-Uebersicht oeffnen"
+    SETTINGS_ACTION_TEXT = "Master-Einstellungen"
     LOAD_ACTION_PREFIX = "Modul laden: "
+    TOOLBAR_OBJECT_NAME = "TrassifyMasterToolsToolbar"
     BUNDLE_MISSING_MESSAGE = (
         "Gebuendelte Module fehlen in diesem Quell-Checkout. "
         "Installiere das gebaute ZIP; ./trassify_master_tools/build_zip.sh erstellt es."
@@ -28,7 +39,10 @@ class TrassifyMasterToolsPlugin:
         self.iface = iface
         self.plugin_dir = Path(__file__).resolve().parent
         self.bundled_plugins_root = self.plugin_dir / "bundled_plugins"
+        self.toolbar = None
+        self._toolbar_created = False
         self.overview_action = None
+        self.settings_action = None
         self.overview_dialog = None
         self.loaded_plugins = []
         self.load_errors = []
@@ -40,14 +54,27 @@ class TrassifyMasterToolsPlugin:
         self._module_metadata_cache = {}
 
     def initGui(self):
+        if has_saved_shared_settings():
+            self._sync_shared_settings()
+        self._ensure_toolbar()
+
         self.overview_action = QAction(
             QIcon(str(self.plugin_dir / "icon.svg")),
             self.OVERVIEW_ACTION_TEXT,
             self.iface.mainWindow(),
         )
         self.overview_action.triggered.connect(self.show_overview)
-        self.iface.addToolBarIcon(self.overview_action)
-        self.iface.addPluginToMenu(self.MENU_TITLE, self.overview_action)
+        if self.toolbar is not None:
+            self.toolbar.addAction(self.overview_action)
+
+        self.settings_action = QAction(
+            self._settings_icon(),
+            self.SETTINGS_ACTION_TEXT,
+            self.iface.mainWindow(),
+        )
+        self.settings_action.triggered.connect(self.show_settings)
+        if self.toolbar is not None:
+            self.toolbar.addAction(self.settings_action)
 
         if not self.bundled_plugins_root.is_dir():
             self.iface.messageBar().pushMessage(
@@ -64,7 +91,7 @@ class TrassifyMasterToolsPlugin:
 
         self.iface.messageBar().pushMessage(
             self.MENU_TITLE,
-            "Master-Plugin aktiv. Module bei Bedarf ueber das Menue laden.",
+            "Master-Toolbar aktiv. Module und Einstellungen ueber die Trassify-Leiste oeffnen.",
             level=Qgis.Info,
             duration=5,
         )
@@ -86,16 +113,28 @@ class TrassifyMasterToolsPlugin:
             self.overview_dialog = None
 
         if self.overview_action is not None:
-            self.iface.removeToolBarIcon(self.overview_action)
-            self.iface.removePluginMenu(self.MENU_TITLE, self.overview_action)
+            if self.toolbar is not None:
+                self.toolbar.removeAction(self.overview_action)
             self.overview_action.deleteLater()
             self.overview_action = None
+
+        if self.settings_action is not None:
+            if self.toolbar is not None:
+                self.toolbar.removeAction(self.settings_action)
+            self.settings_action.deleteLater()
+            self.settings_action = None
 
         for action in self.load_actions.values():
             self.iface.removePluginMenu(self.MENU_TITLE, action)
             action.deleteLater()
         self.load_actions.clear()
         self.conflicts.clear()
+
+        if self.toolbar is not None and self._toolbar_created:
+            self.iface.mainWindow().removeToolBar(self.toolbar)
+            self.toolbar.deleteLater()
+        self.toolbar = None
+        self._toolbar_created = False
 
         if self._path_added and self._bundled_plugins_root_str in sys.path:
             sys.path.remove(self._bundled_plugins_root_str)
@@ -120,6 +159,24 @@ class TrassifyMasterToolsPlugin:
         self.overview_dialog.show()
         self.overview_dialog.raise_()
         self.overview_dialog.activateWindow()
+
+    def show_settings(self):
+        dialog = MasterSettingsDialog(self, self.iface.mainWindow())
+        if dialog.exec_() != dialog.Accepted:
+            return
+
+        settings = self.save_shared_settings(dialog.values())
+        has_database_uri = bool(build_postgres_ogr_uri(settings))
+        message = "Zentrale Einstellungen gespeichert."
+        if has_database_uri:
+            message += " Datenbank-URI fuer Master-Module ist verfuegbar."
+
+        self.iface.messageBar().pushMessage(
+            self.MENU_TITLE,
+            message,
+            level=Qgis.Success,
+            duration=5,
+        )
 
     def _ensure_bundle_import_path(self):
         if self._bundled_plugins_root_str not in sys.path:
@@ -159,6 +216,7 @@ class TrassifyMasterToolsPlugin:
         plugin = None
         try:
             module = importlib.import_module(spec["package"])
+            self._inject_master_context(module)
             factory = getattr(module, "classFactory", None)
             if factory is None:
                 raise AttributeError(
@@ -166,8 +224,10 @@ class TrassifyMasterToolsPlugin:
                 )
 
             plugin = factory(self.iface)
+            self._inject_master_context(module, plugin)
             self._register_bundled_plugin(spec["package"], plugin)
             plugin.initGui()
+            self._apply_shared_settings_to_plugin(spec, plugin, module)
             self.loaded_plugins.append((spec, plugin))
             self._clear_error(spec)
             self._disable_load_action(spec)
@@ -432,6 +492,104 @@ class TrassifyMasterToolsPlugin:
         if exc_value is None:
             return exc_type.__name__
         return f"{exc_type.__name__}: {exc_value}"
+
+    def get_shared_settings(self):
+        return self._enriched_shared_settings(load_shared_settings())
+
+    def save_shared_settings(self, config):
+        normalized = self._enriched_shared_settings(save_shared_settings(config))
+        self._sync_shared_settings(normalized)
+        self._apply_shared_settings_to_loaded_plugins(normalized)
+        return normalized
+
+    def _sync_shared_settings(self, config=None):
+        settings = config or self.get_shared_settings()
+        sync_attribution_butler_settings(settings)
+
+    def _apply_shared_settings_to_loaded_plugins(self, settings):
+        for spec, plugin in self.loaded_plugins:
+            module = sys.modules.get(spec["package"])
+            self._apply_shared_settings_to_plugin(spec, plugin, module, settings)
+
+    def _apply_shared_settings_to_plugin(
+        self,
+        spec,
+        plugin,
+        module=None,
+        settings=None,
+    ):
+        shared_settings = dict(settings or self.get_shared_settings())
+
+        self._inject_master_context(module, plugin, shared_settings)
+
+        for handler_name, argument_variants in (
+            ("apply_master_settings", ((shared_settings,), ())),
+            ("set_master_settings", ((shared_settings,), ())),
+            ("set_master_context", ((self, shared_settings), (shared_settings,), (self,))),
+            ("reload_master_settings", ((),)),
+        ):
+            handler = getattr(plugin, handler_name, None)
+            if not callable(handler):
+                continue
+
+            for args in argument_variants:
+                try:
+                    handler(*args)
+                    return
+                except TypeError:
+                    continue
+                except Exception:
+                    self._log_exception(
+                        spec["label"],
+                        f"Fehler beim Anwenden von Master-Settings via {handler_name}",
+                    )
+                    return
+
+    def _inject_master_context(self, module=None, plugin=None, settings=None):
+        shared_settings = dict(settings or self.get_shared_settings())
+
+        if module is not None:
+            try:
+                setattr(module, "TRASSIFY_MASTER_PLUGIN", self)
+                setattr(module, "TRASSIFY_MASTER_SETTINGS", shared_settings)
+            except Exception:
+                pass
+
+        if plugin is not None:
+            try:
+                setattr(plugin, "trassify_master_plugin", self)
+                setattr(plugin, "trassify_master_settings", shared_settings)
+            except Exception:
+                pass
+
+    def _enriched_shared_settings(self, settings):
+        enriched = dict(settings or {})
+        enriched["database_ogr_uri"] = build_postgres_ogr_uri(enriched)
+        return enriched
+
+    def _ensure_toolbar(self):
+        toolbar = self.iface.mainWindow().findChild(
+            QToolBar,
+            self.TOOLBAR_OBJECT_NAME,
+        )
+        if toolbar is None:
+            toolbar = self.iface.mainWindow().addToolBar(self.MENU_TITLE)
+            toolbar.setObjectName(self.TOOLBAR_OBJECT_NAME)
+            toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            self._toolbar_created = True
+        else:
+            self._toolbar_created = False
+
+        toolbar.setVisible(True)
+        self.toolbar = toolbar
+
+    def _settings_icon(self):
+        icon = QgsApplication.getThemeIcon("/mActionOptions.svg")
+        if not icon.isNull():
+            return icon
+        return self.iface.mainWindow().style().standardIcon(
+            QStyle.SP_FileDialogDetailedView
+        )
 
     def _get_module_metadata(self, spec):
         cached = self._module_metadata_cache.get(spec["key"])

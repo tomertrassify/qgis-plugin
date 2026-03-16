@@ -160,6 +160,11 @@ class MasterOverviewDialog(QDialog):
         self.refresh_button = QPushButton("Aktualisieren", self)
         self.refresh_button.clicked.connect(self.refresh)
         actions_layout.addWidget(self.refresh_button)
+
+        self.settings_button = QPushButton("Einstellungen", self)
+        self.settings_button.clicked.connect(self.plugin_controller.show_settings)
+        actions_layout.addWidget(self.settings_button)
+
         actions_layout.addStretch(1)
 
         self.load_button = QPushButton("Ausgewaehltes Modul laden", self)
