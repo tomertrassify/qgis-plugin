@@ -6,6 +6,7 @@ Repository-Struktur:
   Das installierbare Master-Plugin. Diese Struktur steht bewusst direkt auf Repo-Ebene im Vordergrund.
 - `plugin_sources/`
   Die einzige Quellablage fuer die Einzelplugins. Das ist die Quelle der Wahrheit, nicht das installierbare Master-Plugin.
+  Hintergrundtools koennen dort separat unter `plugin_sources/background-tools/` liegen.
 - `dist/`
   Gebaute ZIP-Artefakte.
 - `plugins.xml`
@@ -19,5 +20,7 @@ Wichtig:
 - Die eingebetteten Modulkopien fuer das Bundle werden beim Build aus `plugin_sources/` erzeugt und liegen nicht mehr doppelt im Git-Repo.
 - Die Originalquellen bleiben unter `plugin_sources/`, damit jede Plugin-Datei nur noch einmal im Repository gepflegt wird.
 - In QGIS oeffnet das Master-Plugin ueber sein Toolbar-Icon eine Uebersicht aller enthaltenen Module.
-- Das Master-Plugin laedt beim Aktivieren keine eingebetteten Tools mehr automatisch, sondern nur noch gezielt ueber das Plugin-Menue. Das reduziert Konflikte und Abstuerze in QGIS.
+- Das Master-Plugin unterscheidet jetzt zwischen normalen Tools und Hintergrundtools.
+- Normale Tools werden gezielt ueber die Master-Uebersicht geladen.
+- Hintergrundtools werden beim Start automatisch aktiviert und sind fuer Kontextmenues oder unauffaellige Hilfsfunktionen gedacht.
 - Fuer das GitHub-Setup kannst du `./prepare_plugin_repository.sh` ausfuehren. Das aktualisiert `plugins.xml` und `trassify_master_tools.zip`.

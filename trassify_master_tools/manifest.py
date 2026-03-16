@@ -1,80 +1,97 @@
+INTERACTIVE_TOOL = "interactive"
+BACKGROUND_TOOL = "background"
+
+
 BUNDLED_PLUGINS = (
     {
         "key": "attribution_buttler",
         "label": "AttributionButler",
         "package": "attribution_buttler",
         "source_path": "attribution-buttler",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "custom_tool_leiste",
         "label": "Custom Tool Leiste",
         "package": "custom_tool_leiste",
         "source_path": "custom-tool-leiste",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "schutzrohr",
         "label": "Schutzrohr",
         "package": "live_corridor_tool",
         "source_path": "drawing-tools/live_corridor_tool",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "freehand_raster_georeferencer",
         "label": "Freehand Raster Georeferencer",
         "package": "FreehandGeoreferencer",
         "source_path": "freehand2/FreehandGeoreferencer",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "geobasis_loader",
         "label": "GeoBasis Loader",
         "package": "GeoBasis_pro",
         "source_path": "geobasis-pro/GeoBasis_pro",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "coordinatify",
         "label": "Coordinatify",
         "package": "coordinatify",
-        "source_path": "geobasis-pro/coordinatify",
+        "source_path": "background-tools/coordinatify",
+        "tool_type": BACKGROUND_TOOL,
     },
     {
         "key": "quick_map_services",
         "label": "QuickMapServices",
         "package": "quick_map_services",
         "source_path": "max-wild/funktionen-temp/quick_map_services",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "grid_quick_geojson_export",
         "label": "Grid Quick GeoJSON Export",
         "package": "grid_quick_geojson_export",
-        "source_path": "grid-exporter/grid_quick_geojson_export",
+        "source_path": "background-tools/grid_quick_geojson_export",
+        "tool_type": BACKGROUND_TOOL,
     },
     {
         "key": "layer_fuser",
         "label": "Layer Fuser",
         "package": "layer_fuser",
         "source_path": "layer-fuser/layer_fuser",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "map_search_pro",
         "label": "Map Search Pro",
         "package": "map_search_pro",
         "source_path": "map-search-pro/map_search_pro",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "projektstarter",
         "label": "Projektstarter",
         "package": "max_wild_project_starter",
         "source_path": "max-wild/max_wild_project_starter",
+        "tool_type": INTERACTIVE_TOOL,
     },
     {
         "key": "quickrule",
         "label": "Quickrule",
         "package": "quickrule",
         "source_path": "quickrules-pro/quickrule",
+        "tool_type": BACKGROUND_TOOL,
     },
     {
         "key": "export_pro",
         "label": "Export Pro",
         "package": "verpacken_pro",
         "source_path": "verpacken-pro/verpacken_pro",
+        "tool_type": INTERACTIVE_TOOL,
     },
 )

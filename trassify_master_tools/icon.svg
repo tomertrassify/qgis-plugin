@@ -1,8 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="24" fill="#123b3a"/>
-  <rect x="18" y="18" width="42" height="42" rx="10" fill="#f4efe6"/>
-  <rect x="68" y="18" width="42" height="18" rx="6" fill="#d2e8dd"/>
-  <rect x="68" y="42" width="42" height="18" rx="6" fill="#d2e8dd"/>
-  <rect x="18" y="68" width="92" height="18" rx="6" fill="#d2e8dd"/>
-  <rect x="18" y="92" width="92" height="18" rx="6" fill="#f4efe6"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Ebene_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 128 128">
+  <!-- Generator: Adobe Illustrator 30.2.1, SVG Export Plug-In . SVG Version: 2.1.1 Build 1)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #fff;
+      }
+
+      .st1 {
+        fill: #a7c5a1;
+      }
+    </style>
+  </defs>
+  <rect class="st1" width="128" height="128" rx="24" ry="24"/>
+  <path class="st0" d="M55.78,78.8c2.72,2.72,2.72,7.14,0,9.87-2.73,2.72-7.14,2.72-9.87,0l-23.02-23.02c-1.36-1.37-2.04-3.15-2.04-4.93s.68-3.57,2.04-4.93c2.73-2.72,7.14-2.72,9.87,0l23.02,23.02Z"/>
+  <path class="st0" d="M105.1,72.22c-2.72,2.72-7.14,2.72-9.87,0l-23.01-23.02c-2.73-2.72-2.73-7.14,0-9.87,1.36-1.36,3.14-2.04,4.93-2.04s3.56.68,4.93,2.04l23.02,23.02c2.73,2.73,2.73,7.14,0,9.87Z"/>
+  <path class="st0" d="M88.66,78.8c2.73,2.72,2.73,7.14,0,9.87-2.72,2.72-7.14,2.72-9.86,0l-39.46-39.46c-2.72-2.72-2.72-7.14,0-9.87,1.37-1.36,3.15-2.04,4.93-2.04s3.56.68,4.93,2.04l39.45,39.46Z"/>
 </svg>

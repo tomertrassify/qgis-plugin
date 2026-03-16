@@ -28,6 +28,8 @@ from qgis.PyQt.QtWidgets import (
 class MasterOverviewDialog(QDialog):
     FILTERS = (
         ("all", "Alle", QStyle.SP_FileDialogDetailedView),
+        ("interactive", "Normale Tools", QStyle.SP_FileDialogListView),
+        ("background", "Hintergrundtools", QStyle.SP_ComputerIcon),
         ("ready", "Bereit", QStyle.SP_DialogApplyButton),
         ("loaded", "Geladen", QStyle.SP_DialogYesButton),
         ("conflict", "Blockiert", QStyle.SP_MessageBoxWarning),
@@ -135,6 +137,7 @@ class MasterOverviewDialog(QDialog):
         detail_layout.addLayout(self.metadata_form)
 
         self.category_value = self._create_value_label(detail_panel)
+        self.type_value = self._create_value_label(detail_panel)
         self.package_value = self._create_value_label(detail_panel)
         self.tags_value = self._create_value_label(detail_panel)
         self.author_value = self._create_value_label(detail_panel)
@@ -142,6 +145,7 @@ class MasterOverviewDialog(QDialog):
         self.links_value = self._create_value_label(detail_panel, rich_text=True)
 
         self.metadata_form.addRow("Kategorie", self.category_value)
+        self.metadata_form.addRow("Typ", self.type_value)
         self.metadata_form.addRow("Paket", self.package_value)
         self.metadata_form.addRow("Tags", self.tags_value)
         self.metadata_form.addRow("Autor", self.author_value)
@@ -198,6 +202,12 @@ class MasterOverviewDialog(QDialog):
         current_filter = self._active_filter_key()
         counts = {
             "all": len(self._all_rows),
+            "interactive": sum(
+                1 for row in self._all_rows if row["tool_type"] == "interactive"
+            ),
+            "background": sum(
+                1 for row in self._all_rows if row["tool_type"] == "background"
+            ),
             "ready": sum(
                 1 for row in self._all_rows if row["status_code"] == "ready"
             ),
@@ -283,6 +293,8 @@ class MasterOverviewDialog(QDialog):
     def _matches_filter(self, row, filter_key):
         if filter_key == "all":
             return True
+        if filter_key in {"interactive", "background"}:
+            return row["tool_type"] == filter_key
         return row["status_code"] == filter_key
 
     def _matches_search(self, row, search_term):
@@ -294,6 +306,7 @@ class MasterOverviewDialog(QDialog):
                 row["about"],
                 row["author"],
                 row["category"],
+                row["tool_type_label"],
                 row["detail"],
                 " ".join(row["tags"]),
             ]
@@ -319,6 +332,10 @@ class MasterOverviewDialog(QDialog):
             return
 
         self.load_button.setEnabled(row["status_code"] == "ready")
+        if row["tool_type"] == "background":
+            self.load_button.setText("Hintergrundtool laden")
+        else:
+            self.load_button.setText("Ausgewaehltes Modul laden")
         self._render_module_details(row)
 
     def _render_empty_state(self, search_term):
@@ -334,6 +351,7 @@ class MasterOverviewDialog(QDialog):
             "Die Trassify-Masteransicht orientiert sich an der nativen QGIS-Erweiterungsliste."
         )
         self.category_value.setText("-")
+        self.type_value.setText("-")
         self.package_value.setText("-")
         self.tags_value.setText("-")
         self.author_value.setText("-")
@@ -356,12 +374,18 @@ class MasterOverviewDialog(QDialog):
         about_text = row["about"]
         if about_text and about_text != row["description"]:
             self.about_label.setText(about_text)
+        elif row["tool_type"] == "background":
+            self.about_label.setText(
+                "Dieses Modul ist als Hintergrundtool vorgesehen und wird automatisch geladen, "
+                "damit Kontextmenues oder stille Hilfsfunktionen ohne zusaetzlichen Button verfuegbar sind."
+            )
         else:
             self.about_label.setText(
                 "Dieses Modul ist im Master-Plugin enthalten und kann bei Bedarf geladen werden."
             )
 
         self.category_value.setText(row["category"] or "-")
+        self.type_value.setText(row["tool_type_label"] or "-")
         self.package_value.setText(row["package"] or "-")
         self.tags_value.setText(", ".join(row["tags"]) or "-")
         self.author_value.setText(row["author"] or "-")

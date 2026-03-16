@@ -56,11 +56,13 @@ def main() -> int:
 
     for spec in bundled_plugins:
         source_path = source_root / spec["source_path"]
-        destination_path = output_dir / spec["package"]
+        bundle_dir_name = spec.get("tool_type", "interactive")
+        destination_path = output_dir / bundle_dir_name / spec["package"]
 
         if not source_path.is_dir():
             raise SystemExit(f"Quellpfad fehlt fuer {spec['label']}: {source_path}")
 
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
         copy_plugin(source_path, destination_path)
 
     return 0

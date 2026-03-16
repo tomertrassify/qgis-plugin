@@ -11,7 +11,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar
 from qgis.core import Qgis, QgsMessageLog
 
-from .manifest import BUNDLED_PLUGINS
+from .manifest import BACKGROUND_TOOL, BUNDLED_PLUGINS, INTERACTIVE_TOOL
 from .overview_dialog import MasterOverviewDialog
 from .settings_dialog import MasterSettingsDialog
 from .shared_settings import (
@@ -33,11 +33,17 @@ class TrassifyMasterToolsPlugin:
         "Installiere das gebaute ZIP; ./trassify_master_tools/build_zip.sh erstellt es."
     )
     LOG_TAG = "Trassify Master Tools"
+    TOOL_TYPE_LABELS = {
+        INTERACTIVE_TOOL: "Normales Tool",
+        BACKGROUND_TOOL: "Hintergrundtool",
+    }
 
     def __init__(self, iface):
         self.iface = iface
         self.plugin_dir = Path(__file__).resolve().parent
         self.bundled_plugins_root = self.plugin_dir / "bundled_plugins"
+        self.interactive_bundled_root = self.bundled_plugins_root / INTERACTIVE_TOOL
+        self.background_bundled_root = self.bundled_plugins_root / BACKGROUND_TOOL
         self.toolbar = None
         self._toolbar_created = False
         self.overview_action = None
@@ -46,9 +52,8 @@ class TrassifyMasterToolsPlugin:
         self.load_errors = []
         self.conflicts = []
         self.load_actions = {}
-        self._bundled_plugins_root_str = str(self.bundled_plugins_root)
         self._registry_keys = []
-        self._path_added = False
+        self._added_import_paths = []
         self._module_metadata_cache = {}
 
     def initGui(self):
@@ -77,13 +82,9 @@ class TrassifyMasterToolsPlugin:
         self._ensure_bundle_import_path()
         self._create_load_actions()
         self._refresh_conflicts()
-
-        self.iface.messageBar().pushMessage(
-            self.MENU_TITLE,
-            "Master-Toolbar aktiv. Einstellungen ueber die Uebersicht oeffnen.",
-            level=Qgis.Info,
-            duration=5,
-        )
+        background_summary = self._load_background_modules()
+        self._refresh_conflicts()
+        self._show_startup_message(background_summary)
 
     def unload(self):
         for spec, plugin in reversed(self.loaded_plugins):
@@ -119,9 +120,10 @@ class TrassifyMasterToolsPlugin:
         self.toolbar = None
         self._toolbar_created = False
 
-        if self._path_added and self._bundled_plugins_root_str in sys.path:
-            sys.path.remove(self._bundled_plugins_root_str)
-            self._path_added = False
+        for path_text in reversed(self._added_import_paths):
+            if path_text in sys.path:
+                sys.path.remove(path_text)
+        self._added_import_paths.clear()
 
     def show_overview(self):
         if not self.bundled_plugins_root.is_dir():
@@ -162,12 +164,20 @@ class TrassifyMasterToolsPlugin:
         )
 
     def _ensure_bundle_import_path(self):
-        if self._bundled_plugins_root_str not in sys.path:
-            sys.path.insert(0, self._bundled_plugins_root_str)
-            self._path_added = True
+        for bundle_root in (
+            self.background_bundled_root,
+            self.interactive_bundled_root,
+        ):
+            if not bundle_root.is_dir():
+                continue
+
+            bundle_root_str = str(bundle_root)
+            if bundle_root_str not in sys.path:
+                sys.path.insert(0, bundle_root_str)
+                self._added_import_paths.append(bundle_root_str)
 
     def _create_load_actions(self):
-        for spec in BUNDLED_PLUGINS:
+        for spec in self._interactive_specs():
             action = QAction(
                 f"{self.LOAD_ACTION_PREFIX}{spec['label']}",
                 self.iface.mainWindow(),
@@ -178,7 +188,59 @@ class TrassifyMasterToolsPlugin:
             self.iface.addPluginToMenu(self.MENU_TITLE, action)
             self.load_actions[spec["key"]] = action
 
-    def _load_single_module(self, spec):
+    def _load_background_modules(self):
+        summary = {
+            "loaded": [],
+            "conflicts": [],
+            "errors": [],
+        }
+
+        for spec in self._background_specs():
+            if self._load_single_module(spec, announce=False):
+                summary["loaded"].append(spec["label"])
+                continue
+
+            if self._get_conflict_message(spec):
+                summary["conflicts"].append(spec["label"])
+            else:
+                summary["errors"].append(spec["label"])
+
+        return summary
+
+    def _show_startup_message(self, background_summary):
+        message_parts = ["Master-Toolbar aktiv."]
+
+        loaded_count = len(background_summary["loaded"])
+        if loaded_count:
+            message_parts.append(
+                f"{loaded_count} Hintergrundtool(s) automatisch aktiv."
+            )
+
+        conflict_count = len(background_summary["conflicts"])
+        if conflict_count:
+            message_parts.append(
+                f"{conflict_count} Hintergrundtool(s) blockiert."
+            )
+
+        error_count = len(background_summary["errors"])
+        if error_count:
+            message_parts.append(
+                f"{error_count} Hintergrundtool(s) mit Fehler."
+            )
+
+        if not loaded_count and not conflict_count and not error_count:
+            message_parts.append(
+                "Einstellungen ueber die Uebersicht oeffnen."
+            )
+
+        self.iface.messageBar().pushMessage(
+            self.MENU_TITLE,
+            " ".join(message_parts),
+            level=Qgis.Warning if conflict_count or error_count else Qgis.Info,
+            duration=6 if conflict_count or error_count else 5,
+        )
+
+    def _load_single_module(self, spec, announce=True):
         if self._is_loaded(spec):
             return True
 
@@ -186,12 +248,13 @@ class TrassifyMasterToolsPlugin:
         conflict_message = self._get_conflict_message(spec)
         if conflict_message:
             self._record_error(spec, conflict_message)
-            self.iface.messageBar().pushMessage(
-                self.MENU_TITLE,
-                f"{spec['label']} ist bereits extern aktiv.",
-                level=Qgis.Warning,
-                duration=6,
-            )
+            if announce:
+                self.iface.messageBar().pushMessage(
+                    self.MENU_TITLE,
+                    f"{spec['label']} ist bereits extern aktiv.",
+                    level=Qgis.Warning,
+                    duration=6,
+                )
             self._refresh_overview_dialog()
             return False
 
@@ -214,12 +277,13 @@ class TrassifyMasterToolsPlugin:
             self.loaded_plugins.append((spec, plugin))
             self._clear_error(spec)
             self._disable_load_action(spec)
-            self.iface.messageBar().pushMessage(
-                self.MENU_TITLE,
-                f"{spec['label']} wurde geladen.",
-                level=Qgis.Info,
-                duration=4,
-            )
+            if announce:
+                self.iface.messageBar().pushMessage(
+                    self.MENU_TITLE,
+                    f"{spec['label']} wurde geladen.",
+                    level=Qgis.Info,
+                    duration=4,
+                )
             self._refresh_overview_dialog()
             return True
         except Exception:
@@ -227,12 +291,13 @@ class TrassifyMasterToolsPlugin:
             self._purge_bundled_package(spec["package"])
             self._log_exception(spec["label"], "Fehler beim Laden")
             self._record_error(spec, self._short_exception_message())
-            self.iface.messageBar().pushMessage(
-                self.MENU_TITLE,
-                f"{spec['label']} konnte nicht geladen werden.",
-                level=Qgis.Warning,
-                duration=6,
-            )
+            if announce:
+                self.iface.messageBar().pushMessage(
+                    self.MENU_TITLE,
+                    f"{spec['label']} konnte nicht geladen werden.",
+                    level=Qgis.Warning,
+                    duration=6,
+                )
             self._refresh_overview_dialog()
             return False
 
@@ -373,11 +438,17 @@ class TrassifyMasterToolsPlugin:
             detail = label
             status_code = "ready"
             status_text = "Bereit"
+            tool_type = spec.get("tool_type", INTERACTIVE_TOOL)
+            tool_type_label = self.TOOL_TYPE_LABELS.get(tool_type, "Tool")
 
             if self._is_loaded(spec):
                 status_code = "loaded"
                 status_text = "Geladen"
-                detail = f"{label} ist bereits ueber das Master-Plugin aktiv."
+                if tool_type == BACKGROUND_TOOL:
+                    status_text = "Im Hintergrund aktiv"
+                    detail = f"{label} laeuft bereits im Hintergrund ueber das Master-Plugin."
+                else:
+                    detail = f"{label} ist bereits ueber das Master-Plugin aktiv."
             elif spec["key"] in conflict_by_key:
                 status_code = "conflict"
                 status_text = "Blockiert"
@@ -387,13 +458,18 @@ class TrassifyMasterToolsPlugin:
                 status_text = "Fehler"
                 detail = error_by_key[spec["key"]]
             else:
-                detail = f"{label} kann jetzt ueber das Master-Plugin geladen werden."
+                if tool_type == BACKGROUND_TOOL:
+                    detail = f"{label} wird beim Start automatisch als Hintergrundtool geladen."
+                else:
+                    detail = f"{label} kann jetzt ueber das Master-Plugin geladen werden."
 
             rows.append(
                 {
                     "key": spec["key"],
                     "label": label,
                     "package": spec["package"],
+                    "tool_type": tool_type,
+                    "tool_type_label": tool_type_label,
                     "status_code": status_code,
                     "status_text": status_text,
                     "detail": detail,
@@ -611,11 +687,26 @@ class TrassifyMasterToolsPlugin:
         return str(self.plugin_dir / "icon.svg")
 
     def _module_directory_candidates(self, spec):
-        yield self.bundled_plugins_root / spec["package"]
+        yield self._bundled_plugin_dir(spec)
 
         source_root = self.plugin_dir.parent / "plugin_sources" / spec["source_path"]
         if source_root.is_dir():
             yield source_root
+
+    def _bundled_plugin_dir(self, spec):
+        return self.bundled_plugins_root / spec.get("tool_type", INTERACTIVE_TOOL) / spec["package"]
+
+    def _interactive_specs(self):
+        return [
+            spec for spec in BUNDLED_PLUGINS
+            if spec.get("tool_type", INTERACTIVE_TOOL) == INTERACTIVE_TOOL
+        ]
+
+    def _background_specs(self):
+        return [
+            spec for spec in BUNDLED_PLUGINS
+            if spec.get("tool_type", INTERACTIVE_TOOL) == BACKGROUND_TOOL
+        ]
 
     def _split_tags(self, raw_tags):
         if not raw_tags:

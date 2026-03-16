@@ -19,10 +19,13 @@ Enthaltene Module:
 
 Hinweise:
 - Das Git-Repo enthaelt nur die Master-Struktur. Die eingebetteten Modulpakete werden erst beim Build in das ZIP unter `bundled_plugins/` erzeugt.
-- Fuer `Coordinatify` ist die erweiterte Variante aus `plugin_sources/geobasis-pro/coordinatify` gebuendelt.
+- Normale Tools landen im Bundle unter `bundled_plugins/interactive/`, Hintergrundtools unter `bundled_plugins/background/`.
+- Fuer `Coordinatify` ist die erweiterte Variante aus `plugin_sources/background-tools/coordinatify` gebuendelt.
 - Doppelte Temp-Kopien aus `plugin_sources/googlemaps/` und `plugin_sources/max-wild/funktionen-temp/` wurden bewusst nicht mehrfach eingebunden.
 - In QGIS erscheint das Master-Plugin mit eigenem Icon in der Toolbar. Ein Klick oeffnet eine Uebersicht aller enthaltenen Module mit Status und Ladefunktion.
-- Das Master-Plugin laedt beim Aktivieren keine eingebetteten Module automatisch mehr. Jedes Modul wird gezielt ueber das Master-Menue geladen.
+- Das Master-Plugin unterscheidet zwischen normalen Tools und Hintergrundtools.
+- Normale Tools werden gezielt ueber die Master-Uebersicht geladen.
+- Hintergrundtools werden beim Start automatisch aktiviert, damit Kontextmenues und unauffaellige Hilfsfunktionen sofort verfuegbar sind.
 - Wenn ein gleichnamiges Einzelplugin bereits separat in QGIS aktiv ist, blockiert das Master-Plugin das Nachladen bewusst, damit keine doppelten Menueeintraege oder Paketkonflikte entstehen.
 
 Build:
