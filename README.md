@@ -12,6 +12,8 @@ Repository-Struktur:
   Die QGIS-Repository-Datei fuer die direkte Einbindung per URL.
 - `trassify_master_tools.zip`
   Das Root-ZIP fuer das einfache GitHub-Repo-Schema `plugins.xml + plugin.zip`.
+- `preview/master-plugin-overlay-preview.html`
+  Interaktive HTML-Vorschau fuer Toolbar, Overlay und Modulstatus des Master-Plugins.
 
 Wichtig:
 
@@ -21,3 +23,4 @@ Wichtig:
 - In QGIS oeffnet das Master-Plugin ueber sein Toolbar-Icon eine Uebersicht aller enthaltenen Module.
 - Das Master-Plugin laedt beim Aktivieren keine eingebetteten Tools mehr automatisch, sondern nur noch gezielt ueber das Plugin-Menue. Das reduziert Konflikte und Abstuerze in QGIS.
 - Fuer das GitHub-Setup kannst du `./prepare_plugin_repository.sh` ausfuehren. Das aktualisiert `plugins.xml` und `trassify_master_tools.zip`.
+- Fuer schnelle UI/UX-Runden kannst du `preview/master-plugin-overlay-preview.html` direkt im Browser oeffnen.
