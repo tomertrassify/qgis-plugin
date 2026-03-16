@@ -20,16 +20,16 @@ class TrassifyMasterToolsPlugin:
     def __init__(self, iface):
         self.iface = iface
         self.plugin_dir = Path(__file__).resolve().parent
-        self.embedded_root = self.plugin_dir / "embedded_plugins"
+        self.modules_root = self.plugin_dir / "modules"
         self.status_action = None
         self.loaded_plugins = []
         self.load_errors = []
-        self._embedded_root_str = str(self.embedded_root)
+        self._modules_root_str = str(self.modules_root)
         self._registry_keys = []
         self._path_added = False
 
     def initGui(self):
-        self._ensure_embedded_import_path()
+        self._ensure_module_import_path()
 
         self.status_action = QAction(
             QIcon(str(self.plugin_dir / "icon.svg")),
@@ -39,7 +39,7 @@ class TrassifyMasterToolsPlugin:
         self.status_action.triggered.connect(self.show_status)
         self.iface.addPluginToMenu(self.MENU_TITLE, self.status_action)
 
-        self._load_embedded_plugins()
+        self._load_modules()
 
         if self.load_errors:
             summary = (
@@ -69,17 +69,17 @@ class TrassifyMasterToolsPlugin:
 
         self.loaded_plugins.clear()
         self.load_errors.clear()
-        self._unregister_embedded_plugins()
+        self._unregister_modules()
 
         if self.status_action is not None:
             self.iface.removePluginMenu(self.MENU_TITLE, self.status_action)
             self.status_action.deleteLater()
             self.status_action = None
 
-        self._cleanup_embedded_modules()
+        self._cleanup_module_imports()
 
-        if self._path_added and self._embedded_root_str in sys.path:
-            sys.path.remove(self._embedded_root_str)
+        if self._path_added and self._modules_root_str in sys.path:
+            sys.path.remove(self._modules_root_str)
             self._path_added = False
 
     def show_status(self):
@@ -105,12 +105,12 @@ class TrassifyMasterToolsPlugin:
             "\n".join(lines).strip(),
         )
 
-    def _ensure_embedded_import_path(self):
-        if self._embedded_root_str not in sys.path:
-            sys.path.insert(0, self._embedded_root_str)
+    def _ensure_module_import_path(self):
+        if self._modules_root_str not in sys.path:
+            sys.path.insert(0, self._modules_root_str)
             self._path_added = True
 
-    def _load_embedded_plugins(self):
+    def _load_modules(self):
         for spec in EMBEDDED_PLUGINS:
             plugin = None
 
@@ -165,7 +165,7 @@ class TrassifyMasterToolsPlugin:
         if registry_key in self._registry_keys:
             self._registry_keys.remove(registry_key)
 
-    def _unregister_embedded_plugins(self):
+    def _unregister_modules(self):
         try:
             import qgis.utils as qgis_utils
         except Exception:
@@ -179,7 +179,7 @@ class TrassifyMasterToolsPlugin:
 
         self._registry_keys.clear()
 
-    def _cleanup_embedded_modules(self):
+    def _cleanup_module_imports(self):
         for module_name, module in list(sys.modules.items()):
             module_file = getattr(module, "__file__", None)
             if not module_file:
@@ -190,12 +190,12 @@ class TrassifyMasterToolsPlugin:
             except OSError:
                 continue
 
-            if self._is_within_embedded_root(module_path):
+            if self._is_within_modules_root(module_path):
                 del sys.modules[module_name]
 
-    def _is_within_embedded_root(self, path):
+    def _is_within_modules_root(self, path):
         try:
-            path.relative_to(self.embedded_root)
+            path.relative_to(self.modules_root)
             return True
         except ValueError:
             return False
