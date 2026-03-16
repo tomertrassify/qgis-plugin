@@ -101,12 +101,6 @@ class TrassifyMasterToolsPlugin:
         load_actions = list(self.load_actions.values())
         toolbar_created = self._toolbar_created
 
-        self.overview_dialog = None
-        self.overview_action = None
-        self.load_actions = {}
-        self.toolbar = None
-        self._toolbar_created = False
-
         for spec, plugin in reversed(self.loaded_plugins):
             try:
                 plugin.unload()
@@ -135,6 +129,13 @@ class TrassifyMasterToolsPlugin:
         if self._is_qt_object_alive(toolbar) and toolbar_created:
             self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
             self._safe_qt_call(toolbar.deleteLater)
+
+        # Clear Python-side references only after all Qt cleanup finished.
+        self.overview_dialog = None
+        self.overview_action = None
+        self.load_actions = {}
+        self.toolbar = None
+        self._toolbar_created = False
 
         for path_text in reversed(self._added_import_paths):
             if path_text in sys.path:
