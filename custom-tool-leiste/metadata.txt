@@ -1,0 +1,15 @@
+[general]
+name=Custom Tool Leiste
+qgisMinimumVersion=3.28
+description=Toolbars kategorisieren, Favoriten setzen und eine versteckte Gesamtuebersicht nutzen.
+version=0.1.0
+author=Custom Team
+email=team@example.com
+about=Organisiert QGIS-Werkzeugleisten mit Kategorien und Favoriten in einem gebrandeten Side-Panel.
+tracker=
+repository=
+homepage=
+category=Plugins
+icon=icon.svg
+experimental=False
+deprecated=False

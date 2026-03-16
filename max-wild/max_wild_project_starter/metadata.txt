@@ -1,0 +1,17 @@
+[general]
+name=Projektstarter
+qgisMinimumVersion=3.22
+description=Waehlt einen Projektordner, erstellt ein projektbezogenes GeoPackage in 003_Ergebnis, styled das Projektgebiet, baut die Layerstruktur mit OSM und ALKIS auf und synchronisiert Zusatzexporte beim Speichern.
+version=1.5.0
+author=Tomer Maith
+email=
+about=Startet ein Projekt auf Basis der festen Ordnerstruktur 001_Projektinfos, 002_Leitungsauskunft und 003_Ergebnis.
+category=Vector
+icon=assets/max-wild-favicon.svg
+tags=projekt,kml,startordner,gpkg,vorlage,alkis,osm,export
+homepage=
+tracker=
+repository=
+experimental=False
+deprecated=False
+hasProcessingProvider=no

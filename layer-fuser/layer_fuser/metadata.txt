@@ -1,0 +1,16 @@
+[general]
+name=Layer Fuser
+qgisMinimumVersion=3.22
+description=Uebernimmt Geometrien und gemappte Attribute aus einer Shapefile oder GeoPackage-Layer in den ausgewaehlten Ziellayer.
+version=1.0.0
+author=Tomer Maith
+email=
+about=Fuegt einem bestehenden Vektorlayer die Features eines importierten Layers hinzu. Gleich benannte Felder werden erkannt, abweichende Felder koennen manuell zugeordnet oder ignoriert werden.
+category=Vector
+tags=vector,merge,attributes,geopackage,shapefile
+homepage=
+tracker=
+repository=
+hasProcessingProvider=no
+experimental=False
+deprecated=False
