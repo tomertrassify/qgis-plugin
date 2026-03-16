@@ -1,6 +1,0 @@
-<svg width="280" height="72" viewBox="0 0 280 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="0.5" y="0.5" width="279" height="71" rx="15.5" fill="#12314A" stroke="#1C4A6D"/>
-  <rect x="14" y="16" width="40" height="40" rx="10" fill="#5FA8D3"/>
-  <path d="M24 28H44V34H30V42H42V48H24V28Z" fill="#12314A"/>
-  <text x="66" y="45" fill="#F3F7FB" font-family="Arial, sans-serif" font-size="22" font-weight="700">Custom QGIS</text>
-</svg>

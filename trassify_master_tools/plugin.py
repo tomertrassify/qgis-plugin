@@ -16,6 +16,10 @@ class TrassifyMasterToolsPlugin:
     MENU_TITLE = "Trassify Master Tools"
     STATUS_ACTION_TEXT = "Modulstatus anzeigen"
     LOAD_ACTION_PREFIX = "Modul laden: "
+    BUNDLE_MISSING_MESSAGE = (
+        "Gebuendelte Module fehlen in diesem Quell-Checkout. "
+        "Installiere das gebaute ZIP; ./trassify_master_tools/build_zip.sh erstellt es."
+    )
     LOG_TAG = "Trassify Master Tools"
 
     def __init__(self, iface):
@@ -32,8 +36,6 @@ class TrassifyMasterToolsPlugin:
         self._path_added = False
 
     def initGui(self):
-        self._ensure_bundle_import_path()
-
         self.status_action = QAction(
             QIcon(str(self.plugin_dir / "icon.svg")),
             self.STATUS_ACTION_TEXT,
@@ -42,6 +44,16 @@ class TrassifyMasterToolsPlugin:
         self.status_action.triggered.connect(self.show_status)
         self.iface.addPluginToMenu(self.MENU_TITLE, self.status_action)
 
+        if not self.bundled_plugins_root.is_dir():
+            self.iface.messageBar().pushMessage(
+                self.MENU_TITLE,
+                self.BUNDLE_MISSING_MESSAGE,
+                level=Qgis.Warning,
+                duration=8,
+            )
+            return
+
+        self._ensure_bundle_import_path()
         self._create_load_actions()
         self._refresh_conflicts()
 
@@ -79,6 +91,14 @@ class TrassifyMasterToolsPlugin:
             self._path_added = False
 
     def show_status(self):
+        if not self.bundled_plugins_root.is_dir():
+            QMessageBox.information(
+                self.iface.mainWindow(),
+                self.MENU_TITLE,
+                self.BUNDLE_MISSING_MESSAGE,
+            )
+            return
+
         self._refresh_conflicts()
 
         lines = [

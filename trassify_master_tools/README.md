@@ -18,7 +18,7 @@ Enthaltene Module:
 - Export Pro
 
 Hinweise:
-- Die eingebetteten Modulpakete liegen gesammelt unter `trassify_master_tools/bundled_plugins/`.
+- Das Git-Repo enthaelt nur die Master-Struktur. Die eingebetteten Modulpakete werden erst beim Build in das ZIP unter `bundled_plugins/` erzeugt.
 - Fuer `Coordinatify` ist die erweiterte Variante aus `plugin_sources/geobasis-pro/coordinatify` gebuendelt.
 - Doppelte Temp-Kopien aus `plugin_sources/googlemaps/` und `plugin_sources/max-wild/funktionen-temp/` wurden bewusst nicht mehrfach eingebunden.
 - Das Master-Plugin laedt beim Aktivieren keine eingebetteten Module automatisch mehr. Jedes Modul wird gezielt ueber das Master-Menue geladen.

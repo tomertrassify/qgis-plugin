@@ -5,7 +5,7 @@ Repository-Struktur:
 - `trassify_master_tools/`
   Das installierbare Master-Plugin. Diese Struktur steht bewusst direkt auf Repo-Ebene im Vordergrund.
 - `plugin_sources/`
-  Die Einzelplugin-Quellen und Modulvorlagen. Das ist die Quellablage, nicht das installierbare Master-Plugin.
+  Die einzige Quellablage fuer die Einzelplugins. Das ist die Quelle der Wahrheit, nicht das installierbare Master-Plugin.
 - `dist/`
   Gebaute ZIP-Artefakte.
 - `plugins.xml`
@@ -16,7 +16,7 @@ Repository-Struktur:
 Wichtig:
 
 - Wenn du nur ein Plugin in QGIS installieren willst, nutze das Bundle aus `trassify_master_tools/`.
-- Die eingebetteten Modulkopien fuer das Bundle liegen in `trassify_master_tools/bundled_plugins/`.
-- Die Originalquellen bleiben separat unter `plugin_sources/`, damit sie weiter einzeln gepflegt werden koennen.
+- Die eingebetteten Modulkopien fuer das Bundle werden beim Build aus `plugin_sources/` erzeugt und liegen nicht mehr doppelt im Git-Repo.
+- Die Originalquellen bleiben unter `plugin_sources/`, damit jede Plugin-Datei nur noch einmal im Repository gepflegt wird.
 - Das Master-Plugin laedt beim Aktivieren keine eingebetteten Tools mehr automatisch, sondern nur noch gezielt ueber das Plugin-Menue. Das reduziert Konflikte und Abstuerze in QGIS.
 - Fuer das GitHub-Setup kannst du `./prepare_plugin_repository.sh` ausfuehren. Das aktualisiert `plugins.xml` und `trassify_master_tools.zip`.
