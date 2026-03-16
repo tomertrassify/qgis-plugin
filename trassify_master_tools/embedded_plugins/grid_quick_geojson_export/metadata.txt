@@ -1,0 +1,17 @@
+[general]
+name=Grid Quick GeoJSON Export
+description=Fuegt im Karten-Rechtsklick-Menue die Aktion "Schnellexport GeoJSON" hinzu und exportiert das geklickte Feature als einzelne GeoJSON-Datei.
+about=Rechtsklick auf ein Feature und es direkt als einzelnes GeoJSON speichern.
+version=1.0.2
+qgisMinimumVersion=3.10
+qgisMaximumVersion=3.99
+author=Tomer + Codex
+email=
+icon=
+experimental=False
+deprecated=False
+category=Vector
+tags=geojson,export,context menu,quick export
+homepage=
+tracker=
+repository=

@@ -1,0 +1,1326 @@
+from __future__ import annotations
+
+import base64
+import json
+import os
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime
+
+from qgis.PyQt.QtCore import Qt, QStringListModel, QSettings
+from qgis.PyQt.QtWidgets import QComboBox, QCompleter, QLineEdit, QMessageBox, QWidget
+from qgis.core import QgsVectorLayer
+
+
+PROPERTY_PREFIX = "nextcloud_form/"
+LOCAL_ROOT_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*lokale\s*sync-roots\s*\}\}", flags=re.IGNORECASE)
+
+DEFAULT_CONFIG = {
+    "nextcloud_base_url": "https://nextcloud.trassify.cloud",
+    "nextcloud_user": "",
+    "nextcloud_app_password": "",
+    "local_nextcloud_roots": [],
+    "nextcloud_folder_marker": "Nextcloud",
+    "path_field_name": "quelle_pfad",
+    "file_link_field_name": "quelle_1",
+    "folder_link_field_name": "quelle_2",
+    "name_field_name": "",
+    "stand_field_name": "Stand",
+    "operator_name_field_name": "Betreiber",
+    "operator_contact_field_name": "betr_anspr",
+    "operator_phone_field_name": "betr_tel",
+    "operator_email_field_name": "betr_email",
+    "operator_fault_field_name": "Stör-Nr.",
+    "operator_validity_field_name": "Gültigk.",
+    "operator_stand_field_name": "Stand",
+    "overwrite_existing_values": True,
+    "fill_on_form_open": False,
+    "operators": [],
+    "external_data_sources": [
+        {
+            "enabled": True,
+            "name": "Betreiberliste-beta",
+            "source_type": "file",
+            "provider": "ogr",
+            "source": "{{Lokale Sync-Roots}}/Trassify Allgemein/IT/Betreiberliste-beta.xlsx",
+            "table": "",
+            "operator_name_field": "Betreiber",
+            "contact_name_field": "betr_anspr",
+            "phone_field": "betr_tel",
+            "email_field": "betr_email",
+            "fault_number_field": "Stör-Nr.",
+            "folder_path_field": "",
+        }
+    ],
+}
+
+USER_SETTINGS_PREFIX = "AttributionButler/user_config"
+USER_CONFIG_KEYS = (
+    "nextcloud_base_url",
+    "nextcloud_user",
+    "nextcloud_app_password",
+    "local_nextcloud_roots",
+    "nextcloud_folder_marker",
+)
+
+_SHARE_CACHE: dict[tuple[str, str, str], str] = {}
+
+
+def _property_key(name: str) -> str:
+    return f"{PROPERTY_PREFIX}{name}"
+
+
+def _user_setting_key(name: str) -> str:
+    return f"{USER_SETTINGS_PREFIX}/{name}"
+
+
+def _to_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "ja", "on")
+
+
+def _parse_roots(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(v).strip() for v in parsed if str(v).strip()]
+        except Exception:
+            pass
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _load_user_config() -> dict:
+    settings = QSettings()
+    cfg = {}
+    for key in USER_CONFIG_KEYS:
+        setting_key = _user_setting_key(key)
+        if not settings.contains(setting_key):
+            continue
+        raw = settings.value(setting_key, None)
+        if key == "local_nextcloud_roots":
+            cfg[key] = _parse_roots(raw)
+        else:
+            cfg[key] = str(raw or "").strip()
+    return cfg
+
+
+def _normalize_operator_entry(entry) -> dict:
+    if isinstance(entry, dict):
+        return {
+            "source_name": str(
+                entry.get(
+                    "source_name",
+                    entry.get("_source_name", entry.get("data_source", entry.get("datenquelle", ""))),
+                )
+                or ""
+            ).strip(),
+            "operator_name": str(
+                entry.get("operator_name", entry.get("betreiber", ""))
+                or ""
+            ).strip(),
+            "validity": str(
+                entry.get(
+                    "validity",
+                    entry.get(
+                        "gueltigkeit",
+                        entry.get("gültigkeit", entry.get("gueltigk", entry.get("gültigk", ""))),
+                    ),
+                )
+                or ""
+            ).strip(),
+            "stand": str(entry.get("stand", entry.get("operator_stand", entry.get("stand_datum", ""))) or "").strip(),
+            "contact_name": str(
+                entry.get("contact_name", entry.get("ansprechpartner", entry.get("kontakt", "")))
+                or ""
+            ).strip(),
+            "phone": str(entry.get("phone", entry.get("telefonnummer", "")) or "").strip(),
+            "email": str(entry.get("email", entry.get("mail", "")) or "").strip(),
+            "fault_number": str(
+                entry.get("fault_number", entry.get("stoernummer", ""))
+                or ""
+            ).strip(),
+            "folder_path": str(
+                entry.get(
+                    "folder_path",
+                    entry.get("ordnerpfad", entry.get("ordner", entry.get("path", ""))),
+                )
+                or ""
+            ).strip(),
+        }
+    if isinstance(entry, (list, tuple)):
+        raw_values = [str(v or "").strip() for v in list(entry)]
+        if len(raw_values) >= 9:
+            values = raw_values[:9]
+        elif len(raw_values) >= 7:
+            values = [
+                raw_values[0],
+                raw_values[1],
+                "",
+                "",
+                raw_values[2],
+                raw_values[3],
+                raw_values[4],
+                raw_values[5],
+                raw_values[6],
+            ]
+        else:
+            values = [""] + raw_values[:8]
+        while len(values) < 9:
+            values.append("")
+        return {
+            "source_name": values[0],
+            "operator_name": values[1],
+            "validity": values[2],
+            "stand": values[3],
+            "contact_name": values[4],
+            "phone": values[5],
+            "email": values[6],
+            "fault_number": values[7],
+            "folder_path": values[8],
+        }
+    return {
+        "source_name": "",
+        "operator_name": str(entry or "").strip(),
+        "validity": "",
+        "stand": "",
+        "contact_name": "",
+        "phone": "",
+        "email": "",
+        "fault_number": "",
+        "folder_path": "",
+    }
+
+
+def _normalize_data_source_entry(entry) -> dict:
+    if isinstance(entry, dict):
+        source_type = str(entry.get("source_type", entry.get("type", "file")) or "file").strip().lower()
+        if source_type not in ("file", "qgis_uri"):
+            source_type = "file"
+
+        provider = str(entry.get("provider", "ogr") or "ogr").strip() or "ogr"
+        source_value = str(
+            entry.get("source", entry.get("path", entry.get("uri", ""))) or ""
+        ).strip()
+        table_value = str(
+            entry.get("table", entry.get("layer_name", entry.get("sheet", ""))) or ""
+        ).strip()
+
+        return {
+            "enabled": _to_bool(entry.get("enabled", entry.get("active", True)), True),
+            "name": str(entry.get("name", entry.get("label", "")) or "").strip(),
+            "source_type": source_type,
+            "provider": provider,
+            "source": source_value,
+            "table": table_value,
+            "operator_name_field": str(
+                entry.get("operator_name_field", entry.get("operator_name_column", ""))
+                or ""
+            ).strip(),
+            "contact_name_field": str(
+                entry.get("contact_name_field", entry.get("contact_column", ""))
+                or ""
+            ).strip(),
+            "phone_field": str(entry.get("phone_field", entry.get("phone_column", "")) or "").strip(),
+            "email_field": str(entry.get("email_field", entry.get("email_column", "")) or "").strip(),
+            "fault_number_field": str(
+                entry.get("fault_number_field", entry.get("fault_number_column", ""))
+                or ""
+            ).strip(),
+            "folder_path_field": str(
+                entry.get("folder_path_field", entry.get("folder_path_column", ""))
+                or ""
+            ).strip(),
+        }
+
+    return {
+        "enabled": True,
+        "name": "",
+        "source_type": "file",
+        "provider": "ogr",
+        "source": str(entry or "").strip(),
+        "table": "",
+        "operator_name_field": "",
+        "contact_name_field": "",
+        "phone_field": "",
+        "email_field": "",
+        "fault_number_field": "",
+        "folder_path_field": "",
+    }
+
+
+def _parse_operators(value) -> list[dict]:
+    if value is None:
+        return []
+
+    parsed = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = [text]
+
+    if not isinstance(parsed, list):
+        return []
+
+    result = []
+    for entry in parsed:
+        normalized = _normalize_operator_entry(entry)
+        if any(
+            [
+                normalized["operator_name"],
+                normalized["validity"],
+                normalized["stand"],
+                normalized["contact_name"],
+                normalized["phone"],
+                normalized["email"],
+                normalized["fault_number"],
+                normalized["folder_path"],
+            ]
+        ):
+            result.append(normalized)
+    return result
+
+
+def _parse_data_sources(value) -> list[dict]:
+    if value is None:
+        return []
+
+    parsed = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = [text]
+
+    if not isinstance(parsed, list):
+        return []
+
+    result = []
+    for entry in parsed:
+        normalized = _normalize_data_source_entry(entry)
+        if any(
+            [
+                normalized["name"],
+                normalized["source"],
+                normalized["table"],
+                normalized["operator_name_field"],
+                normalized["contact_name_field"],
+                normalized["phone_field"],
+                normalized["email_field"],
+                normalized["fault_number_field"],
+                normalized["folder_path_field"],
+            ]
+        ):
+            result.append(normalized)
+    return result
+
+
+def _layer_config(layer) -> dict:
+    cfg = dict(DEFAULT_CONFIG)
+    for key, default in DEFAULT_CONFIG.items():
+        raw = layer.customProperty(_property_key(key), default)
+        if key in ("overwrite_existing_values", "fill_on_form_open"):
+            cfg[key] = _to_bool(raw, bool(default))
+        elif key == "local_nextcloud_roots":
+            cfg[key] = _parse_roots(raw)
+        elif key == "operators":
+            cfg[key] = _parse_operators(raw)
+        elif key == "external_data_sources":
+            cfg[key] = _parse_data_sources(raw)
+        else:
+            cfg[key] = str(raw or "").strip()
+    user_cfg = _load_user_config()
+    for key in USER_CONFIG_KEYS:
+        if key in user_cfg:
+            cfg[key] = user_cfg[key]
+    return cfg
+
+
+def _normalize_path(path: str) -> str:
+    path = urllib.parse.unquote(str(path or "").strip())
+    if path.startswith("file://"):
+        parsed = urllib.parse.urlparse(path)
+        path = urllib.parse.unquote(parsed.path or "")
+    path = path.replace("\\", "/")
+    return re.sub(r"/{2,}", "/", path)
+
+
+def _join_root_and_relative(root: str, relative_nc_path: str) -> str:
+    return root.rstrip("/") + "/" + relative_nc_path.lstrip("/")
+
+
+def _to_nextcloud_and_local_path(raw_path: str, config: dict) -> tuple[str | None, str | None]:
+    if not raw_path:
+        return None, None
+
+    path = _normalize_path(raw_path)
+    if not path:
+        return None, None
+
+    roots = [_normalize_path(p).rstrip("/") for p in config["local_nextcloud_roots"] if p]
+    lower_path = path.lower()
+
+    for root in roots:
+        lower_root = root.lower()
+        idx = lower_path.find(lower_root)
+        if idx < 0:
+            continue
+        tail = path[idx + len(root) :]
+        if not tail.startswith("/"):
+            tail = "/" + tail
+        return tail, _join_root_and_relative(root, tail)
+
+    for root in roots:
+        root_name = os.path.basename(root)
+        if not root_name:
+            continue
+        idx = lower_path.find(root_name.lower())
+        if idx < 0:
+            continue
+        tail = path[idx + len(root_name) :]
+        if not tail.startswith("/"):
+            tail = "/" + tail
+        abs_path = _join_root_and_relative(root, tail)
+        return tail, abs_path
+
+    marker = str(config.get("nextcloud_folder_marker", "Nextcloud")).strip("/")
+    if marker:
+        token = "/" + marker.lower() + "/"
+        marker_pos = lower_path.find(token)
+        if marker_pos >= 0:
+            tail = path[marker_pos + len(token) :]
+            tail = "/" + tail.lstrip("/")
+            base = roots[0] if roots else ""
+            abs_path = _join_root_and_relative(base, tail) if base else tail
+            return tail, abs_path
+
+    nc_path = path if path.startswith("/") else "/" + path
+    base = roots[0] if roots else ""
+    abs_path = _join_root_and_relative(base, nc_path) if base else nc_path
+    return nc_path, abs_path
+
+
+def _ocs_request(
+    config: dict,
+    method: str,
+    endpoint_url: str,
+    params: dict | None = None,
+    data: dict | None = None,
+) -> dict:
+    all_params = {"format": "json"}
+    if params:
+        all_params.update(params)
+    query = urllib.parse.urlencode(all_params, doseq=True)
+    url = f"{endpoint_url}?{query}"
+
+    user = config["nextcloud_user"]
+    app_password = config["nextcloud_app_password"]
+    encoded_auth = base64.b64encode(f"{user}:{app_password}".encode("utf-8")).decode(
+        "ascii"
+    )
+
+    headers = {
+        "Authorization": f"Basic {encoded_auth}",
+        "OCS-APIRequest": "true",
+        "Accept": "application/json",
+    }
+
+    body = None
+    if data is not None:
+        body = urllib.parse.urlencode(data).encode("utf-8")
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    req = urllib.request.Request(url=url, data=body, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            payload = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Nextcloud HTTP {exc.code}: {body_text}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Nextcloud nicht erreichbar: {exc}") from exc
+
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Ungueltige API-Antwort: {payload[:300]}") from exc
+
+    meta = parsed.get("ocs", {}).get("meta", {})
+    status = int(meta.get("statuscode", 0) or 0)
+    if status not in (100, 200):
+        message = meta.get("message", "Unbekannt")
+        raise RuntimeError(f"Nextcloud API-Fehler {status}: {message}")
+    return parsed
+
+
+def _as_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _to_int(value, default=-1):
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def get_or_create_public_link(config: dict, nc_path: str) -> str:
+    cache_key = (
+        str(config["nextcloud_base_url"]).rstrip("/"),
+        str(config["nextcloud_user"]),
+        nc_path,
+    )
+    if cache_key in _SHARE_CACHE:
+        return _SHARE_CACHE[cache_key]
+
+    base_url = str(config["nextcloud_base_url"]).rstrip("/")
+    endpoint = f"{base_url}/ocs/v2.php/apps/files_sharing/api/v1/shares"
+
+    existing = _ocs_request(
+        config=config,
+        method="GET",
+        endpoint_url=endpoint,
+        params={"path": nc_path, "reshares": "true", "subfiles": "false"},
+    )
+    for entry in _as_list(existing.get("ocs", {}).get("data")):
+        if _to_int(entry.get("share_type")) == 3 and entry.get("url"):
+            link = str(entry["url"])
+            _SHARE_CACHE[cache_key] = link
+            return link
+
+    created = _ocs_request(
+        config=config,
+        method="POST",
+        endpoint_url=endpoint,
+        data={"path": nc_path, "shareType": 3, "permissions": 1},
+    )
+    link = (created.get("ocs", {}).get("data") or {}).get("url")
+    if not link:
+        raise RuntimeError(f"Kein Share-Link erzeugt fuer: {nc_path}")
+    link = str(link)
+    _SHARE_CACHE[cache_key] = link
+    return link
+
+
+def _configured_fields(config: dict) -> list[str]:
+    names = [
+        config.get("path_field_name"),
+        config.get("file_link_field_name"),
+        config.get("folder_link_field_name"),
+        config.get("name_field_name"),
+        config.get("stand_field_name"),
+        config.get("operator_name_field_name"),
+        config.get("operator_contact_field_name"),
+        config.get("operator_phone_field_name"),
+        config.get("operator_email_field_name"),
+        config.get("operator_fault_field_name"),
+        config.get("operator_validity_field_name"),
+        config.get("operator_stand_field_name"),
+    ]
+    return [str(name).strip() for name in names if str(name or "").strip()]
+
+
+def _missing_fields(layer, config: dict) -> list[str]:
+    return [name for name in _configured_fields(config) if layer.fields().indexOf(name) < 0]
+
+
+def _is_empty_value(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    return False
+
+
+def _needs_update(feature, field_name: str, overwrite_existing_values: bool) -> bool:
+    if not str(field_name or "").strip():
+        return False
+    if overwrite_existing_values:
+        return True
+    try:
+        current = feature[field_name]
+    except Exception:
+        return True
+    return _is_empty_value(current)
+
+
+def _set_if_allowed(
+    dialog,
+    feature,
+    field_name: str,
+    value,
+    overwrite_existing_values: bool,
+):
+    if not str(field_name or "").strip() or value is None:
+        return
+    if not overwrite_existing_values:
+        try:
+            current = feature[field_name]
+            if not _is_empty_value(current):
+                return
+        except Exception:
+            pass
+    dialog.changeAttribute(field_name, value)
+
+
+def _stand_date(abs_file_path: str | None) -> str | None:
+    if not abs_file_path or not os.path.exists(abs_file_path):
+        return None
+    ts = os.path.getmtime(abs_file_path)
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+
+
+def _normalized_operator_name(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _resolve_field_name(layer: QgsVectorLayer, configured_name: str, aliases: list[str]) -> str:
+    field_names = [field.name() for field in layer.fields()]
+    lowered = {name.lower(): name for name in field_names}
+    normalized = {_normalize_field_token(name): name for name in field_names}
+
+    token = str(configured_name or "").strip()
+    if token:
+        if token in field_names:
+            return token
+        if token.lower() in lowered:
+            return lowered[token.lower()]
+        norm_token = _normalize_field_token(token)
+        if norm_token in normalized:
+            return normalized[norm_token]
+        for field_name in field_names:
+            norm_field = _normalize_field_token(field_name)
+            if norm_token and (norm_token in norm_field or norm_field in norm_token):
+                return field_name
+
+    for alias in aliases:
+        alias_token = str(alias or "").strip().lower()
+        if alias_token and alias_token in lowered:
+            return lowered[alias_token]
+        norm_alias = _normalize_field_token(alias)
+        if norm_alias and norm_alias in normalized:
+            return normalized[norm_alias]
+        for field_name in field_names:
+            norm_field = _normalize_field_token(field_name)
+            if norm_alias and (norm_alias in norm_field or norm_field in norm_alias):
+                return field_name
+
+    return ""
+
+
+def _normalize_field_token(value: str) -> str:
+    token = str(value or "").strip().lower()
+    token = (
+        token.replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
+    )
+    return "".join(ch for ch in token if ch.isalnum())
+
+
+def _is_generic_field_name(value: str) -> bool:
+    return bool(re.fullmatch(r"field\d+", str(value or "").strip().lower()))
+
+
+def _layer_uses_generic_fields(layer: QgsVectorLayer) -> bool:
+    names = [field.name() for field in layer.fields()]
+    return bool(names) and all(_is_generic_field_name(name) for name in names)
+
+
+def _header_tokens_from_first_feature(layer: QgsVectorLayer) -> list[str]:
+    for feature in layer.getFeatures():
+        return [str(value or "").strip() for value in feature.attributes()]
+    return []
+
+
+def _resolve_column_index(header_tokens: list[str], configured_name: str, aliases: list[str]) -> int:
+    normalized = {}
+    lowered = {}
+    for idx, token in enumerate(header_tokens):
+        text = str(token or "").strip()
+        if not text:
+            continue
+        lowered[text.lower()] = idx
+        norm_token = _normalize_field_token(text)
+        if norm_token and norm_token not in normalized:
+            normalized[norm_token] = idx
+
+    value = str(configured_name or "").strip()
+    if value:
+        if value.lower() in lowered:
+            return lowered[value.lower()]
+        norm_value = _normalize_field_token(value)
+        if norm_value in normalized:
+            return normalized[norm_value]
+        for idx, token in enumerate(header_tokens):
+            norm_token = _normalize_field_token(token)
+            if norm_value and (norm_value in norm_token or norm_token in norm_value):
+                return idx
+
+    for alias in aliases:
+        alias_text = str(alias or "").strip()
+        if not alias_text:
+            continue
+        if alias_text.lower() in lowered:
+            return lowered[alias_text.lower()]
+        norm_alias = _normalize_field_token(alias_text)
+        if norm_alias in normalized:
+            return normalized[norm_alias]
+        for idx, token in enumerate(header_tokens):
+            norm_token = _normalize_field_token(token)
+            if norm_alias and (norm_alias in norm_token or norm_token in norm_alias):
+                return idx
+    return -1
+
+
+def _safe_attribute_by_index(feature, idx: int):
+    if idx < 0:
+        return ""
+    attrs = feature.attributes()
+    if idx >= len(attrs):
+        return ""
+    return attrs[idx]
+
+
+def _expand_local_root_placeholder(value: str, roots: list[str]) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if not LOCAL_ROOT_PLACEHOLDER_PATTERN.search(text):
+        return text
+
+    root = ""
+    for candidate in roots or []:
+        token = str(candidate or "").strip()
+        if token:
+            root = token.rstrip("/\\")
+            break
+    # Use callable replacement so Windows backslashes are treated literally.
+    return LOCAL_ROOT_PLACEHOLDER_PATTERN.sub(lambda _match: root, text)
+
+
+def _resolved_source_value(source: dict, config: dict) -> str:
+    source_value = str(source.get("source", "") or "").strip()
+    roots = [
+        str(path or "").strip()
+        for path in config.get("local_nextcloud_roots", [])
+        if str(path or "").strip()
+    ]
+    if not roots:
+        roots = [
+            str(path or "").strip()
+            for path in DEFAULT_CONFIG.get("local_nextcloud_roots", [])
+            if str(path or "").strip()
+        ]
+    return _expand_local_root_placeholder(source_value, roots)
+
+
+def _source_uri_and_provider(source: dict, config: dict) -> tuple[str, str]:
+    source_type = str(source.get("source_type", "file") or "file").strip().lower()
+    provider = str(source.get("provider", "ogr") or "ogr").strip() or "ogr"
+    source_value = _resolved_source_value(source, config)
+    table_value = str(source.get("table", "") or "").strip()
+
+    if source_type == "file":
+        uri = source_value
+        if uri.startswith("file://"):
+            parsed = urllib.parse.urlparse(uri)
+            uri = urllib.parse.unquote(parsed.path or "")
+        if table_value and provider == "ogr" and "|layername=" not in uri.lower():
+            uri = f"{uri}|layername={table_value}"
+        return uri, provider
+
+    if table_value and provider == "ogr" and "|layername=" not in source_value.lower():
+        return f"{source_value}|layername={table_value}", provider
+    return source_value, provider
+
+
+def _read_operator_entries_from_external_source(source: dict, config: dict) -> list[dict]:
+    if not _to_bool(source.get("enabled", True), True):
+        return []
+    source_value = _resolved_source_value(source, config)
+    if not source_value:
+        return []
+
+    uri, provider = _source_uri_and_provider(source, config)
+    ext_layer = QgsVectorLayer(uri, "attributionbutler_data_source", provider)
+    if not ext_layer.isValid():
+        if (
+            str(source.get("source_type", "file")).lower() == "file"
+            and str(source.get("table", "")).strip()
+            and provider == "ogr"
+        ):
+            ext_layer = QgsVectorLayer(source_value, "attributionbutler_data_source", provider)
+        if not ext_layer.isValid():
+            return []
+
+    fallback_name = (
+        str(source.get("operator_name_field", "") or "").strip()
+        or str(config.get("operator_name_field_name", "") or "").strip()
+        or str(DEFAULT_CONFIG.get("operator_name_field_name", "") or "")
+    )
+    fallback_contact = (
+        str(source.get("contact_name_field", "") or "").strip()
+        or str(config.get("operator_contact_field_name", "") or "").strip()
+        or str(DEFAULT_CONFIG.get("operator_contact_field_name", "") or "")
+    )
+    fallback_phone = (
+        str(source.get("phone_field", "") or "").strip()
+        or str(config.get("operator_phone_field_name", "") or "").strip()
+        or str(DEFAULT_CONFIG.get("operator_phone_field_name", "") or "")
+    )
+    fallback_email = (
+        str(source.get("email_field", "") or "").strip()
+        or str(config.get("operator_email_field_name", "") or "").strip()
+        or str(DEFAULT_CONFIG.get("operator_email_field_name", "") or "")
+    )
+    fallback_fault = (
+        str(source.get("fault_number_field", "") or "").strip()
+        or str(config.get("operator_fault_field_name", "") or "").strip()
+        or str(DEFAULT_CONFIG.get("operator_fault_field_name", "") or "")
+    )
+    fallback_validity = (
+        str(config.get("operator_validity_field_name", "") or "").strip()
+        or str(DEFAULT_CONFIG.get("operator_validity_field_name", "") or "")
+    )
+    fallback_stand = (
+        str(config.get("operator_stand_field_name", "") or "").strip()
+        or str(DEFAULT_CONFIG.get("operator_stand_field_name", "") or "")
+    )
+
+    generic_fields = _layer_uses_generic_fields(ext_layer)
+    header_tokens = _header_tokens_from_first_feature(ext_layer) if generic_fields else []
+
+    if generic_fields and header_tokens:
+        name_col = _resolve_column_index(
+            header_tokens,
+            fallback_name,
+            ["operator_name", "betreibername", "betreiber", "name"],
+        )
+        if name_col < 0 and header_tokens:
+            name_col = 0
+        if name_col < 0:
+            return []
+
+        contact_col = _resolve_column_index(
+            header_tokens,
+            fallback_contact,
+            ["contact_name", "ansprechpartner", "kontakt", "kontaktperson", "betr_anspr"],
+        )
+        phone_col = _resolve_column_index(
+            header_tokens,
+            fallback_phone,
+            ["phone", "telefon", "telefonnummer", "betr_tel", "tel"],
+        )
+        email_col = _resolve_column_index(
+            header_tokens,
+            fallback_email,
+            ["email", "mail", "e-mail", "e_mail", "betr_email"],
+        )
+        fault_col = _resolve_column_index(
+            header_tokens,
+            fallback_fault,
+            ["fault_number", "stoernummer", "stoernr", "stornummer", "betr_stoer", "stoer_nr"],
+        )
+        validity_col = _resolve_column_index(
+            header_tokens,
+            fallback_validity,
+            ["validity", "gueltigkeit", "gültigkeit", "gueltigk", "gültigk"],
+        )
+        stand_col = _resolve_column_index(
+            header_tokens,
+            fallback_stand,
+            ["stand", "stand_datum", "statusdatum"],
+        )
+    else:
+        name_field = _resolve_field_name(
+            ext_layer,
+            fallback_name,
+            ["operator_name", "betreibername", "betreiber", "name"],
+        )
+        if not name_field and ext_layer.fields():
+            name_field = ext_layer.fields()[0].name()
+        if not name_field:
+            return []
+
+        contact_field = _resolve_field_name(
+            ext_layer,
+            fallback_contact,
+            ["contact_name", "ansprechpartner", "kontakt", "kontaktperson", "betr_anspr"],
+        )
+        phone_field = _resolve_field_name(
+            ext_layer,
+            fallback_phone,
+            ["phone", "telefon", "telefonnummer", "betr_tel", "tel"],
+        )
+        email_field = _resolve_field_name(
+            ext_layer,
+            fallback_email,
+            ["email", "mail", "e-mail", "e_mail", "betr_email"],
+        )
+        fault_field = _resolve_field_name(
+            ext_layer,
+            fallback_fault,
+            ["fault_number", "stoernummer", "stoernr", "stornummer", "betr_stoer", "stoer_nr"],
+        )
+        validity_field = _resolve_field_name(
+            ext_layer,
+            fallback_validity,
+            ["validity", "gueltigkeit", "gültigkeit", "gueltigk", "gültigk"],
+        )
+        stand_field = _resolve_field_name(
+            ext_layer,
+            fallback_stand,
+            ["stand", "stand_datum", "statusdatum"],
+        )
+    entries = []
+    for idx, feature in enumerate(ext_layer.getFeatures()):
+        if idx >= 50000:
+            break
+
+        if generic_fields and idx == 0:
+            continue
+
+        entry = _normalize_operator_entry(
+            {
+                "operator_name": _safe_attribute_by_index(feature, name_col)
+                if generic_fields
+                else (feature[name_field] if name_field else ""),
+                "contact_name": _safe_attribute_by_index(feature, contact_col)
+                if generic_fields
+                else (feature[contact_field] if contact_field else ""),
+                "phone": _safe_attribute_by_index(feature, phone_col)
+                if generic_fields
+                else (feature[phone_field] if phone_field else ""),
+                "email": _safe_attribute_by_index(feature, email_col)
+                if generic_fields
+                else (feature[email_field] if email_field else ""),
+                "fault_number": _safe_attribute_by_index(feature, fault_col)
+                if generic_fields
+                else (feature[fault_field] if fault_field else ""),
+                "validity": _safe_attribute_by_index(feature, validity_col)
+                if generic_fields
+                else (feature[validity_field] if validity_field else ""),
+                "stand": _safe_attribute_by_index(feature, stand_col)
+                if generic_fields
+                else (feature[stand_field] if stand_field else ""),
+                "folder_path": "",
+            }
+        )
+        if entry["operator_name"]:
+            entries.append(entry)
+    return entries
+
+
+def _all_operator_entries(config: dict) -> list[dict]:
+    result = []
+    for entry in config.get("operators", []):
+        normalized = _normalize_operator_entry(entry)
+        if normalized["operator_name"]:
+            result.append(normalized)
+
+    for source in config.get("external_data_sources", []):
+        normalized_source = _normalize_data_source_entry(source)
+        result.extend(_read_operator_entries_from_external_source(normalized_source, config))
+    return result
+
+
+def _unique_operator_entry(operator_entries: list[dict], operator_name_value) -> dict | None:
+    needle = _normalized_operator_name(operator_name_value)
+    if not needle:
+        return None
+
+    matches = []
+    for entry in operator_entries:
+        if _normalized_operator_name(entry.get("operator_name")) == needle:
+            matches.append(entry)
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+
+    def _sig(entry: dict):
+        return (
+            str(entry.get("validity", "") or "").strip().lower(),
+            str(entry.get("stand", "") or "").strip().lower(),
+            str(entry.get("contact_name", "") or "").strip().lower(),
+            str(entry.get("phone", "") or "").strip().lower(),
+            str(entry.get("email", "") or "").strip().lower(),
+            str(entry.get("fault_number", "") or "").strip().lower(),
+            str(entry.get("folder_path", "") or "").strip().lower(),
+        )
+
+    signatures = {_sig(entry) for entry in matches}
+    if len(signatures) == 1:
+        return matches[0]
+
+    def _score(entry: dict) -> int:
+        values = [
+            str(entry.get("validity", "") or "").strip(),
+            str(entry.get("stand", "") or "").strip(),
+            str(entry.get("contact_name", "") or "").strip(),
+            str(entry.get("phone", "") or "").strip(),
+            str(entry.get("email", "") or "").strip(),
+            str(entry.get("fault_number", "") or "").strip(),
+            str(entry.get("folder_path", "") or "").strip(),
+        ]
+        return sum(1 for value in values if value)
+
+    best = max(_score(entry) for entry in matches)
+    best_entries = [entry for entry in matches if _score(entry) == best]
+    if len(best_entries) == 1 and best > 0:
+        return best_entries[0]
+    return None
+
+
+def _apply_operator_lookup(
+    dialog,
+    feature,
+    config: dict,
+    operator_entries: list[dict],
+    operator_name_value,
+):
+    entry = _unique_operator_entry(operator_entries, operator_name_value)
+    if not entry:
+        return False
+
+    # Betreiber-Lookup soll abhängige Felder synchron halten und daher immer überschreiben.
+    overwrite = True
+    targets = [
+        (config.get("operator_contact_field_name", ""), entry.get("contact_name")),
+        (config.get("operator_phone_field_name", ""), entry.get("phone")),
+        (config.get("operator_email_field_name", ""), entry.get("email")),
+        (config.get("operator_fault_field_name", ""), entry.get("fault_number")),
+        (config.get("operator_validity_field_name", ""), entry.get("validity")),
+        (config.get("operator_stand_field_name", ""), entry.get("stand")),
+    ]
+    for field_name, field_value in targets:
+        if field_value in (None, ""):
+            continue
+        _set_if_allowed(dialog, feature, field_name, field_value, overwrite)
+
+    folder_field = str(config.get("folder_link_field_name", "") or "").strip()
+    folder_source_path = str(entry.get("folder_path", "") or "").strip()
+    if not folder_field or not folder_source_path:
+        return True
+
+    nc_folder_path, _ = _to_nextcloud_and_local_path(folder_source_path, config)
+    if not nc_folder_path:
+        return True
+
+    try:
+        folder_link = get_or_create_public_link(config, nc_folder_path)
+    except Exception as exc:
+        if _is_missing_path_error(str(exc)):
+            return True
+        raise
+    _set_if_allowed(dialog, feature, folder_field, folder_link, overwrite)
+    return True
+
+
+def _clear_operator_lookup_fields(dialog, config: dict):
+    fields = [
+        str(config.get("operator_contact_field_name", "") or "").strip(),
+        str(config.get("operator_phone_field_name", "") or "").strip(),
+        str(config.get("operator_email_field_name", "") or "").strip(),
+        str(config.get("operator_fault_field_name", "") or "").strip(),
+        str(config.get("operator_validity_field_name", "") or "").strip(),
+        str(config.get("operator_stand_field_name", "") or "").strip(),
+    ]
+    for field_name in fields:
+        if not field_name:
+            continue
+        try:
+            dialog.changeAttribute(field_name, None)
+        except Exception:
+            pass
+
+
+def _unique_texts(values) -> list[str]:
+    result = []
+    seen = set()
+    for value in values or []:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
+
+
+def _operator_name_suggestions(config: dict, layer, field_name: str, operator_entries: list[dict]) -> list[str]:
+    configured = []
+    for entry in operator_entries:
+        configured.append(str(_normalize_operator_entry(entry).get("operator_name", "") or "").strip())
+
+    unique_values = []
+    field_index = layer.fields().indexOf(field_name)
+    if field_index >= 0 and hasattr(layer, "uniqueValues"):
+        try:
+            unique_values = list(layer.uniqueValues(field_index, 5000))
+        except Exception:
+            try:
+                unique_values = list(layer.uniqueValues(field_index))
+            except Exception:
+                unique_values = []
+
+    # Betreiberliste zuerst, dann bereits vorhandene Layer-Werte.
+    return _unique_texts(configured + unique_values)
+
+
+def _editor_widget_for_field(dialog, layer, field_name: str):
+    hosts = [dialog]
+    attr_form = None
+    try:
+        attr_form = dialog.attributeForm()
+    except Exception:
+        attr_form = None
+    if attr_form is not None:
+        hosts.append(attr_form)
+
+    for host in hosts:
+        wrapper_fn = getattr(host, "widgetWrapper", None)
+        if callable(wrapper_fn):
+            try:
+                wrapper = wrapper_fn(field_name)
+                if wrapper is not None and hasattr(wrapper, "widget"):
+                    widget = wrapper.widget()
+                    if isinstance(widget, QWidget):
+                        return widget
+            except Exception:
+                pass
+
+    field_index = layer.fields().indexOf(field_name)
+    if attr_form is not None and field_index >= 0:
+        wrapper_fn = getattr(attr_form, "widgetWrapper", None)
+        if callable(wrapper_fn):
+            try:
+                wrapper = wrapper_fn(field_index)
+                if wrapper is not None and hasattr(wrapper, "widget"):
+                    widget = wrapper.widget()
+                    if isinstance(widget, QWidget):
+                        return widget
+            except Exception:
+                pass
+
+    for host in hosts:
+        try:
+            widget = host.findChild(QWidget, field_name)
+            if isinstance(widget, QWidget):
+                return widget
+        except Exception:
+            pass
+
+    return None
+
+
+def _line_edit_from_widget(widget):
+    if isinstance(widget, QLineEdit):
+        return widget
+    if isinstance(widget, QComboBox) and widget.isEditable():
+        return widget.lineEdit()
+    if isinstance(widget, QWidget):
+        return widget.findChild(QLineEdit)
+    return None
+
+
+def _install_operator_name_completer(
+    dialog,
+    layer,
+    config: dict,
+    operator_name_field: str,
+    operator_entries: list[dict],
+):
+    suggestions = _operator_name_suggestions(config, layer, operator_name_field, operator_entries)
+    if not suggestions:
+        return
+
+    editor_widget = _editor_widget_for_field(dialog, layer, operator_name_field)
+    if editor_widget is None:
+        return
+
+    if isinstance(editor_widget, QComboBox):
+        existing = {editor_widget.itemText(i).strip().casefold() for i in range(editor_widget.count())}
+        for value in suggestions:
+            token = str(value or "").strip()
+            if token and token.casefold() not in existing:
+                editor_widget.addItem(token)
+                existing.add(token.casefold())
+
+    line_edit = _line_edit_from_widget(editor_widget)
+    if line_edit is None:
+        return
+
+    model = QStringListModel(suggestions, line_edit)
+    completer = QCompleter(model, line_edit)
+    completer.setCaseSensitivity(Qt.CaseInsensitive)
+    completer.setCompletionMode(QCompleter.PopupCompletion)
+    if hasattr(completer, "setFilterMode") and hasattr(Qt, "MatchContains"):
+        completer.setFilterMode(Qt.MatchContains)
+    line_edit.setCompleter(completer)
+
+
+def _is_missing_path_error(message: str) -> bool:
+    text = str(message or "").lower()
+    markers = [
+        "statuscode\":404",
+        "statuscode':404",
+        "nextcloud http 404",
+        "api-fehler 404",
+        "wrong path, file/folder does not exist",
+        "file\\/folder does not exist",
+    ]
+    return any(marker in text for marker in markers)
+
+
+def form_open(dialog, layer, feature):
+    config = _layer_config(layer)
+    path_field = str(config.get("path_field_name", "")).strip()
+    operator_name_field = str(config.get("operator_name_field_name", "")).strip()
+    operator_entries = _all_operator_entries(config)
+    if not path_field:
+        QMessageBox.warning(dialog, "Form-Setup Fehler", "Pfadfeld ist leer.")
+        return
+
+    missing = _missing_fields(layer, config)
+    if missing:
+        QMessageBox.warning(
+            dialog,
+            "Form-Setup Fehler",
+            "Folgende Felder fehlen im Layer:\n- " + "\n- ".join(missing),
+        )
+        return
+
+    if not config["nextcloud_base_url"] or not config["nextcloud_user"] or not config["nextcloud_app_password"]:
+        QMessageBox.warning(
+            dialog,
+            "Form-Setup Fehler",
+            "Nextcloud URL, Benutzer und App-Passwort sind nicht vollstaendig konfiguriert.",
+        )
+        return
+
+    if operator_name_field:
+        try:
+            _install_operator_name_completer(
+                dialog,
+                layer,
+                config,
+                operator_name_field,
+                operator_entries,
+            )
+        except Exception:
+            pass
+
+    def handle_change(attribute, value, attributeChanged):
+        if not attributeChanged:
+            return
+        changed_field = str(attribute or "").strip()
+
+        if operator_name_field and changed_field == operator_name_field:
+            raw_operator_name = str(value or "").strip()
+            try:
+                if not raw_operator_name:
+                    _clear_operator_lookup_fields(dialog, config)
+                    return
+
+                current_feature = dialog.currentFormFeature()
+                matched = _apply_operator_lookup(
+                    dialog,
+                    current_feature,
+                    config,
+                    operator_entries,
+                    raw_operator_name,
+                )
+                if not matched:
+                    _clear_operator_lookup_fields(dialog, config)
+            except Exception as exc:
+                QMessageBox.warning(dialog, "Betreiber-Fehler", str(exc))
+            return
+
+        if changed_field != path_field:
+            return
+
+        raw_path = str(value or "").strip()
+        if not raw_path or raw_path.lower() in ("null", "none") or raw_path in ("/", "\\"):
+            return
+
+        overwrite = bool(config["overwrite_existing_values"])
+
+        try:
+            current_feature = dialog.currentFormFeature()
+            file_field = config.get("file_link_field_name", "")
+            name_field = config.get("name_field_name", "")
+            stand_field = config.get("stand_field_name", "")
+
+            need_file = _needs_update(current_feature, file_field, overwrite)
+            need_name = _needs_update(current_feature, name_field, overwrite)
+            need_stand = _needs_update(current_feature, stand_field, overwrite)
+
+            if not any((need_file, need_name, need_stand)):
+                return
+
+            nc_file_path, abs_file_path = _to_nextcloud_and_local_path(raw_path, config)
+            if not nc_file_path:
+                return
+
+            file_link = None
+            dataname = None
+            stand = None
+
+            if need_file:
+                file_link = get_or_create_public_link(config, nc_file_path)
+            if need_name:
+                dataname = os.path.basename(abs_file_path) if abs_file_path else None
+            if need_stand:
+                stand = _stand_date(abs_file_path)
+
+            _set_if_allowed(dialog, current_feature, file_field, file_link, overwrite)
+            _set_if_allowed(dialog, current_feature, name_field, dataname, overwrite)
+            _set_if_allowed(dialog, current_feature, stand_field, stand, overwrite)
+        except Exception as exc:
+            message = str(exc)
+            if _is_missing_path_error(message):
+                return
+            QMessageBox.warning(dialog, "Nextcloud-Fehler", message)
+
+    dialog.widgetValueChanged.connect(handle_change)
+
+    if bool(config["fill_on_form_open"]):
+        try:
+            current = dialog.currentFormFeature()
+            initial = current[path_field]
+            if initial:
+                handle_change(path_field, initial, True)
+            if operator_name_field:
+                initial_operator_name = current[operator_name_field]
+                if initial_operator_name:
+                    handle_change(operator_name_field, initial_operator_name, True)
+        except Exception:
+            pass

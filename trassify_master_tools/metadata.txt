@@ -1,0 +1,17 @@
+[general]
+name=Trassify Master Tools
+qgisMinimumVersion=3.28
+description=Ein Bundle-Plugin, das die enthaltenen Trassify-Tools in einer einzigen Installation laedt.
+version=0.1.0
+author=Tomer Maith
+email=
+about=Installiere ein Plugin und aktiviere AttributionButler, Schutzrohr, GeoBasis Loader, Coordinatify, Projektstarter, Export Pro, Quickrule und weitere eingebettete Tools zusammen.
+category=Plugins
+icon=icon.svg
+tags=trassify,bundle,suite,tools,qgis
+homepage=
+tracker=
+repository=
+experimental=False
+deprecated=False
+hasProcessingProvider=False
