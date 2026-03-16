@@ -94,16 +94,17 @@ class TrassifyMasterToolsPlugin:
             self._log_unload_failure("Master-Plugin", exc)
 
     def _unload_impl(self):
-        toolbar = self._find_master_toolbar()
+        toolbar_ref = self.toolbar
+        toolbar = self._find_master_toolbar() or toolbar_ref
         overview_dialog = self.overview_dialog
         overview_action = self.overview_action
         load_actions = list(self.load_actions.values())
+        toolbar_created = self._toolbar_created
 
         self.overview_dialog = None
         self.overview_action = None
         self.load_actions = {}
         self.toolbar = None
-        toolbar_created = self._toolbar_created
         self._toolbar_created = False
 
         for spec, plugin in reversed(self.loaded_plugins):
