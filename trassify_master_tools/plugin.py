@@ -8,8 +8,8 @@ from pathlib import Path
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QStyle, QToolBar
-from qgis.core import Qgis, QgsApplication, QgsMessageLog
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar
+from qgis.core import Qgis, QgsMessageLog
 
 from .manifest import BUNDLED_PLUGINS
 from .overview_dialog import MasterOverviewDialog
@@ -26,7 +26,6 @@ from .shared_settings import (
 class TrassifyMasterToolsPlugin:
     MENU_TITLE = "Trassify Master Tools"
     OVERVIEW_ACTION_TEXT = "Master-Uebersicht oeffnen"
-    SETTINGS_ACTION_TEXT = "Master-Einstellungen"
     LOAD_ACTION_PREFIX = "Modul laden: "
     TOOLBAR_OBJECT_NAME = "TrassifyMasterToolsToolbar"
     BUNDLE_MISSING_MESSAGE = (
@@ -42,7 +41,6 @@ class TrassifyMasterToolsPlugin:
         self.toolbar = None
         self._toolbar_created = False
         self.overview_action = None
-        self.settings_action = None
         self.overview_dialog = None
         self.loaded_plugins = []
         self.load_errors = []
@@ -67,15 +65,6 @@ class TrassifyMasterToolsPlugin:
         if self.toolbar is not None:
             self.toolbar.addAction(self.overview_action)
 
-        self.settings_action = QAction(
-            self._settings_icon(),
-            self.SETTINGS_ACTION_TEXT,
-            self.iface.mainWindow(),
-        )
-        self.settings_action.triggered.connect(self.show_settings)
-        if self.toolbar is not None:
-            self.toolbar.addAction(self.settings_action)
-
         if not self.bundled_plugins_root.is_dir():
             self.iface.messageBar().pushMessage(
                 self.MENU_TITLE,
@@ -91,7 +80,7 @@ class TrassifyMasterToolsPlugin:
 
         self.iface.messageBar().pushMessage(
             self.MENU_TITLE,
-            "Master-Toolbar aktiv. Module und Einstellungen ueber die Trassify-Leiste oeffnen.",
+            "Master-Toolbar aktiv. Einstellungen ueber die Uebersicht oeffnen.",
             level=Qgis.Info,
             duration=5,
         )
@@ -117,12 +106,6 @@ class TrassifyMasterToolsPlugin:
                 self.toolbar.removeAction(self.overview_action)
             self.overview_action.deleteLater()
             self.overview_action = None
-
-        if self.settings_action is not None:
-            if self.toolbar is not None:
-                self.toolbar.removeAction(self.settings_action)
-            self.settings_action.deleteLater()
-            self.settings_action = None
 
         for action in self.load_actions.values():
             self.iface.removePluginMenu(self.MENU_TITLE, action)
@@ -575,21 +558,13 @@ class TrassifyMasterToolsPlugin:
         if toolbar is None:
             toolbar = self.iface.mainWindow().addToolBar(self.MENU_TITLE)
             toolbar.setObjectName(self.TOOLBAR_OBJECT_NAME)
-            toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
             self._toolbar_created = True
         else:
             self._toolbar_created = False
 
         toolbar.setVisible(True)
         self.toolbar = toolbar
-
-    def _settings_icon(self):
-        icon = QgsApplication.getThemeIcon("/mActionOptions.svg")
-        if not icon.isNull():
-            return icon
-        return self.iface.mainWindow().style().standardIcon(
-            QStyle.SP_FileDialogDetailedView
-        )
 
     def _get_module_metadata(self, spec):
         cached = self._module_metadata_cache.get(spec["key"])
