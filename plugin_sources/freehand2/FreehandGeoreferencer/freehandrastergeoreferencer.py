@@ -13,7 +13,8 @@ import os.path
 
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QAction, QDialog, QDoubleSpinBox, QFileDialog, QLabel
+from PyQt5.QtWidgets import QAction, QDialog, QDoubleSpinBox, QFileDialog, QLabel, QToolBar
+from qgis.PyQt import sip
 from qgis.core import QgsApplication, QgsMapLayer, QgsPointXY, QgsProject
 
 from . import resources_rc  # noqa
@@ -190,6 +191,7 @@ class FreehandRasterGeoreferencer(object):
 
         # create toolbar for this plugin
         self.toolbar = self.iface.addToolBar("Freehand raster georeferencing")
+        self.toolbar.setObjectName("FreehandRasterGeoreferencerToolbar")
         self.toolbar.addAction(self.actionGeoref2PRaster)
         self.toolbar.addAction(self.actionMoveRaster)
         self.toolbar.addAction(self.actionRotateRaster)
@@ -223,6 +225,8 @@ class FreehandRasterGeoreferencer(object):
         self.checkCurrentLayerIsPluginLayer()
 
     def unload(self):
+        toolbar = self._find_toolbar()
+
         # Remove the plugin menu item and icon
         self.iface.removePluginRasterMenu(
             FreehandRasterGeoreferencer.PLUGIN_MENU, self.actionAddLayer
@@ -237,7 +241,33 @@ class FreehandRasterGeoreferencer(object):
         QgsProject.instance().layerRemoved.disconnect(self.layerRemoved)
         self.iface.currentLayerChanged.disconnect(self.currentLayerChanged)
 
-        del self.toolbar
+        if self._is_qt_object_alive(toolbar):
+            self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
+            self._safe_qt_call(toolbar.deleteLater)
+        self.toolbar = None
+
+    def _find_toolbar(self):
+        try:
+            return self.iface.mainWindow().findChild(
+                QToolBar,
+                "FreehandRasterGeoreferencerToolbar",
+            )
+        except Exception:
+            return self.toolbar
+
+    def _is_qt_object_alive(self, obj):
+        if obj is None:
+            return False
+        try:
+            return not sip.isdeleted(obj)
+        except Exception:
+            return False
+
+    def _safe_qt_call(self, func, *args):
+        try:
+            return func(*args)
+        except Exception:
+            return None
 
     def layerRemoved(self, layerId):
         if layerId in self.layerOriginalTransforms:

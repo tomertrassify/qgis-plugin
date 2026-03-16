@@ -7,6 +7,7 @@ import re
 import urllib.parse
 from datetime import datetime
 
+from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QSize, Qt, QSettings
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
@@ -34,6 +35,7 @@ from qgis.PyQt.QtWidgets import (
     QStackedWidget,
     QStyle,
     QToolButton,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -5172,18 +5174,43 @@ class NextcloudFormPlugin:
         self.toolbar.setVisible(True)
 
     def unload(self):
-        if self.action_bind:
-            self.iface.removePluginMenu(PLUGIN_MENU, self.action_bind)
-            self.action_bind.deleteLater()
-            self.action_bind = None
-        if self.action_unbind_hidden:
-            self.iface.mainWindow().removeAction(self.action_unbind_hidden)
-            self.action_unbind_hidden.deleteLater()
-            self.action_unbind_hidden = None
-        if self.toolbar:
-            self.iface.mainWindow().removeToolBar(self.toolbar)
-            self.toolbar.deleteLater()
-            self.toolbar = None
+        action_bind = self.action_bind
+        action_unbind_hidden = self.action_unbind_hidden
+        toolbar = self._find_toolbar()
+
+        self.action_bind = None
+        self.action_unbind_hidden = None
+        self.toolbar = None
+
+        if self._is_qt_object_alive(action_bind):
+            self._safe_qt_call(self.iface.removePluginMenu, PLUGIN_MENU, action_bind)
+            self._safe_qt_call(action_bind.deleteLater)
+        if self._is_qt_object_alive(action_unbind_hidden):
+            self._safe_qt_call(self.iface.mainWindow().removeAction, action_unbind_hidden)
+            self._safe_qt_call(action_unbind_hidden.deleteLater)
+        if self._is_qt_object_alive(toolbar):
+            self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
+            self._safe_qt_call(toolbar.deleteLater)
+
+    def _find_toolbar(self):
+        try:
+            return self.iface.mainWindow().findChild(QToolBar, "AttributionButlerToolbar")
+        except Exception:
+            return self.toolbar
+
+    def _is_qt_object_alive(self, obj):
+        if obj is None:
+            return False
+        try:
+            return not sip.isdeleted(obj)
+        except Exception:
+            return False
+
+    def _safe_qt_call(self, func, *args):
+        try:
+            return func(*args)
+        except Exception:
+            return None
 
     def _active_vector_layer(self):
         layer = self.iface.activeLayer()

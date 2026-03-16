@@ -88,6 +88,12 @@ class TrassifyMasterToolsPlugin:
         self._show_startup_message(background_summary)
 
     def unload(self):
+        try:
+            self._unload_impl()
+        except BaseException as exc:
+            self._log_unload_failure("Master-Plugin", exc)
+
+    def _unload_impl(self):
         toolbar = self._find_master_toolbar()
         overview_dialog = self.overview_dialog
         overview_action = self.overview_action
@@ -552,6 +558,16 @@ class TrassifyMasterToolsPlugin:
             self.LOG_TAG,
             Qgis.Critical,
         )
+
+    def _log_unload_failure(self, label, exc):
+        try:
+            QgsMessageLog.logMessage(
+                f"Fehler beim Entladen: {label}\n{type(exc).__name__}: {exc}",
+                self.LOG_TAG,
+                Qgis.Warning,
+            )
+        except Exception:
+            pass
 
     def _short_exception_message(self):
         exc_type, exc_value, _tb = sys.exc_info()

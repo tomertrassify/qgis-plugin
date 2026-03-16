@@ -10,9 +10,10 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 from zipfile import BadZipFile, ZipFile
 
+from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QFile, QIODevice, QSettings, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
-from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMenu
+from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMenu, QToolBar
 from qgis.core import (
     Qgis,
     QgsCategorizedSymbolRenderer,
@@ -138,6 +139,12 @@ class ProjectStarterPlugin:
         QTimer.singleShot(0, self._refresh_connection_state)
 
     def unload(self):
+        action = self.action
+        toolbar = self._find_toolbar()
+
+        self.action = None
+        self.toolbar = None
+
         project = QgsProject.instance()
         try:
             project.readProject.disconnect(self._on_project_read)
@@ -154,20 +161,39 @@ class ProjectStarterPlugin:
 
         self._clear_managed_layer_connections()
 
-        if self.action:
-            self.iface.removePluginMenu(self.TOOLBAR_NAME, self.action)
+        if self._is_qt_object_alive(action):
+            self._safe_qt_call(self.iface.removePluginMenu, self.TOOLBAR_NAME, action)
+            self._safe_qt_call(action.deleteLater)
 
-        if self.toolbar:
-            self.iface.mainWindow().removeToolBar(self.toolbar)
-            self.toolbar.deleteLater()
-            self.toolbar = None
+        if self._is_qt_object_alive(toolbar):
+            self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
+            self._safe_qt_call(toolbar.deleteLater)
 
-        self.action = None
         self._current_project_dir = None
         self._pending_zoom_layer_id = None
         self._pending_zoom_extent = None
         self._export_sync_pending = False
         self._resaving_after_georef_sync = False
+
+    def _find_toolbar(self):
+        try:
+            return self.iface.mainWindow().findChild(QToolBar, self.TOOLBAR_OBJECT_NAME)
+        except Exception:
+            return self.toolbar
+
+    def _is_qt_object_alive(self, obj):
+        if obj is None:
+            return False
+        try:
+            return not sip.isdeleted(obj)
+        except Exception:
+            return False
+
+    def _safe_qt_call(self, func, *args):
+        try:
+            return func(*args)
+        except Exception:
+            return None
 
     def run(self):
         if self._has_active_connection():

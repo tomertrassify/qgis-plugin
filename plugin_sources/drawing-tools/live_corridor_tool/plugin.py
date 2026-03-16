@@ -3,6 +3,7 @@
 import os
 import sys
 
+from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QObject, QEvent, Qt, QSettings, QTimer, QVariant
 from qgis.PyQt.QtGui import QColor, QIcon, QImage, QPixmap
 from qgis.PyQt.QtWidgets import (
@@ -19,6 +20,7 @@ from qgis.PyQt.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QRadioButton,
+    QToolBar,
     QVBoxLayout,
 )
 from qgis.core import (
@@ -186,6 +188,18 @@ class LiveCorridorPlugin(QObject):
         self._update_toggle_action_availability()
 
     def unload(self):
+        toolbar = self._find_owned_toolbar() if self.owns_toolbar else self.toolbar
+        action = self.action
+        settings_action = self.settings_action
+        width_status_label = self.width_status_label
+        owns_toolbar = self.owns_toolbar
+
+        self.toolbar = None
+        self.owns_toolbar = False
+        self.action = None
+        self.settings_action = None
+        self.width_status_label = None
+
         self._disable_listener(finalize_segment=False)
 
         if self.canvas:
@@ -206,49 +220,44 @@ class LiveCorridorPlugin(QObject):
 
         self._reset_capture_state()
 
-        if self.action:
+        if self._is_qt_object_alive(action):
             try:
-                self.action.triggered.disconnect(self._toggle_listener)
+                action.triggered.disconnect(self._toggle_listener)
             except Exception:
                 pass
             try:
-                self.iface.unregisterMainWindowAction(self.action)
+                self.iface.unregisterMainWindowAction(action)
             except Exception:
                 pass
-            self.iface.removePluginMenu("&Schutzrohr", self.action)
+            self._safe_qt_call(self.iface.removePluginMenu, "&Schutzrohr", action)
 
-        if self.settings_action:
+        if self._is_qt_object_alive(settings_action):
             try:
-                self.settings_action.triggered.disconnect(self._open_settings_dialog)
+                settings_action.triggered.disconnect(self._open_settings_dialog)
             except Exception:
                 pass
-            self.iface.removePluginMenu("&Schutzrohr", self.settings_action)
+            self._safe_qt_call(self.iface.removePluginMenu, "&Schutzrohr", settings_action)
 
-        if self.toolbar:
-            if self.action:
+        if self._is_qt_object_alive(toolbar):
+            if self._is_qt_object_alive(action):
                 try:
-                    self.toolbar.removeAction(self.action)
+                    toolbar.removeAction(action)
                 except Exception:
                     pass
-            if self.settings_action:
+            if self._is_qt_object_alive(settings_action):
                 try:
-                    self.toolbar.removeAction(self.settings_action)
+                    toolbar.removeAction(settings_action)
                 except Exception:
                     pass
-            if self.owns_toolbar:
-                self.iface.mainWindow().removeToolBar(self.toolbar)
-            self.toolbar = None
-            self.owns_toolbar = False
+            if owns_toolbar:
+                self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
 
-        if self.width_status_label:
+        if self._is_qt_object_alive(width_status_label):
             try:
-                self.iface.mainWindow().statusBar().removeWidget(self.width_status_label)
+                self.iface.mainWindow().statusBar().removeWidget(width_status_label)
             except Exception:
                 pass
-            self.width_status_label = None
 
-        self.action = None
-        self.settings_action = None
         self.canvas = None
 
     def _resolve_preferred_toolbar(self):
@@ -263,6 +272,26 @@ class LiveCorridorPlugin(QObject):
             if toolbar:
                 return toolbar
         return None
+
+    def _find_owned_toolbar(self):
+        try:
+            return self.iface.mainWindow().findChild(QToolBar, "SchutzrohrToolbar")
+        except Exception:
+            return self.toolbar
+
+    def _is_qt_object_alive(self, obj):
+        if obj is None:
+            return False
+        try:
+            return not sip.isdeleted(obj)
+        except Exception:
+            return False
+
+    def _safe_qt_call(self, func, *args):
+        try:
+            return func(*args)
+        except Exception:
+            return None
 
     def _insert_toggle_action(self, toolbar):
         if not toolbar or not self.action:
