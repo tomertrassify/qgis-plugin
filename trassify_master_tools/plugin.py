@@ -828,21 +828,21 @@ class TrassifyMasterToolsPlugin:
         self._clear_master_toolbar_actions(toolbar)
 
         inserted_actions = []
+        ordered_actions = []
         for spec in self._ordered_toolbar_specs():
             for action in self.module_toolbar_actions.get(spec["key"], ()):
                 if not self._is_qt_object_alive(action):
                     continue
                 if action in inserted_actions:
                     continue
-                self._safe_qt_call(toolbar.insertAction, self.overview_action, action)
-                self._configure_toolbar_widget(action)
+                ordered_actions.append(action)
                 inserted_actions.append(action)
 
-        if inserted_actions:
-            self.toolbar_separator_action = self._safe_qt_call(
-                toolbar.insertSeparator,
-                self.overview_action,
-            )
+        if ordered_actions:
+            self.toolbar_separator_action = self._safe_qt_call(toolbar.addSeparator)
+            for action in ordered_actions:
+                self._safe_qt_call(toolbar.addAction, action)
+                self._configure_toolbar_widget(action)
         else:
             self.toolbar_separator_action = None
 
@@ -880,7 +880,7 @@ class TrassifyMasterToolsPlugin:
             if key in loaded_by_key
         ]
 
-        return non_favorite_specs + favorite_specs
+        return favorite_specs + non_favorite_specs
 
     def _configure_toolbar_widget(self, action):
         toolbar = self._find_master_toolbar() or self.toolbar
