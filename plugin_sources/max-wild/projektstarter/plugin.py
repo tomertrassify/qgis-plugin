@@ -47,6 +47,7 @@ class ProjectStarterPlugin:
     GROUP_PROJECT = "001 Projekt"
     GROUP_GEOREF = "002 Georeferenzierte Pläne"
     GROUP_BASEMAPS = "003 Basemaps/ ALKIS"
+    MANAGED_SUBGROUP_NAME = "_Projektstarter"
     LEGACY_GROUP_PREFIX = "Projektstarter"
     OSM_LAYER_NAME = "OSM Standard"
     KML_STYLE_FIELD = "Sparte"
@@ -709,9 +710,13 @@ class ProjectStarterPlugin:
         self._clear_managed_layer_connections()
         self._remove_legacy_group(root, project_dir)
 
-        project_group = self._get_or_create_root_group(root, self.GROUP_PROJECT, 0)
-        georef_group = self._get_or_create_root_group(root, self.GROUP_GEOREF, 1)
-        basemap_group = self._get_or_create_root_group(root, self.GROUP_BASEMAPS, 2)
+        project_root_group = self._get_or_create_root_group(root, self.GROUP_PROJECT, 0)
+        georef_root_group = self._get_or_create_root_group(root, self.GROUP_GEOREF, 1)
+        basemap_root_group = self._get_or_create_root_group(root, self.GROUP_BASEMAPS, 2)
+
+        project_group = self._get_or_create_managed_subgroup(project_root_group)
+        georef_group = self._get_or_create_managed_subgroup(georef_root_group)
+        basemap_group = self._get_or_create_managed_subgroup(basemap_root_group)
 
         self._reset_group(project_group)
         if preserve_manual_georef:
@@ -749,6 +754,28 @@ class ProjectStarterPlugin:
             if isinstance(child, QgsLayerTreeGroup) and child.name() == group_name:
                 return child
         return parent_group.addGroup(group_name)
+
+    def _get_or_create_managed_subgroup(self, parent_group):
+        for index, child in enumerate(parent_group.children()):
+            if not isinstance(child, QgsLayerTreeGroup):
+                continue
+            if child.name() != self.MANAGED_SUBGROUP_NAME:
+                continue
+            if index == 0:
+                return child
+            clone = child.clone()
+            parent_group.insertChildNode(0, clone)
+            parent_group.removeChildNode(child)
+            return clone
+        return parent_group.insertGroup(0, self.MANAGED_SUBGROUP_NAME)
+
+    def _find_managed_subgroup(self, parent_group):
+        if parent_group is None:
+            return None
+        for child in parent_group.children():
+            if isinstance(child, QgsLayerTreeGroup) and child.name() == self.MANAGED_SUBGROUP_NAME:
+                return child
+        return None
 
     def _find_root_group(self, root, group_name):
         for node in root.children():
@@ -802,7 +829,10 @@ class ProjectStarterPlugin:
             return False
 
         if georef_group is None:
-            georef_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_GEOREF)
+            georef_root_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_GEOREF)
+            georef_group = self._find_managed_subgroup(georef_root_group)
+            if georef_group is None and georef_root_group is not None:
+                georef_group = self._get_or_create_managed_subgroup(georef_root_group)
         if georef_group is None:
             return False
 
@@ -1319,9 +1349,14 @@ class ProjectStarterPlugin:
             self._update_connection_icon(False)
             return
 
-        project_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
+        project_root_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
         self._current_project_dir = project_dir
         self._store_connection_state(True, project_dir)
+        if project_root_group is None:
+            self._connect_project(project_dir, notify=False)
+            return
+
+        project_group = self._find_managed_subgroup(project_root_group)
         if project_group is None:
             self._connect_project(project_dir, notify=False)
             return
@@ -1383,17 +1418,32 @@ class ProjectStarterPlugin:
             if layer is not None and layer.name() == self.PROJECT_AREA_LAYER_NAME:
                 return layer
 
-        project_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
-        if project_group is None:
+        project_root_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
+        if project_root_group is None:
             return None
 
-        for child in project_group.children():
-            if not isinstance(child, QgsLayerTreeLayer):
+        managed_project_group = self._find_managed_subgroup(project_root_group)
+        for search_group in (managed_project_group, project_root_group):
+            if search_group is None:
                 continue
-            layer = child.layer()
-            if isinstance(layer, QgsVectorLayer) and layer.name() == self.PROJECT_AREA_LAYER_NAME:
+            layer = self._find_vector_layer_by_name(search_group, self.PROJECT_AREA_LAYER_NAME)
+            if layer is not None:
                 return layer
 
+        return None
+
+    def _find_vector_layer_by_name(self, group, layer_name):
+        for child in group.children():
+            if isinstance(child, QgsLayerTreeLayer):
+                layer = child.layer()
+                if isinstance(layer, QgsVectorLayer) and layer.name() == layer_name:
+                    return layer
+                continue
+            if not isinstance(child, QgsLayerTreeGroup):
+                continue
+            layer = self._find_vector_layer_by_name(child, layer_name)
+            if layer is not None:
+                return layer
         return None
 
     def _add_osm_basemap(self, target_group):
