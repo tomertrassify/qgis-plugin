@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from difflib import SequenceMatcher
 from os.path import relpath
 from pathlib import Path
-from shutil import copy2, move, rmtree
+from shutil import copy2, move
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 from zipfile import BadZipFile, ZipFile
@@ -41,7 +41,8 @@ class ProjectStarterPlugin:
         "002_Leitungsauskunft",
         "003_Ergebnis",
     )
-    SETTINGS_KEY = "max_wild_project_starter/last_project_dir"
+    SETTINGS_KEY = "projektstarter/last_project_dir"
+    LEGACY_SETTINGS_KEYS = ("max_wild_project_starter/last_project_dir",)
     PROJECT_AREA_LAYER_NAME = "Projektgebiet"
     GROUP_PROJECT = "001 Projekt"
     GROUP_GEOREF = "002 Georeferenzierte Pläne"
@@ -58,13 +59,16 @@ class ProjectStarterPlugin:
     GEOBASIS_CONFIG_FILENAME = "geobasis_actions.conf.json"
     TOOLBAR_NAME = "Projektstarter"
     TOOLBAR_OBJECT_NAME = "ProjektstarterToolbar"
-    DEFAULT_ICON_FILENAME = "max-wild-favicon.svg"
-    CONNECTED_ICON_FILENAME = "max-wild-connected.svg"
-    PROJECT_ENTRY_SCOPE = "max_wild_project_starter"
+    DEFAULT_ICON_FILENAME = "projektstarter-favicon.svg"
+    CONNECTED_ICON_FILENAME = "projektstarter-connected.svg"
+    PROJECT_ENTRY_SCOPE = "projektstarter"
+    LEGACY_PROJECT_ENTRY_SCOPES = ("max_wild_project_starter",)
     CONNECTION_ENABLED_KEY = "connection_enabled"
     CONNECTION_PROJECT_DIR_KEY = "project_dir"
-    GEOREF_LAYER_KEY_PROPERTY = "max_wild_project_starter/georef_key"
-    GEOREF_OPERATOR_PROPERTY = "max_wild_project_starter/georef_operator"
+    GEOREF_LAYER_KEY_PROPERTY = "projektstarter/georef_key"
+    GEOREF_OPERATOR_PROPERTY = "projektstarter/georef_operator"
+    LEGACY_GEOREF_LAYER_KEY_PROPERTIES = ("max_wild_project_starter/georef_key",)
+    LEGACY_GEOREF_OPERATOR_PROPERTIES = ("max_wild_project_starter/georef_operator",)
     GEOREF_CANONICAL_FOLDER_NAME = "_Georeferenzierte Pläne"
     GEOREF_FOLDER_NAMES = (
         "_Georeferenzierte Plaene",
@@ -88,6 +92,27 @@ class ProjectStarterPlugin:
     EXPORT_SHP_DIRNAME = "Export_SHP"
     EXPORT_KML_DIRNAME = "Export_KML"
     EXPORT_GEOJSON_DIRNAME = "Export_GeoJSON"
+    EXPORT_MANIFEST_FILENAME = ".projektstarter_export_manifest.json"
+    LEGACY_EXPORT_MANIFEST_FILENAMES = (".max_wild_export_manifest.json",)
+    SHAPEFILE_EXPORT_SUFFIXES = (
+        ".shp",
+        ".shx",
+        ".dbf",
+        ".prj",
+        ".cpg",
+        ".qpj",
+        ".qix",
+        ".sbn",
+        ".sbx",
+        ".fbn",
+        ".fbx",
+        ".ain",
+        ".aih",
+        ".atx",
+        ".ixs",
+        ".mxs",
+        ".shp.xml",
+    )
     EXPORT_ZOOM_DELAY_MS = 250
     EXPORT_SYNC_DELAY_MS = 250
     DEFAULT_PROJECT_CRS = "EPSG:25832"
@@ -238,7 +263,11 @@ class ProjectStarterPlugin:
         if not self._write_project_area_to_geopackage(kml_layer, project_gpkg):
             return
 
-        project_group, georef_group, basemap_group = self._prepare_workspace_groups(project_dir)
+        preserve_manual_georef = self._should_preserve_manual_georef_layers(project_dir)
+        project_group, georef_group, basemap_group = self._prepare_workspace_groups(
+            project_dir,
+            preserve_manual_georef=preserve_manual_georef,
+        )
         project_area_layer = self._load_project_geopackage_layers(project_gpkg, project_group)
         if not project_area_layer:
             self._show_message(
@@ -361,7 +390,12 @@ class ProjectStarterPlugin:
 
     def _select_project_directory(self):
         settings = QSettings()
-        start_dir = settings.value(self.SETTINGS_KEY, str(Path.home()))
+        start_dir = self._read_setting_value(
+            settings,
+            self.SETTINGS_KEY,
+            self.LEGACY_SETTINGS_KEYS,
+            str(Path.home()),
+        )
         selected_dir = QFileDialog.getExistingDirectory(
             self.iface.mainWindow(),
             "Projektordner waehlen",
@@ -513,13 +547,39 @@ class ProjectStarterPlugin:
         except (AttributeError, TypeError):
             return
 
+    def _read_setting_value(self, settings, primary_key, legacy_keys, default_value):
+        value = settings.value(primary_key, None)
+        if value not in (None, ""):
+            return value
+
+        for legacy_key in legacy_keys:
+            value = settings.value(legacy_key, None)
+            if value not in (None, ""):
+                return value
+
+        return default_value
+
+    def _project_entry_scopes(self):
+        return (self.PROJECT_ENTRY_SCOPE, *self.LEGACY_PROJECT_ENTRY_SCOPES)
+
+    def _read_project_bool_entry(self, entry_key, default_value):
+        project = QgsProject.instance()
+        for scope in self._project_entry_scopes():
+            value, ok = project.readBoolEntry(scope, entry_key, default_value)
+            if ok:
+                return bool(value)
+        return bool(default_value)
+
+    def _read_project_entry(self, entry_key, default_value=""):
+        project = QgsProject.instance()
+        for scope in self._project_entry_scopes():
+            value, ok = project.readEntry(scope, entry_key, default_value)
+            if ok:
+                return value
+        return default_value
+
     def _project_connection_enabled(self):
-        value, _ok = QgsProject.instance().readBoolEntry(
-            self.PROJECT_ENTRY_SCOPE,
-            self.CONNECTION_ENABLED_KEY,
-            True,
-        )
-        return bool(value)
+        return self._read_project_bool_entry(self.CONNECTION_ENABLED_KEY, True)
 
     def _store_connection_state(self, connected, project_dir=None):
         project = QgsProject.instance()
@@ -644,7 +704,7 @@ class ProjectStarterPlugin:
 
         return True
 
-    def _prepare_workspace_groups(self, project_dir):
+    def _prepare_workspace_groups(self, project_dir, preserve_manual_georef=False):
         root = QgsProject.instance().layerTreeRoot()
         self._clear_managed_layer_connections()
         self._remove_legacy_group(root, project_dir)
@@ -654,9 +714,19 @@ class ProjectStarterPlugin:
         basemap_group = self._get_or_create_root_group(root, self.GROUP_BASEMAPS, 2)
 
         self._reset_group(project_group)
-        self._reset_group(georef_group)
+        if preserve_manual_georef:
+            self._reset_managed_georef_group(georef_group)
+        else:
+            self._reset_group(georef_group)
         self._reset_group(basemap_group)
         return project_group, georef_group, basemap_group
+
+    def _should_preserve_manual_georef_layers(self, project_dir):
+        if project_dir is None:
+            return False
+        if self._current_project_dir == project_dir:
+            return True
+        return self._detect_connected_project_dir() == project_dir
 
     def _remove_legacy_group(self, root, project_dir):
         legacy_group = self._find_root_group(root, f"{self.LEGACY_GROUP_PREFIX} - {project_dir.name}")
@@ -704,6 +774,23 @@ class ProjectStarterPlugin:
     def _clear_group_children(self, group):
         for child in list(group.children())[::-1]:
             group.removeChildNode(child)
+
+    def _reset_managed_georef_group(self, group):
+        layer_ids = self._collect_managed_georef_layer_ids(group)
+        if layer_ids:
+            QgsProject.instance().removeMapLayers(layer_ids)
+        self._remove_empty_groups(group)
+
+    def _collect_managed_georef_layer_ids(self, group):
+        layer_ids = []
+        for child in group.children():
+            if isinstance(child, QgsLayerTreeLayer):
+                layer = child.layer()
+                if self._managed_georef_layer_key(layer):
+                    layer_ids.append(child.layerId())
+            elif isinstance(child, QgsLayerTreeGroup):
+                layer_ids.extend(self._collect_managed_georef_layer_ids(child))
+        return list(dict.fromkeys(layer_ids))
 
     def _leitungsauskunft_directory(self):
         if self._current_project_dir is None:
@@ -975,10 +1062,7 @@ class ProjectStarterPlugin:
                 if not isinstance(layer, QgsRasterLayer):
                     continue
 
-                key = str(layer.customProperty(self.GEOREF_LAYER_KEY_PROPERTY, "") or "").strip()
-                if not key:
-                    source_name = Path(str(layer.source() or "").split("|", 1)[0]).name
-                    key = self._georef_layer_key(operator_name, source_name)
+                key = self._managed_georef_layer_key(layer, operator_name)
                 if key and key not in layers_by_key:
                     layers_by_key[key] = {
                         "layer": layer,
@@ -986,9 +1070,67 @@ class ProjectStarterPlugin:
                     }
         return layers_by_key
 
+    def _managed_georef_layer_key(self, layer, operator_name=None):
+        if not isinstance(layer, QgsRasterLayer):
+            return ""
+
+        key = self._layer_custom_property(
+            layer,
+            self.GEOREF_LAYER_KEY_PROPERTY,
+            self.LEGACY_GEOREF_LAYER_KEY_PROPERTIES,
+        )
+        if key:
+            return key
+
+        source_path = Path(str(layer.source() or "").split("|", 1)[0])
+        leitungsauskunft_dir = self._leitungsauskunft_directory()
+        if (
+            leitungsauskunft_dir is None
+            or source_path.suffix.lower() not in self.GEOTIFF_EXTENSIONS
+            or not self._path_is_within(source_path, leitungsauskunft_dir)
+        ):
+            return ""
+
+        derived_operator = self._layer_custom_property(
+            layer,
+            self.GEOREF_OPERATOR_PROPERTY,
+            self.LEGACY_GEOREF_OPERATOR_PROPERTIES,
+        )
+        if not derived_operator:
+            derived_operator = str(operator_name or "").strip()
+        if not derived_operator:
+            return ""
+
+        return self._georef_layer_key(derived_operator, source_path.name)
+
+    def _layer_custom_property(self, layer, primary_key, legacy_keys=()):
+        value = str(layer.customProperty(primary_key, "") or "").strip()
+        if value:
+            return value
+
+        for legacy_key in legacy_keys:
+            value = str(layer.customProperty(legacy_key, "") or "").strip()
+            if value:
+                return value
+
+        return ""
+
+    def _remove_legacy_layer_properties(self, layer, legacy_keys):
+        remove_property = getattr(layer, "removeCustomProperty", None)
+        if remove_property is None:
+            return
+
+        for legacy_key in legacy_keys:
+            try:
+                remove_property(legacy_key)
+            except Exception:
+                continue
+
     def _mark_georeferenced_layer(self, layer, key, operator_name):
         layer.setCustomProperty(self.GEOREF_LAYER_KEY_PROPERTY, key)
         layer.setCustomProperty(self.GEOREF_OPERATOR_PROPERTY, operator_name)
+        self._remove_legacy_layer_properties(layer, self.LEGACY_GEOREF_LAYER_KEY_PROPERTIES)
+        self._remove_legacy_layer_properties(layer, self.LEGACY_GEOREF_OPERATOR_PROPERTIES)
 
     def _update_georeferenced_layer(self, layer, entry):
         changed = False
@@ -998,9 +1140,23 @@ class ProjectStarterPlugin:
             layer.setDataSource(source_path, entry["name"], "gdal")
             changed = True
 
-        if str(layer.customProperty(self.GEOREF_LAYER_KEY_PROPERTY, "") or "") != entry["key"]:
+        if (
+            self._layer_custom_property(
+                layer,
+                self.GEOREF_LAYER_KEY_PROPERTY,
+                self.LEGACY_GEOREF_LAYER_KEY_PROPERTIES,
+            )
+            != entry["key"]
+        ):
             changed = True
-        if str(layer.customProperty(self.GEOREF_OPERATOR_PROPERTY, "") or "") != entry["operator"]:
+        if (
+            self._layer_custom_property(
+                layer,
+                self.GEOREF_OPERATOR_PROPERTY,
+                self.LEGACY_GEOREF_OPERATOR_PROPERTIES,
+            )
+            != entry["operator"]
+        ):
             changed = True
 
         self._mark_georeferenced_layer(layer, entry["key"], entry["operator"])
@@ -1215,11 +1371,7 @@ class ProjectStarterPlugin:
             if self._is_connected_project_dir(project_dir):
                 return project_dir
 
-        stored_dir, _ok = project.readEntry(
-            self.PROJECT_ENTRY_SCOPE,
-            self.CONNECTION_PROJECT_DIR_KEY,
-            "",
-        )
+        stored_dir = self._read_project_entry(self.CONNECTION_PROJECT_DIR_KEY, "")
         project_dir = self._resolve_project_dir_value(stored_dir)
         if project_dir is not None and self._is_connected_project_dir(project_dir, project_file):
             return project_dir
@@ -2055,10 +2207,102 @@ class ProjectStarterPlugin:
             )
         return True
 
-    def _reset_export_directory(self, directory):
-        if directory.exists():
-            rmtree(directory)
+    def _export_manifest_path(self, directory):
+        return directory / self.EXPORT_MANIFEST_FILENAME
+
+    def _export_manifest_candidates(self, directory):
+        manifest_paths = [self._export_manifest_path(directory)]
+        manifest_paths.extend(directory / name for name in self.LEGACY_EXPORT_MANIFEST_FILENAMES)
+        return manifest_paths
+
+    def _load_export_manifest(self, directory):
+        for manifest_path in self._export_manifest_candidates(directory):
+            if not manifest_path.is_file():
+                continue
+
+            try:
+                manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                continue
+
+            file_entries = manifest_data.get("files", []) if isinstance(manifest_data, dict) else []
+            if not isinstance(file_entries, list):
+                continue
+
+            managed_paths = []
+            for relative_path in file_entries:
+                if not isinstance(relative_path, str) or not relative_path.strip():
+                    continue
+                candidate = directory / relative_path
+                if self._path_is_within(candidate, directory):
+                    managed_paths.append(candidate)
+            return managed_paths
+
+        return []
+
+    def _delete_export_paths(self, paths):
+        for path in sorted({Path(path) for path in paths}, key=lambda item: str(item).casefold(), reverse=True):
+            try:
+                if path.is_file():
+                    path.unlink()
+            except OSError:
+                continue
+
+    def _clear_managed_export_files(self, directory):
+        managed_paths = self._load_export_manifest(directory)
+        self._delete_export_paths(managed_paths)
+        for manifest_path in self._export_manifest_candidates(directory):
+            try:
+                manifest_path.unlink()
+            except OSError:
+                pass
         directory.mkdir(parents=True, exist_ok=True)
+
+    def _write_export_manifest(self, directory, created_paths):
+        manifest_path = self._export_manifest_path(directory)
+        unique_entries = []
+        seen_entries = set()
+        for path in created_paths:
+            try:
+                relative_path = Path(path).relative_to(directory)
+            except ValueError:
+                continue
+
+            entry = str(relative_path)
+            entry_key = entry.casefold()
+            if entry_key in seen_entries:
+                continue
+            seen_entries.add(entry_key)
+            unique_entries.append(entry)
+
+        if not unique_entries:
+            try:
+                manifest_path.unlink()
+            except OSError:
+                pass
+            return
+
+        manifest_path.write_text(
+            json.dumps({"files": sorted(unique_entries, key=str.casefold)}, indent=2),
+            encoding="utf-8",
+        )
+
+    def _collect_export_bundle_paths(self, output_path):
+        output_path = Path(output_path)
+        if not output_path.parent.exists():
+            return []
+
+        suffix_lower = output_path.suffix.lower()
+        candidate_paths = [output_path]
+        if suffix_lower == ".shp":
+            candidate_paths = [
+                output_path.parent / f"{output_path.stem}{suffix}"
+                for suffix in self.SHAPEFILE_EXPORT_SUFFIXES
+            ]
+        elif suffix_lower == ".geojson":
+            candidate_paths.append(output_path.parent / f"{output_path.name}.qml")
+
+        return [path for path in candidate_paths if path.is_file()]
 
     def _current_symbology_scale(self):
         canvas = getattr(self.iface, "mapCanvas", lambda: None)()
@@ -2138,6 +2382,7 @@ class ProjectStarterPlugin:
         layer.saveNamedStyle(style_path)
 
     def _export_dxf(self, layers, output_path):
+        self._clear_managed_export_files(output_path.parent)
         project = QgsProject.instance()
         project_crs = project.crs()
         if not project_crs.isValid():
@@ -2167,10 +2412,12 @@ class ProjectStarterPlugin:
         qfile.close()
         if int(result) != 0:
             raise RuntimeError(exporter.feedbackMessage() or "Unbekannter DXF-Fehler.")
+        self._write_export_manifest(output_path.parent, self._collect_export_bundle_paths(output_path))
 
     def _export_shapefiles(self, layers, directory):
-        self._reset_export_directory(directory)
+        self._clear_managed_export_files(directory)
         used_names = set()
+        created_paths = []
         for layer in layers:
             output_path = directory / f"{self._unique_name(layer.name(), used_names)}.shp"
             self._write_vector_layer(
@@ -2180,11 +2427,14 @@ class ProjectStarterPlugin:
                 layer_name=self._safe_name(layer.name()),
                 action_on_existing=QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile,
             )
+            created_paths.extend(self._collect_export_bundle_paths(output_path))
+        self._write_export_manifest(directory, created_paths)
 
     def _export_kml(self, layers, directory):
-        self._reset_export_directory(directory)
+        self._clear_managed_export_files(directory)
         used_names = set()
         destination_crs = QgsCoordinateReferenceSystem("EPSG:4326")
+        created_paths = []
         for layer in layers:
             export_layer = self._prepare_kml_layer(layer)
             output_path = directory / f"{self._unique_name(layer.name(), used_names)}.kml"
@@ -2198,11 +2448,14 @@ class ProjectStarterPlugin:
                 symbology_scale=self._current_symbology_scale(),
                 action_on_existing=QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile,
             )
+            created_paths.extend(self._collect_export_bundle_paths(output_path))
+        self._write_export_manifest(directory, created_paths)
 
     def _export_geojson(self, layers, directory):
-        self._reset_export_directory(directory)
+        self._clear_managed_export_files(directory)
         used_names = set()
         destination_crs = QgsCoordinateReferenceSystem("EPSG:4326")
+        created_paths = []
         for layer in layers:
             output_path = directory / f"{self._unique_name(layer.name(), used_names)}.geojson"
             self._write_vector_layer(
@@ -2216,6 +2469,8 @@ class ProjectStarterPlugin:
                 action_on_existing=QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile,
             )
             self._save_qml_sidecar(layer, output_path)
+            created_paths.extend(self._collect_export_bundle_paths(output_path))
+        self._write_export_manifest(directory, created_paths)
 
     def _prepare_kml_layer(self, layer):
         if layer.fields().indexOf(self.KML_STYLE_FIELD) < 0:
