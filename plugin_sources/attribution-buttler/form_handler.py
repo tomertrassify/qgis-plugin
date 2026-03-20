@@ -4,10 +4,12 @@ import base64
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 from qgis.PyQt.QtCore import Qt, QStringListModel, QSettings
 from qgis.PyQt.QtWidgets import QComboBox, QCompleter, QLineEdit, QMessageBox, QWidget
@@ -66,6 +68,14 @@ USER_CONFIG_KEYS = (
 )
 
 _SHARE_CACHE: dict[tuple[str, str, str], str] = {}
+_SHARE_BACKOFF_UNTIL: dict[tuple[str, str, str], float] = {}
+_DEFAULT_RATE_LIMIT_SECONDS = 60
+
+
+class NextcloudRateLimitError(RuntimeError):
+    def __init__(self, message: str, retry_after: int | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 def _property_key(name: str) -> str:
@@ -459,6 +469,12 @@ def _ocs_request(
             payload = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace")
+        if exc.code == 429:
+            retry_after = _retry_after_seconds(getattr(exc, "headers", None))
+            raise NextcloudRateLimitError(
+                f"Nextcloud HTTP 429: {body_text}",
+                retry_after=retry_after,
+            ) from exc
         raise RuntimeError(f"Nextcloud HTTP {exc.code}: {body_text}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Nextcloud nicht erreichbar: {exc}") from exc
@@ -491,6 +507,45 @@ def _to_int(value, default=-1):
         return default
 
 
+def _retry_after_seconds(headers) -> int | None:
+    if headers is None:
+        return None
+    raw = str(headers.get("Retry-After", "") or "").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return max(1, int(raw))
+    try:
+        parsed = parsedate_to_datetime(raw)
+    except Exception:
+        parsed = None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    seconds = int((parsed - datetime.now(timezone.utc)).total_seconds())
+    return max(1, seconds)
+
+
+def _rate_limit_wait_seconds(exc: Exception) -> int:
+    retry_after = getattr(exc, "retry_after", None)
+    if isinstance(retry_after, int) and retry_after > 0:
+        return retry_after
+    return _DEFAULT_RATE_LIMIT_SECONDS
+
+
+def _set_share_backoff(cache_key: tuple[str, str, str], wait_seconds: int):
+    _SHARE_BACKOFF_UNTIL[cache_key] = time.time() + max(5, int(wait_seconds))
+
+
+def _remaining_share_backoff(cache_key: tuple[str, str, str]) -> int:
+    until = float(_SHARE_BACKOFF_UNTIL.get(cache_key, 0) or 0)
+    if until <= 0:
+        return 0
+    remaining = int(until - time.time())
+    return max(0, remaining)
+
+
 def _canonical_nextcloud_path(nc_path: str) -> str:
     normalized = _normalize_path(nc_path)
     if not normalized:
@@ -509,13 +564,8 @@ def _nextcloud_path_variants(nc_path: str) -> list[str]:
     variants = [canonical]
     if canonical != "/":
         no_leading = canonical.lstrip("/")
-        if no_leading:
+        if no_leading and no_leading != canonical:
             variants.append(no_leading)
-        trailing = canonical + "/"
-        variants.append(trailing)
-        trailing_no_leading = trailing.lstrip("/")
-        if trailing_no_leading:
-            variants.append(trailing_no_leading)
 
     unique = []
     seen = set()
@@ -609,6 +659,11 @@ def get_or_create_public_link(config: dict, nc_path: str) -> str:
     )
     if cache_key in _SHARE_CACHE:
         return _SHARE_CACHE[cache_key]
+    remaining_backoff = _remaining_share_backoff(cache_key)
+    if remaining_backoff > 0:
+        raise RuntimeError(
+            f"Nextcloud Rate-Limit aktiv, bitte in ca. {remaining_backoff}s erneut versuchen."
+        )
 
     base_url = str(config["nextcloud_base_url"]).rstrip("/")
     endpoints = (
@@ -623,6 +678,7 @@ def get_or_create_public_link(config: dict, nc_path: str) -> str:
     }
     if not request_paths:
         raise RuntimeError(f"Kein gueltiger Nextcloud-Pfad fuer Share-Link: '{canonical_path}'")
+    create_paths = request_paths[:]
 
     errors = []
 
@@ -630,7 +686,6 @@ def get_or_create_public_link(config: dict, nc_path: str) -> str:
         for candidate_path in request_paths:
             existing_query_variants = (
                 {"path": candidate_path, "reshares": "true", "subfiles": "false"},
-                {"path": candidate_path, "reshares": "true"},
                 {"path": candidate_path},
             )
 
@@ -649,46 +704,56 @@ def get_or_create_public_link(config: dict, nc_path: str) -> str:
                         _SHARE_CACHE[cache_key] = link
                         return link
                     break
+                except NextcloudRateLimitError as exc:
+                    wait_seconds = _rate_limit_wait_seconds(exc)
+                    _set_share_backoff(cache_key, wait_seconds)
+                    raise RuntimeError(
+                        f"Nextcloud Rate-Limit (HTTP 429), bitte in ca. {wait_seconds}s erneut versuchen."
+                    ) from exc
                 except Exception as exc:
                     errors.append(f"GET {endpoint} path='{candidate_path}' -> {exc}")
 
         # Manche Server liefern mit path-Filter 500 (statuscode 996), ohne Filter aber gueltige Daten.
-        for all_query in ({"reshares": "true"}, None):
+        try:
+            existing_all = _ocs_request(
+                config=config,
+                method="GET",
+                endpoint_url=endpoint,
+                params={"reshares": "true"},
+            )
+            link = _extract_public_share_url(existing_all, accepted_paths=accepted_paths)
+            if link:
+                _SHARE_CACHE[cache_key] = link
+                return link
+        except NextcloudRateLimitError as exc:
+            wait_seconds = _rate_limit_wait_seconds(exc)
+            _set_share_backoff(cache_key, wait_seconds)
+            raise RuntimeError(
+                f"Nextcloud Rate-Limit (HTTP 429), bitte in ca. {wait_seconds}s erneut versuchen."
+            ) from exc
+        except Exception as exc:
+            errors.append(f"GET {endpoint} all(reshares=true) -> {exc}")
+
+        for candidate_path in create_paths:
             try:
-                existing_all = _ocs_request(
+                created = _ocs_request(
                     config=config,
-                    method="GET",
+                    method="POST",
                     endpoint_url=endpoint,
-                    params=all_query,
+                    data={"path": candidate_path, "shareType": "3", "permissions": "1"},
                 )
-                link = _extract_public_share_url(existing_all, accepted_paths=accepted_paths)
+                link = str((created.get("ocs", {}).get("data") or {}).get("url") or "").strip()
                 if link:
                     _SHARE_CACHE[cache_key] = link
                     return link
-                break
+            except NextcloudRateLimitError as exc:
+                wait_seconds = _rate_limit_wait_seconds(exc)
+                _set_share_backoff(cache_key, wait_seconds)
+                raise RuntimeError(
+                    f"Nextcloud Rate-Limit (HTTP 429), bitte in ca. {wait_seconds}s erneut versuchen."
+                ) from exc
             except Exception as exc:
-                query_label = "reshares=true" if all_query else "none"
-                errors.append(f"GET {endpoint} all({query_label}) -> {exc}")
-
-        for candidate_path in request_paths:
-            create_payload_variants = (
-                {"path": candidate_path, "shareType": "3", "permissions": "1"},
-                {"path": candidate_path, "shareType": "3"},
-            )
-            for payload in create_payload_variants:
-                try:
-                    created = _ocs_request(
-                        config=config,
-                        method="POST",
-                        endpoint_url=endpoint,
-                        data=payload,
-                    )
-                    link = str((created.get("ocs", {}).get("data") or {}).get("url") or "").strip()
-                    if link:
-                        _SHARE_CACHE[cache_key] = link
-                        return link
-                except Exception as exc:
-                    errors.append(f"POST {endpoint} path='{candidate_path}' -> {exc}")
+                errors.append(f"POST {endpoint} path='{candidate_path}' -> {exc}")
 
     details = errors[-1] if errors else "Unbekannter Fehler"
     raise RuntimeError(
@@ -1234,7 +1299,8 @@ def _apply_operator_lookup(
     try:
         folder_link = get_or_create_public_link(config, nc_folder_path)
     except Exception as exc:
-        if _is_missing_path_error(str(exc)):
+        message = str(exc)
+        if _is_missing_path_error(message) or _is_rate_limit_error(message):
             return True
         raise
     _set_if_allowed(dialog, feature, folder_field, folder_link, overwrite)
@@ -1399,6 +1465,19 @@ def _is_missing_path_error(message: str) -> bool:
     return any(marker in text for marker in markers)
 
 
+def _is_rate_limit_error(message: str) -> bool:
+    text = str(message or "").lower()
+    markers = [
+        "nextcloud http 429",
+        "rate-limit",
+        "rate limit",
+        "too many requests",
+        "statuscode\":429",
+        "statuscode':429",
+    ]
+    return any(marker in text for marker in markers)
+
+
 def form_open(dialog, layer, feature):
     config = _layer_config(layer)
     path_field = str(config.get("path_field_name", "")).strip()
@@ -1461,7 +1540,10 @@ def form_open(dialog, layer, feature):
                 if not matched:
                     _clear_operator_lookup_fields(dialog, config)
             except Exception as exc:
-                QMessageBox.warning(dialog, "Betreiber-Fehler", str(exc))
+                message = str(exc)
+                if _is_rate_limit_error(message):
+                    return
+                QMessageBox.warning(dialog, "Betreiber-Fehler", message)
             return
 
         if changed_field != path_field:
@@ -1506,7 +1588,7 @@ def form_open(dialog, layer, feature):
             _set_if_allowed(dialog, current_feature, stand_field, stand, overwrite)
         except Exception as exc:
             message = str(exc)
-            if _is_missing_path_error(message):
+            if _is_missing_path_error(message) or _is_rate_limit_error(message):
                 return
             QMessageBox.warning(dialog, "Nextcloud-Fehler", message)
 
