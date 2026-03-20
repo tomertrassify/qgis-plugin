@@ -3,7 +3,7 @@ from __future__ import annotations
 from html import escape
 
 from qgis.PyQt.QtCore import QSize, Qt
-from qgis.PyQt.QtGui import QFont, QIcon
+from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -12,6 +12,7 @@ from qgis.PyQt.QtWidgets import (
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -19,6 +20,7 @@ from qgis.PyQt.QtWidgets import (
     QPushButton,
     QSplitter,
     QStyle,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -89,6 +91,7 @@ class MasterOverviewDialog(QDialog):
         content_layout.addWidget(self.content_splitter, 1)
 
         self.module_list = QTreeWidget(self)
+        self.module_list.setColumnCount(2)
         self.module_list.setHeaderHidden(True)
         self.module_list.setRootIsDecorated(False)
         self.module_list.setIndentation(0)
@@ -96,6 +99,9 @@ class MasterOverviewDialog(QDialog):
         self.module_list.setUniformRowHeights(True)
         self.module_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.module_list.setIconSize(QSize(20, 20))
+        self.module_list.header().setStretchLastSection(False)
+        self.module_list.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.module_list.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.module_list.itemSelectionChanged.connect(self._sync_details)
         self.module_list.itemDoubleClicked.connect(self._handle_item_double_click)
         self.content_splitter.addWidget(self.module_list)
@@ -192,7 +198,11 @@ class MasterOverviewDialog(QDialog):
 
         actions_layout.addStretch(1)
 
-        self.favorite_button = QPushButton("Zu Favoriten", self)
+        self.favorite_button = QToolButton(self)
+        self.favorite_button.setText("")
+        self.favorite_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.favorite_button.setIconSize(QSize(20, 20))
+        self.favorite_button.setFixedSize(32, 32)
         self.favorite_button.clicked.connect(self._toggle_selected_favorite)
         actions_layout.addWidget(self.favorite_button)
 
@@ -284,15 +294,16 @@ class MasterOverviewDialog(QDialog):
             visible_rows.append(row)
 
         for row in visible_rows:
-            display_label = row["label"]
-            if row["is_favorite"]:
-                display_label = f"[Favorit] {display_label}"
-
-            item = QTreeWidgetItem([display_label])
+            item = QTreeWidgetItem([row["label"], ""])
             item.setData(0, Qt.UserRole, row["key"])
             item.setData(0, Qt.UserRole + 1, row["status_code"])
             item.setToolTip(0, f"{row['status_text']}: {row['detail']}")
-            item.setIcon(0, QIcon(row["icon_path"]))
+            item.setIcon(0, self._decorated_module_icon(row, 20, 12))
+            item.setTextAlignment(1, Qt.AlignCenter)
+            item.setToolTip(1, item.toolTip(0))
+            status_icon = self._status_icon(row)
+            if status_icon is not None:
+                item.setIcon(1, status_icon)
 
             font = item.font(0)
             if row["status_code"] == "loaded":
@@ -357,23 +368,17 @@ class MasterOverviewDialog(QDialog):
     def _sync_details(self):
         item = self.module_list.currentItem()
         if item is None:
-            self.favorite_button.setEnabled(False)
-            self.favorite_button.setText("Zu Favoriten")
+            self._update_favorite_button(None)
             self.load_button.setEnabled(False)
             return
 
         row = self._rows_by_key.get(item.data(0, Qt.UserRole))
         if row is None:
-            self.favorite_button.setEnabled(False)
-            self.favorite_button.setText("Zu Favoriten")
+            self._update_favorite_button(None)
             self.load_button.setEnabled(False)
             return
 
-        self.favorite_button.setEnabled(True)
-        if row["is_favorite"]:
-            self.favorite_button.setText("Aus Favoriten entfernen")
-        else:
-            self.favorite_button.setText("Zu Favoriten")
+        self._update_favorite_button(row)
         self.load_button.setEnabled(row["status_code"] == "ready")
         if row["tool_type"] == "background":
             self.load_button.setText("Hintergrundtool laden")
@@ -443,15 +448,20 @@ class MasterOverviewDialog(QDialog):
 
         self.category_value.setText(row["category"] or "-")
         self.type_value.setText(row["tool_type_label"] or "-")
-        self.favorite_value.setText("Ja" if row["is_favorite"] else "Nein")
+        self.favorite_value.setText("")
+        self.favorite_value.setPixmap(
+            self._favorite_icon(row["is_favorite"]).pixmap(18, 18)
+        )
+        self.favorite_value.setToolTip(
+            "Favorit gespeichert" if row["is_favorite"] else "Nicht als Favorit gespeichert"
+        )
         self.package_value.setText(row["package"] or "-")
         self.tags_value.setText(", ".join(row["tags"]) or "-")
         self.author_value.setText(row["author"] or "-")
         self.version_value.setText(row["version"] or "-")
         self.links_value.setText(self._build_links_html(row))
 
-        icon = QIcon(row["icon_path"])
-        self.icon_label.setPixmap(icon.pixmap(88, 88))
+        self.icon_label.setPixmap(self._decorated_module_pixmap(row, 88, 28))
 
     def _build_links_html(self, row):
         links = []
@@ -506,3 +516,62 @@ class MasterOverviewDialog(QDialog):
             return
 
         self.plugin_controller.toggle_favorite_by_key(key)
+
+    def _favorite_icon(self, is_favorite):
+        icon_name = "IcBaselineStar.svg" if is_favorite else "IcBaselineStarBorder.svg"
+        return QIcon(str(self.plugin_controller.plugin_dir / "assets" / icon_name))
+
+    def _loaded_icon(self):
+        return QIcon(
+            str(self.plugin_controller.plugin_dir / "assets" / "CarbonCheckmarkFilled.svg")
+        )
+
+    def _status_icon(self, row):
+        if row["status_code"] != "loaded":
+            return None
+        if row["tool_type"] == "background":
+            return QIcon(row["icon_path"])
+        return self._loaded_icon()
+
+    def _decorated_module_icon(self, row, size, badge_size):
+        return QIcon(self._decorated_module_pixmap(row, size, badge_size))
+
+    def _decorated_module_pixmap(self, row, size, badge_size):
+        base_icon = QIcon(row["icon_path"])
+        base_pixmap = base_icon.pixmap(size, size)
+        if base_pixmap.isNull():
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.transparent)
+        else:
+            pixmap = QPixmap(base_pixmap)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        badge_icon = self._favorite_icon(row["is_favorite"])
+        badge_padding = max(1, badge_size // 6)
+        badge_diameter = badge_size + (badge_padding * 2)
+        badge_x = size - badge_diameter
+        badge_y = size - badge_diameter
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 235))
+        painter.drawEllipse(badge_x, badge_y, badge_diameter, badge_diameter)
+        painter.drawPixmap(
+            badge_x + badge_padding,
+            badge_y + badge_padding,
+            badge_icon.pixmap(badge_size, badge_size),
+        )
+        painter.end()
+        return pixmap
+
+    def _update_favorite_button(self, row):
+        is_enabled = row is not None
+        is_favorite = bool(row and row["is_favorite"])
+
+        self.favorite_button.setEnabled(is_enabled)
+        self.favorite_button.setIcon(self._favorite_icon(is_favorite))
+        self.favorite_button.setToolTip(
+            "Aus Favoriten entfernen" if is_favorite else "Als Favorit speichern"
+        )
+        self.favorite_button.setStatusTip(self.favorite_button.toolTip())
