@@ -19,8 +19,10 @@ from .shared_settings import (
     build_postgres_ogr_uri,
     has_saved_shared_settings,
     load_favorite_module_keys,
+    load_last_loaded_module_keys,
     load_shared_settings,
     save_favorite_module_keys,
+    save_last_loaded_module_keys,
     save_shared_settings,
     sync_attribution_butler_settings,
 )
@@ -67,6 +69,14 @@ class TrassifyMasterToolsPlugin:
             self.favorite_module_keys = save_favorite_module_keys(
                 self.favorite_module_keys
             )
+        stored_last_loaded_keys = load_last_loaded_module_keys()
+        self.last_loaded_module_keys = self._sanitize_interactive_module_keys(
+            stored_last_loaded_keys
+        )
+        if self.last_loaded_module_keys != stored_last_loaded_keys:
+            self.last_loaded_module_keys = save_last_loaded_module_keys(
+                self.last_loaded_module_keys
+            )
         self._unloaded = False
 
     def initGui(self):
@@ -96,9 +106,10 @@ class TrassifyMasterToolsPlugin:
         self._create_load_actions()
         self._refresh_conflicts()
         background_summary = self._load_background_modules()
+        restored_interactive_count = self._restore_last_loaded_modules()
         self._refresh_conflicts()
         self._rebuild_favorite_toolbar_actions()
-        self._show_startup_message(background_summary)
+        self._show_startup_message(background_summary, restored_interactive_count)
 
     def unload(self):
         if self._unloaded:
@@ -119,6 +130,7 @@ class TrassifyMasterToolsPlugin:
         favorite_actions = list(self.favorite_actions.values())
         loaded_plugins = list(self.loaded_plugins)
         toolbar_created = self._toolbar_created
+        self._persist_last_loaded_modules_from_runtime(loaded_plugins)
 
         for spec, plugin in reversed(loaded_plugins):
             try:
@@ -239,7 +251,7 @@ class TrassifyMasterToolsPlugin:
 
         return summary
 
-    def _show_startup_message(self, background_summary):
+    def _show_startup_message(self, background_summary, restored_interactive_count=0):
         message_parts = ["Master-Toolbar aktiv."]
 
         loaded_count = len(background_summary["loaded"])
@@ -258,6 +270,11 @@ class TrassifyMasterToolsPlugin:
         if error_count:
             message_parts.append(
                 f"{error_count} Hintergrundtool(s) mit Fehler."
+            )
+
+        if restored_interactive_count:
+            message_parts.append(
+                f"{restored_interactive_count} zuletzt geladene(s) Tool(s) wieder aktiv."
             )
 
         if not loaded_count and not conflict_count and not error_count:
@@ -329,6 +346,8 @@ class TrassifyMasterToolsPlugin:
             plugin.initGui()
             self._apply_shared_settings_to_plugin(spec, plugin, module)
             self.loaded_plugins.append((spec, plugin))
+            if spec.get("tool_type", INTERACTIVE_TOOL) == INTERACTIVE_TOOL:
+                self._remember_last_loaded_module_key(spec["key"])
             self._clear_error(spec)
             self._disable_load_action(spec)
             if announce:
@@ -555,6 +574,55 @@ class TrassifyMasterToolsPlugin:
                 return self._load_single_module(spec)
         return False
 
+    def _restore_last_loaded_modules(self):
+        if not self.last_loaded_module_keys:
+            return 0
+
+        interactive_specs_by_key = {
+            spec["key"]: spec for spec in self._interactive_specs()
+        }
+        restored_count = 0
+
+        for key in self.last_loaded_module_keys:
+            spec = interactive_specs_by_key.get(key)
+            if spec is None:
+                continue
+            if self._load_single_module(spec, announce=False):
+                restored_count += 1
+
+        return restored_count
+
+    def _persist_last_loaded_modules_from_runtime(self, loaded_plugins=None):
+        source = loaded_plugins if loaded_plugins is not None else self.loaded_plugins
+        keys = []
+        seen = set()
+
+        for spec, _plugin in source:
+            if spec.get("tool_type", INTERACTIVE_TOOL) != INTERACTIVE_TOOL:
+                continue
+            key = str(spec.get("key", "") or "").strip()
+            if not key or key in seen:
+                continue
+            keys.append(key)
+            seen.add(key)
+
+        self._set_last_loaded_module_keys(keys)
+
+    def _remember_last_loaded_module_key(self, key):
+        keys = list(self.last_loaded_module_keys)
+        text = str(key or "").strip()
+        if not text:
+            return
+        if text not in keys:
+            keys.append(text)
+        self._set_last_loaded_module_keys(keys)
+
+    def _set_last_loaded_module_keys(self, keys):
+        sanitized = self._sanitize_interactive_module_keys(keys)
+        if sanitized == self.last_loaded_module_keys:
+            return
+        self.last_loaded_module_keys = save_last_loaded_module_keys(sanitized)
+
     def _favorite_specs(self):
         specs_by_key = {
             spec["key"]: spec for spec in BUNDLED_PLUGINS
@@ -764,6 +832,20 @@ class TrassifyMasterToolsPlugin:
 
     def _sanitize_favorite_module_keys(self, keys):
         valid_keys = {spec["key"] for spec in BUNDLED_PLUGINS}
+        normalized = []
+        seen = set()
+
+        for key in keys:
+            text = str(key or "").strip()
+            if not text or text not in valid_keys or text in seen:
+                continue
+            normalized.append(text)
+            seen.add(text)
+
+        return normalized
+
+    def _sanitize_interactive_module_keys(self, keys):
+        valid_keys = {spec["key"] for spec in self._interactive_specs()}
         normalized = []
         seen = set()
 
