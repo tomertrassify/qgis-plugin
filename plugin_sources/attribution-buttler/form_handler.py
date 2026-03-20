@@ -953,15 +953,33 @@ def _all_operator_entries(config: dict) -> list[dict]:
     return result
 
 
-def _unique_operator_entry(operator_entries: list[dict], operator_name_value) -> dict | None:
+def _matching_operator_entries(operator_entries: list[dict], operator_name_value) -> list[dict]:
     needle = _normalized_operator_name(operator_name_value)
     if not needle:
-        return None
+        return []
 
     matches = []
     for entry in operator_entries:
         if _normalized_operator_name(entry.get("operator_name")) == needle:
             matches.append(entry)
+    return matches
+
+
+def _operator_entry_score(entry: dict) -> int:
+    values = [
+        str(entry.get("validity", "") or "").strip(),
+        str(entry.get("stand", "") or "").strip(),
+        str(entry.get("contact_name", "") or "").strip(),
+        str(entry.get("phone", "") or "").strip(),
+        str(entry.get("email", "") or "").strip(),
+        str(entry.get("fault_number", "") or "").strip(),
+        str(entry.get("folder_path", "") or "").strip(),
+    ]
+    return sum(1 for value in values if value)
+
+
+def _unique_operator_entry(operator_entries: list[dict], operator_name_value) -> dict | None:
+    matches = _matching_operator_entries(operator_entries, operator_name_value)
     if not matches:
         return None
     if len(matches) == 1:
@@ -982,20 +1000,8 @@ def _unique_operator_entry(operator_entries: list[dict], operator_name_value) ->
     if len(signatures) == 1:
         return matches[0]
 
-    def _score(entry: dict) -> int:
-        values = [
-            str(entry.get("validity", "") or "").strip(),
-            str(entry.get("stand", "") or "").strip(),
-            str(entry.get("contact_name", "") or "").strip(),
-            str(entry.get("phone", "") or "").strip(),
-            str(entry.get("email", "") or "").strip(),
-            str(entry.get("fault_number", "") or "").strip(),
-            str(entry.get("folder_path", "") or "").strip(),
-        ]
-        return sum(1 for value in values if value)
-
-    best = max(_score(entry) for entry in matches)
-    best_entries = [entry for entry in matches if _score(entry) == best]
+    best = max(_operator_entry_score(entry) for entry in matches)
+    best_entries = [entry for entry in matches if _operator_entry_score(entry) == best]
     if len(best_entries) == 1 and best > 0:
         return best_entries[0]
     return None
@@ -1008,9 +1014,14 @@ def _apply_operator_lookup(
     operator_entries: list[dict],
     operator_name_value,
 ):
-    entry = _unique_operator_entry(operator_entries, operator_name_value)
-    if not entry:
+    matches = _matching_operator_entries(operator_entries, operator_name_value)
+    if not matches:
         return False
+
+    entry = _unique_operator_entry(matches, operator_name_value)
+    if not entry:
+        # Fallback fuer Mehrfachtreffer: nicht abbrechen, sondern bestmoeglichen Treffer verwenden.
+        entry = max(matches, key=_operator_entry_score)
 
     # Betreiber-Lookup soll abhängige Felder synchron halten und daher immer überschreiben.
     overwrite = True
@@ -1028,7 +1039,24 @@ def _apply_operator_lookup(
         _set_if_allowed(dialog, feature, field_name, field_value, overwrite)
 
     folder_field = str(config.get("folder_link_field_name", "") or "").strip()
-    folder_source_path = str(entry.get("folder_path", "") or "").strip()
+    folder_source_path = ""
+    folder_candidates = []
+    for candidate in matches:
+        candidate_path = str(candidate.get("folder_path", "") or "").strip()
+        if not candidate_path:
+            continue
+        source_name = str(
+            candidate.get("source_name", candidate.get("_source_name", "")) or ""
+        ).strip().lower()
+        local_priority = 0 if (not source_name or "projekt" in source_name or "lokal" in source_name) else 1
+        folder_candidates.append(
+            (local_priority, -_operator_entry_score(candidate), candidate_path)
+        )
+    if folder_candidates:
+        folder_source_path = sorted(folder_candidates, key=lambda item: (item[0], item[1], item[2]))[0][2]
+    elif entry:
+        folder_source_path = str(entry.get("folder_path", "") or "").strip()
+
     if not folder_field or not folder_source_path:
         return True
 
