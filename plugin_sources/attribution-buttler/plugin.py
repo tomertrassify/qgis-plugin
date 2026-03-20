@@ -1138,11 +1138,21 @@ class LayerConfigDialog(QDialog):
         raw = str(path_value or "").strip()
         if not raw:
             return ""
-        trimmed = raw.rstrip("/\\")
+        normalized = raw.replace("\\", "/")
+        trimmed = normalized.rstrip("/")
         if not trimmed:
-            return raw
-        leaf = os.path.basename(trimmed)
-        return leaf or trimmed
+            return normalized
+
+        for root in self._global_nextcloud_roots():
+            root_norm = str(root or "").replace("\\", "/").rstrip("/")
+            if not root_norm:
+                continue
+            if trimmed == root_norm:
+                return "/"
+            if trimmed.lower().startswith(root_norm.lower() + "/"):
+                rel = trimmed[len(root_norm) :].lstrip("/")
+                return f"/{rel}" if rel else "/"
+        return trimmed
 
     def _operator_path_value(self, row_index: int) -> str:
         item = self.operator_table.item(row_index, 8)
