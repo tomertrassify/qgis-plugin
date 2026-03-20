@@ -1079,29 +1079,7 @@ class ProjectStarterPlugin:
             self.GEOREF_LAYER_KEY_PROPERTY,
             self.LEGACY_GEOREF_LAYER_KEY_PROPERTIES,
         )
-        if key:
-            return key
-
-        source_path = Path(str(layer.source() or "").split("|", 1)[0])
-        leitungsauskunft_dir = self._leitungsauskunft_directory()
-        if (
-            leitungsauskunft_dir is None
-            or source_path.suffix.lower() not in self.GEOTIFF_EXTENSIONS
-            or not self._path_is_within(source_path, leitungsauskunft_dir)
-        ):
-            return ""
-
-        derived_operator = self._layer_custom_property(
-            layer,
-            self.GEOREF_OPERATOR_PROPERTY,
-            self.LEGACY_GEOREF_OPERATOR_PROPERTIES,
-        )
-        if not derived_operator:
-            derived_operator = str(operator_name or "").strip()
-        if not derived_operator:
-            return ""
-
-        return self._georef_layer_key(derived_operator, source_path.name)
+        return key
 
     def _layer_custom_property(self, layer, primary_key, legacy_keys=()):
         value = str(layer.customProperty(primary_key, "") or "").strip()
