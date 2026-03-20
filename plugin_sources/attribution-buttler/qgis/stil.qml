@@ -1517,7 +1517,10 @@
   <editforminit>form_open</editforminit>
   <editforminitcodesource>2</editforminitcodesource>
   <editforminitfilepath></editforminitfilepath>
-  <editforminitcode><![CDATA[from nextcloud_form_plugin.form_handler import form_open]]></editforminitcode>
+  <editforminitcode><![CDATA[try:
+    from attribution_buttler.form_handler import form_open
+except ModuleNotFoundError:
+    from nextcloud_form_plugin.form_handler import form_open]]></editforminitcode>
   <featformsuppress>0</featformsuppress>
   <editorlayout>tablayout</editorlayout>
   <attributeEditorForm>

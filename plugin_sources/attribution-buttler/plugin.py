@@ -52,7 +52,16 @@ from qgis.core import (
 PLUGIN_MENU = "&AttributionButler"
 PROPERTY_PREFIX = "nextcloud_form/"
 INIT_FUNCTION_NAME = "form_open"
-BOOTSTRAP_CODE = "from nextcloud_form_plugin.form_handler import form_open"
+BOOTSTRAP_CODE = (
+    "try:\n"
+    "    from attribution_buttler.form_handler import form_open\n"
+    "except ModuleNotFoundError:\n"
+    "    from nextcloud_form_plugin.form_handler import form_open\n"
+)
+BOOTSTRAP_CODE_MARKERS = (
+    "attribution_buttler.form_handler",
+    "nextcloud_form_plugin.form_handler",
+)
 LOCAL_ROOT_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*lokale\s*sync-roots\s*\}\}", flags=re.IGNORECASE)
 
 DEFAULT_CONFIG = {
@@ -5154,7 +5163,9 @@ def _remove_form_init_code_if_managed(layer):
     if hasattr(config, "initCode"):
         current_code = str(config.initCode() or "")
 
-    if current_func == INIT_FUNCTION_NAME and "nextcloud_form_plugin.form_handler" in current_code:
+    if current_func == INIT_FUNCTION_NAME and any(
+        marker in current_code for marker in BOOTSTRAP_CODE_MARKERS
+    ):
         config.setInitCode("")
         config.setInitFunction("")
         layer.setEditFormConfig(config)
