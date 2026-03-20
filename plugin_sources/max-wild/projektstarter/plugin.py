@@ -48,6 +48,8 @@ class ProjectStarterPlugin:
     GROUP_GEOREF = "002 Georeferenzierte Pläne"
     GROUP_BASEMAPS = "003 Basemaps/ ALKIS"
     MANAGED_SUBGROUP_NAME = "_Projektstarter"
+    GEOREF_AUTO_GROUP_NAME = "Automatisch"
+    GEOREF_MANUAL_GROUP_NAME = "Händisch"
     LEGACY_GROUP_PREFIX = "Projektstarter"
     OSM_LAYER_NAME = "OSM Standard"
     KML_STYLE_FIELD = "Sparte"
@@ -715,7 +717,8 @@ class ProjectStarterPlugin:
         basemap_root_group = self._get_or_create_root_group(root, self.GROUP_BASEMAPS, 2)
 
         project_group = self._get_or_create_managed_subgroup(project_root_group)
-        georef_group = self._get_or_create_managed_subgroup(georef_root_group)
+        georef_group = self._get_or_create_georef_auto_group(georef_root_group)
+        self._get_or_create_georef_manual_group(georef_root_group)
         basemap_group = self._get_or_create_managed_subgroup(basemap_root_group)
 
         self._reset_group(project_group)
@@ -777,6 +780,49 @@ class ProjectStarterPlugin:
                 return child
         return None
 
+    def _get_or_create_indexed_child_group(self, parent_group, group_name, index, legacy_names=()):
+        for child_index, child in enumerate(parent_group.children()):
+            if not isinstance(child, QgsLayerTreeGroup):
+                continue
+            if child.name() != group_name and child.name() not in legacy_names:
+                continue
+
+            if child.name() != group_name:
+                child.setName(group_name)
+            if child_index == index:
+                return child
+
+            clone = child.clone()
+            clone.setName(group_name)
+            parent_group.insertChildNode(index, clone)
+            parent_group.removeChildNode(child)
+            return clone
+
+        return parent_group.insertGroup(index, group_name)
+
+    def _get_or_create_georef_auto_group(self, parent_group):
+        return self._get_or_create_indexed_child_group(
+            parent_group,
+            self.GEOREF_AUTO_GROUP_NAME,
+            0,
+            legacy_names=(self.MANAGED_SUBGROUP_NAME,),
+        )
+
+    def _find_georef_auto_group(self, parent_group):
+        if parent_group is None:
+            return None
+        for child in parent_group.children():
+            if isinstance(child, QgsLayerTreeGroup) and child.name() == self.GEOREF_AUTO_GROUP_NAME:
+                return child
+        return None
+
+    def _get_or_create_georef_manual_group(self, parent_group):
+        return self._get_or_create_indexed_child_group(
+            parent_group,
+            self.GEOREF_MANUAL_GROUP_NAME,
+            1,
+        )
+
     def _find_root_group(self, root, group_name):
         for node in root.children():
             if isinstance(node, QgsLayerTreeGroup) and node.name() == group_name:
@@ -830,9 +876,11 @@ class ProjectStarterPlugin:
 
         if georef_group is None:
             georef_root_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_GEOREF)
-            georef_group = self._find_managed_subgroup(georef_root_group)
-            if georef_group is None and georef_root_group is not None:
-                georef_group = self._get_or_create_managed_subgroup(georef_root_group)
+            if georef_root_group is not None:
+                self._get_or_create_georef_manual_group(georef_root_group)
+                georef_group = self._find_georef_auto_group(georef_root_group)
+                if georef_group is None:
+                    georef_group = self._get_or_create_georef_auto_group(georef_root_group)
         if georef_group is None:
             return False
 
