@@ -114,6 +114,7 @@ DEFAULT_CONFIG = {
 }
 
 USER_SETTINGS_PREFIX = "AttributionButler/user_config"
+MASTER_SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
 USER_CONFIG_KEYS = (
     "nextcloud_base_url",
     "nextcloud_user",
@@ -234,9 +235,6 @@ class LayerConfigDialog(QDialog):
         self._config_page_index = self.page_stack.addWidget(config_tab)
         config_icon = self.style().standardIcon(QStyle.SP_FileDialogDetailedView)
 
-        connection_group = QGroupBox("1) Nextcloud Verbindung")
-        connection_form = QFormLayout(connection_group)
-
         self.base_url = QLineEdit()
         self.base_url.setPlaceholderText("https://nextcloud.example.com")
         self.user = QLineEdit()
@@ -249,15 +247,14 @@ class LayerConfigDialog(QDialog):
         self.marker = QLineEdit()
         self.marker.setPlaceholderText("Nextcloud")
 
-        connection_form.addRow("Nextcloud URL", self.base_url)
-        connection_form.addRow("Nextcloud Benutzer", self.user)
-        connection_form.addRow("Nextcloud App-Passwort", self.app_password)
-        connection_form.addRow("Lokale Sync-Roots", self.local_roots)
-        connection_form.addRow("Fallback Ordner-Marker", self.marker)
+        master_hint = QLabel(
+            "Hinweis: Nextcloud-Verbindung wird zentral aus "
+            "Trassify Master Tools > Einstellungen > Nextcloud uebernommen."
+        )
+        master_hint.setWordWrap(True)
+        config_layout.addWidget(master_hint)
 
-        config_layout.addWidget(connection_group)
-
-        fields_group = QGroupBox("2) Feld-Mapping")
+        fields_group = QGroupBox("1) Feld-Mapping")
         fields_form = QFormLayout(fields_group)
 
         self.path_field = self._make_field_combo()
@@ -281,7 +278,7 @@ class LayerConfigDialog(QDialog):
 
         config_layout.addWidget(fields_group)
 
-        operator_fields_group = QGroupBox("3) Betreiber-Feld-Mapping")
+        operator_fields_group = QGroupBox("2) Betreiber-Feld-Mapping")
         operator_fields_form = QFormLayout(operator_fields_group)
         operator_fields_form.addRow("Betreibername Feld", self.operator_name_field)
         operator_fields_form.addRow("Ansprechpartner Feld", self.operator_contact_field)
@@ -302,7 +299,7 @@ class LayerConfigDialog(QDialog):
         suggestion_row.addStretch(1)
         config_layout.addLayout(suggestion_row)
 
-        behavior_group = QGroupBox("4) Verhalten")
+        behavior_group = QGroupBox("3) Verhalten")
         behavior_form = QFormLayout(behavior_group)
 
         self.overwrite = QCheckBox("Vorhandene Werte ueberschreiben")
@@ -4590,8 +4587,27 @@ def _property_key(name: str) -> str:
     return f"{PROPERTY_PREFIX}{name}"
 
 
+def _master_setting_key(name: str) -> str:
+    return f"{MASTER_SETTINGS_PREFIX}/{name}"
+
+
 def _user_setting_key(name: str) -> str:
     return f"{USER_SETTINGS_PREFIX}/{name}"
+
+
+def _load_nextcloud_settings_for_prefix(prefix_key_builder) -> dict:
+    settings = QSettings()
+    cfg = {}
+    for key in USER_CONFIG_KEYS:
+        setting_key = prefix_key_builder(key)
+        if not settings.contains(setting_key):
+            continue
+        raw = settings.value(setting_key, None)
+        if key == "local_nextcloud_roots":
+            cfg[key] = _parse_roots(raw)
+        else:
+            cfg[key] = str(raw or "").strip()
+    return cfg
 
 
 def _save_user_config(config: dict):
@@ -4632,18 +4648,13 @@ def _parse_roots(value) -> list[str]:
 
 
 def _load_user_config() -> dict:
-    settings = QSettings()
-    cfg = {}
-    for key in USER_CONFIG_KEYS:
-        setting_key = _user_setting_key(key)
-        if not settings.contains(setting_key):
-            continue
-        raw = settings.value(setting_key, None)
-        if key == "local_nextcloud_roots":
-            cfg[key] = _parse_roots(raw)
-        else:
-            cfg[key] = str(raw or "").strip()
-    return cfg
+    legacy_cfg = _load_nextcloud_settings_for_prefix(_user_setting_key)
+    master_cfg = _load_nextcloud_settings_for_prefix(_master_setting_key)
+    if not master_cfg:
+        return legacy_cfg
+    merged = dict(legacy_cfg)
+    merged.update(master_cfg)
+    return merged
 
 
 def _normalize_operator_entry(entry) -> dict:
@@ -5235,22 +5246,19 @@ class NextcloudFormPlugin:
             return
 
         config = dialog.values()
-        _save_user_config(config)
-        local_saved_hint = (
-            "\n\nHinweis: Nextcloud-Zugangsdaten und lokale Sync-Roots wurden im QGIS-Profil gespeichert."
-        )
         if not config["nextcloud_base_url"] or not config["nextcloud_user"] or not config["nextcloud_app_password"]:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "AttributionButler",
-                "Nextcloud URL, Benutzer und App-Passwort sind erforderlich." + local_saved_hint,
+                "Nextcloud URL, Benutzer und App-Passwort fehlen. "
+                "Bitte in Trassify Master Tools > Einstellungen > Nextcloud setzen.",
             )
             return
         if not config["path_field_name"]:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "AttributionButler",
-                "Pfadfeld ist erforderlich." + local_saved_hint,
+                "Pfadfeld ist erforderlich.",
             )
             return
         target_fields = [
@@ -5269,7 +5277,7 @@ class NextcloudFormPlugin:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "AttributionButler",
-                "Mindestens ein Zielfeld muss gesetzt sein." + local_saved_hint,
+                "Mindestens ein Zielfeld muss gesetzt sein.",
             )
             return
 
@@ -5278,7 +5286,7 @@ class NextcloudFormPlugin:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "AttributionButler",
-                "Diese Felder fehlen im Layer:\n- " + "\n- ".join(missing) + local_saved_hint,
+                "Diese Felder fehlen im Layer:\n- " + "\n- ".join(missing),
             )
             return
 

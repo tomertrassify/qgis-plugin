@@ -57,6 +57,7 @@ DEFAULT_CONFIG = {
 }
 
 USER_SETTINGS_PREFIX = "AttributionButler/user_config"
+MASTER_SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
 USER_CONFIG_KEYS = (
     "nextcloud_base_url",
     "nextcloud_user",
@@ -74,6 +75,25 @@ def _property_key(name: str) -> str:
 
 def _user_setting_key(name: str) -> str:
     return f"{USER_SETTINGS_PREFIX}/{name}"
+
+
+def _master_setting_key(name: str) -> str:
+    return f"{MASTER_SETTINGS_PREFIX}/{name}"
+
+
+def _load_nextcloud_settings_for_prefix(prefix_key_builder) -> dict:
+    settings = QSettings()
+    cfg = {}
+    for key in USER_CONFIG_KEYS:
+        setting_key = prefix_key_builder(key)
+        if not settings.contains(setting_key):
+            continue
+        raw = settings.value(setting_key, None)
+        if key == "local_nextcloud_roots":
+            cfg[key] = _parse_roots(raw)
+        else:
+            cfg[key] = str(raw or "").strip()
+    return cfg
 
 
 def _to_bool(value, default=False):
@@ -103,18 +123,13 @@ def _parse_roots(value) -> list[str]:
 
 
 def _load_user_config() -> dict:
-    settings = QSettings()
-    cfg = {}
-    for key in USER_CONFIG_KEYS:
-        setting_key = _user_setting_key(key)
-        if not settings.contains(setting_key):
-            continue
-        raw = settings.value(setting_key, None)
-        if key == "local_nextcloud_roots":
-            cfg[key] = _parse_roots(raw)
-        else:
-            cfg[key] = str(raw or "").strip()
-    return cfg
+    legacy_cfg = _load_nextcloud_settings_for_prefix(_user_setting_key)
+    master_cfg = _load_nextcloud_settings_for_prefix(_master_setting_key)
+    if not master_cfg:
+        return legacy_cfg
+    merged = dict(legacy_cfg)
+    merged.update(master_cfg)
+    return merged
 
 
 def _normalize_operator_entry(entry) -> dict:
@@ -1222,7 +1237,8 @@ def form_open(dialog, layer, feature):
         QMessageBox.warning(
             dialog,
             "Form-Setup Fehler",
-            "Nextcloud URL, Benutzer und App-Passwort sind nicht vollstaendig konfiguriert.",
+            "Nextcloud URL, Benutzer und App-Passwort sind nicht vollstaendig konfiguriert. "
+            "Bitte in Trassify Master Tools > Einstellungen > Nextcloud setzen.",
         )
         return
 

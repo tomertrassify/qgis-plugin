@@ -13,14 +13,14 @@ Dieses Plugin bindet eine `form_open`-Funktion an einen Vektor-Layer, damit bei 
 
 1. Gewuenschten Vektor-Layer aktivieren.
 2. Menu `AttributionButler > Layer mit AttributionButler verbinden`.
-3. Dialog ausfuellen (URL, User, App-Passwort, Feldnamen).
+3. Dialog ausfuellen (Feldnamen, Betreiber, Data-Quellen).
 4. Plugin setzt die Layer-Form-Initfunktion automatisch auf `form_open`.
 
 Danach reicht normale Formularnutzung: Sobald das konfigurierte Pfadfeld geaendert wird, werden die Ziel-Felder aktualisiert.
 
 ## Hinweise
 
-- Nextcloud-Zugangsdaten, URL und lokale Sync-Roots werden pro Benutzer im QGIS-Profil gespeichert (lokal pro Rechner/OS).
+- Nextcloud-Zugangsdaten, URL und lokale Sync-Roots werden zentral aus `Trassify Master Tools > Einstellungen > Nextcloud` uebernommen.
 - Feld-Mapping, Betreiberliste und Data-Quellen bleiben als Layer-Custom-Properties im QGIS-Projekt.
 - Der Dialog hat links eine QGIS-aehnliche Seitennavigation mit `Betreiberliste`, `Data` und `Konfiguration` und startet direkt auf `Betreiberliste`.
 - In `Konfiguration` kannst du Betreiber-Felder mappen (z. B. `Betreiber`, `betr_anspr`, `betr_tel`, `betr_email`, `Stör-Nr.`).
