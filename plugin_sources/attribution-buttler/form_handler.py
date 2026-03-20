@@ -491,42 +491,209 @@ def _to_int(value, default=-1):
         return default
 
 
+def _canonical_nextcloud_path(nc_path: str) -> str:
+    normalized = _normalize_path(nc_path)
+    if not normalized:
+        return ""
+    canonical = "/" + normalized.lstrip("/")
+    if canonical != "/":
+        canonical = canonical.rstrip("/")
+    return canonical
+
+
+def _nextcloud_path_variants(nc_path: str) -> list[str]:
+    canonical = _canonical_nextcloud_path(nc_path)
+    if not canonical:
+        return []
+
+    variants = [canonical]
+    if canonical != "/":
+        no_leading = canonical.lstrip("/")
+        if no_leading:
+            variants.append(no_leading)
+        trailing = canonical + "/"
+        variants.append(trailing)
+        trailing_no_leading = trailing.lstrip("/")
+        if trailing_no_leading:
+            variants.append(trailing_no_leading)
+
+    unique = []
+    seen = set()
+    for value in variants:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    return unique
+
+
+def _share_path_bases(canonical_path: str, config: dict) -> list[str]:
+    if not canonical_path or canonical_path == "/":
+        return []
+
+    candidates = [_canonical_nextcloud_path(canonical_path)]
+    root_folder_names = []
+    for root in config.get("local_nextcloud_roots", []) or []:
+        base_name = os.path.basename(_normalize_path(root).rstrip("/"))
+        token = str(base_name or "").strip().strip("/")
+        if token:
+            root_folder_names.append(token)
+
+    path_body = canonical_path.lstrip("/")
+    first_segment = path_body.split("/", 1)[0] if path_body else ""
+    remainder = path_body[len(first_segment) :] if first_segment else ""
+
+    for folder_name in root_folder_names:
+        prefixed = _canonical_nextcloud_path(f"/{folder_name}/{path_body}")
+        if prefixed:
+            candidates.append(prefixed)
+        if first_segment and first_segment.casefold() == folder_name.casefold():
+            stripped = _canonical_nextcloud_path("/" + remainder.lstrip("/"))
+            if stripped and stripped != "/":
+                candidates.append(stripped)
+
+    unique = []
+    seen = set()
+    for item in candidates:
+        canonical = _canonical_nextcloud_path(item)
+        if not canonical or canonical == "/" or canonical in seen:
+            continue
+        seen.add(canonical)
+        unique.append(canonical)
+    return unique
+
+
+def _share_request_paths(canonical_path: str, config: dict) -> list[str]:
+    request_paths = []
+    for base_path in _share_path_bases(canonical_path, config):
+        request_paths.extend(_nextcloud_path_variants(base_path))
+
+    unique = []
+    seen = set()
+    for path in request_paths:
+        token = str(path or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        unique.append(token)
+    return unique
+
+
+def _extract_public_share_url(ocs_payload: dict, accepted_paths: set[str] | None = None) -> str:
+    accepted = {path for path in (accepted_paths or set()) if path and path != "/"}
+    for entry in _as_list(ocs_payload.get("ocs", {}).get("data")):
+        if _to_int(entry.get("share_type")) != 3:
+            continue
+        if accepted:
+            entry_path = _canonical_nextcloud_path(str(entry.get("path", "") or ""))
+            if entry_path not in accepted:
+                continue
+        url = str(entry.get("url") or "").strip()
+        if url:
+            return url
+    return ""
+
+
 def get_or_create_public_link(config: dict, nc_path: str) -> str:
+    canonical_path = _canonical_nextcloud_path(nc_path)
+    if not canonical_path:
+        raise RuntimeError("Leerer Nextcloud-Pfad fuer Share-Link.")
+    if canonical_path == "/":
+        raise RuntimeError("Root-Pfad kann nicht als oeffentlicher Nextcloud-Link geteilt werden.")
+
     cache_key = (
         str(config["nextcloud_base_url"]).rstrip("/"),
         str(config["nextcloud_user"]),
-        nc_path,
+        canonical_path,
     )
     if cache_key in _SHARE_CACHE:
         return _SHARE_CACHE[cache_key]
 
     base_url = str(config["nextcloud_base_url"]).rstrip("/")
-    endpoint = f"{base_url}/ocs/v2.php/apps/files_sharing/api/v1/shares"
-
-    existing = _ocs_request(
-        config=config,
-        method="GET",
-        endpoint_url=endpoint,
-        params={"path": nc_path, "reshares": "true", "subfiles": "false"},
+    endpoints = (
+        f"{base_url}/ocs/v2.php/apps/files_sharing/api/v1/shares",
+        f"{base_url}/ocs/v1.php/apps/files_sharing/api/v1/shares",
     )
-    for entry in _as_list(existing.get("ocs", {}).get("data")):
-        if _to_int(entry.get("share_type")) == 3 and entry.get("url"):
-            link = str(entry["url"])
-            _SHARE_CACHE[cache_key] = link
-            return link
+    request_paths = _share_request_paths(canonical_path, config)
+    accepted_paths = {
+        _canonical_nextcloud_path(path)
+        for path in request_paths
+        if _canonical_nextcloud_path(path) and _canonical_nextcloud_path(path) != "/"
+    }
+    if not request_paths:
+        raise RuntimeError(f"Kein gueltiger Nextcloud-Pfad fuer Share-Link: '{canonical_path}'")
 
-    created = _ocs_request(
-        config=config,
-        method="POST",
-        endpoint_url=endpoint,
-        data={"path": nc_path, "shareType": 3, "permissions": 1},
+    errors = []
+
+    for endpoint in endpoints:
+        for candidate_path in request_paths:
+            existing_query_variants = (
+                {"path": candidate_path, "reshares": "true", "subfiles": "false"},
+                {"path": candidate_path, "reshares": "true"},
+                {"path": candidate_path},
+            )
+
+            for query_params in existing_query_variants:
+                try:
+                    existing = _ocs_request(
+                        config=config,
+                        method="GET",
+                        endpoint_url=endpoint,
+                        params=query_params,
+                    )
+                    link = _extract_public_share_url(
+                        existing, accepted_paths={_canonical_nextcloud_path(candidate_path)}
+                    )
+                    if link:
+                        _SHARE_CACHE[cache_key] = link
+                        return link
+                    break
+                except Exception as exc:
+                    errors.append(f"GET {endpoint} path='{candidate_path}' -> {exc}")
+
+        # Manche Server liefern mit path-Filter 500 (statuscode 996), ohne Filter aber gueltige Daten.
+        for all_query in ({"reshares": "true"}, None):
+            try:
+                existing_all = _ocs_request(
+                    config=config,
+                    method="GET",
+                    endpoint_url=endpoint,
+                    params=all_query,
+                )
+                link = _extract_public_share_url(existing_all, accepted_paths=accepted_paths)
+                if link:
+                    _SHARE_CACHE[cache_key] = link
+                    return link
+                break
+            except Exception as exc:
+                query_label = "reshares=true" if all_query else "none"
+                errors.append(f"GET {endpoint} all({query_label}) -> {exc}")
+
+        for candidate_path in request_paths:
+            create_payload_variants = (
+                {"path": candidate_path, "shareType": "3", "permissions": "1"},
+                {"path": candidate_path, "shareType": "3"},
+            )
+            for payload in create_payload_variants:
+                try:
+                    created = _ocs_request(
+                        config=config,
+                        method="POST",
+                        endpoint_url=endpoint,
+                        data=payload,
+                    )
+                    link = str((created.get("ocs", {}).get("data") or {}).get("url") or "").strip()
+                    if link:
+                        _SHARE_CACHE[cache_key] = link
+                        return link
+                except Exception as exc:
+                    errors.append(f"POST {endpoint} path='{candidate_path}' -> {exc}")
+
+    details = errors[-1] if errors else "Unbekannter Fehler"
+    raise RuntimeError(
+        f"Kein Share-Link erzeugt fuer '{canonical_path}'. Letzter Fehler: {details}"
     )
-    link = (created.get("ocs", {}).get("data") or {}).get("url")
-    if not link:
-        raise RuntimeError(f"Kein Share-Link erzeugt fuer: {nc_path}")
-    link = str(link)
-    _SHARE_CACHE[cache_key] = link
-    return link
 
 
 def _configured_fields(config: dict) -> list[str]:
