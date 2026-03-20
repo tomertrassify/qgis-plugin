@@ -113,7 +113,6 @@ DEFAULT_CONFIG = {
     ],
 }
 
-USER_SETTINGS_PREFIX = "AttributionButler/user_config"
 MASTER_SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
 USER_CONFIG_KEYS = (
     "nextcloud_base_url",
@@ -235,17 +234,15 @@ class LayerConfigDialog(QDialog):
         self._config_page_index = self.page_stack.addWidget(config_tab)
         config_icon = self.style().standardIcon(QStyle.SP_FileDialogDetailedView)
 
-        self.base_url = QLineEdit()
-        self.base_url.setPlaceholderText("https://nextcloud.example.com")
-        self.user = QLineEdit()
-        self.user.setPlaceholderText("user@example.com")
-        self.app_password = QLineEdit()
-        self.app_password.setEchoMode(QLineEdit.PasswordEchoOnEdit)
-        self.local_roots = QPlainTextEdit()
-        self.local_roots.setPlaceholderText("Ein lokaler Nextcloud-Root pro Zeile")
-        self.local_roots.setMinimumHeight(90)
-        self.marker = QLineEdit()
-        self.marker.setPlaceholderText("Nextcloud")
+        self._global_nextcloud_config = {
+            "nextcloud_base_url": str(DEFAULT_CONFIG.get("nextcloud_base_url", "") or "").strip(),
+            "nextcloud_user": "",
+            "nextcloud_app_password": "",
+            "local_nextcloud_roots": [],
+            "nextcloud_folder_marker": str(
+                DEFAULT_CONFIG.get("nextcloud_folder_marker", "Nextcloud") or "Nextcloud"
+            ).strip(),
+        }
 
         master_hint = QLabel(
             "Hinweis: Nextcloud-Verbindung wird zentral aus "
@@ -674,6 +671,32 @@ class LayerConfigDialog(QDialog):
             return
         page_index = int(current.data(Qt.UserRole))
         self.page_stack.setCurrentIndex(page_index)
+
+    def _set_global_nextcloud_config(self, config: dict):
+        self._global_nextcloud_config = {
+            "nextcloud_base_url": str(config.get("nextcloud_base_url", "") or "").strip(),
+            "nextcloud_user": str(config.get("nextcloud_user", "") or "").strip(),
+            "nextcloud_app_password": str(config.get("nextcloud_app_password", "") or ""),
+            "local_nextcloud_roots": _parse_roots(config.get("local_nextcloud_roots", [])),
+            "nextcloud_folder_marker": str(
+                config.get("nextcloud_folder_marker", DEFAULT_CONFIG.get("nextcloud_folder_marker", "Nextcloud"))
+                or ""
+            ).strip(),
+        }
+
+    def _global_nextcloud_roots(self) -> list[str]:
+        roots = [
+            str(path or "").strip()
+            for path in self._global_nextcloud_config.get("local_nextcloud_roots", [])
+            if str(path or "").strip()
+        ]
+        if roots:
+            return roots
+        return [
+            str(path or "").strip()
+            for path in DEFAULT_CONFIG.get("local_nextcloud_roots", [])
+            if str(path or "").strip()
+        ]
 
     def _make_field_combo(self) -> QComboBox:
         combo = QComboBox()
@@ -1188,8 +1211,10 @@ class LayerConfigDialog(QDialog):
         start_dir = ""
         if current_path:
             start_dir = current_path
-        elif self.local_roots.toPlainText().strip():
-            start_dir = self.local_roots.toPlainText().splitlines()[0].strip()
+        else:
+            roots = self._global_nextcloud_roots()
+            if roots:
+                start_dir = roots[0]
 
         selected_dir = QFileDialog.getExistingDirectory(
             self,
@@ -1214,8 +1239,9 @@ class LayerConfigDialog(QDialog):
 
     def _bulk_assign_operator_paths_from_parent(self):
         start_dir = ""
-        if self.local_roots.toPlainText().strip():
-            start_dir = self.local_roots.toPlainText().splitlines()[0].strip()
+        roots = self._global_nextcloud_roots()
+        if roots:
+            start_dir = roots[0]
         elif os.path.expanduser("~"):
             start_dir = os.path.expanduser("~")
 
@@ -1497,8 +1523,9 @@ class LayerConfigDialog(QDialog):
 
     def _import_operators(self):
         start_dir = ""
-        if self.local_roots.toPlainText().strip():
-            start_dir = self.local_roots.toPlainText().splitlines()[0].strip()
+        roots = self._global_nextcloud_roots()
+        if roots:
+            start_dir = roots[0]
         elif os.path.expanduser("~"):
             start_dir = os.path.expanduser("~")
 
@@ -1577,8 +1604,9 @@ class LayerConfigDialog(QDialog):
         operators = self._operators()
 
         start_dir = ""
-        if self.local_roots.toPlainText().strip():
-            start_dir = self.local_roots.toPlainText().splitlines()[0].strip()
+        roots = self._global_nextcloud_roots()
+        if roots:
+            start_dir = roots[0]
         elif os.path.expanduser("~"):
             start_dir = os.path.expanduser("~")
 
@@ -3565,13 +3593,7 @@ class LayerConfigDialog(QDialog):
         return stem or base
 
     def _resolved_source_value(self, source_value: str) -> str:
-        roots = [line.strip() for line in self.local_roots.toPlainText().splitlines() if line.strip()]
-        if not roots:
-            roots = [
-                str(path or "").strip()
-                for path in DEFAULT_CONFIG.get("local_nextcloud_roots", [])
-                if str(path or "").strip()
-            ]
+        roots = self._global_nextcloud_roots()
         return _expand_local_root_placeholder(source_value, roots)
 
     def _build_postgres_ogr_source_uri(
@@ -3857,8 +3879,10 @@ class LayerConfigDialog(QDialog):
                 start_dir = current_text
             else:
                 start_dir = os.path.dirname(current_text)
-        elif self.local_roots.toPlainText().strip():
-            start_dir = self.local_roots.toPlainText().splitlines()[0].strip()
+        else:
+            roots = self._global_nextcloud_roots()
+            if roots:
+                start_dir = roots[0]
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -4532,11 +4556,7 @@ class LayerConfigDialog(QDialog):
         return result
 
     def set_values(self, config: dict):
-        self.base_url.setText(str(config.get("nextcloud_base_url", "")))
-        self.user.setText(str(config.get("nextcloud_user", "")))
-        self.app_password.setText(str(config.get("nextcloud_app_password", "")))
-        self.local_roots.setPlainText("\n".join(config.get("local_nextcloud_roots", [])))
-        self.marker.setText(str(config.get("nextcloud_folder_marker", "")))
+        self._set_global_nextcloud_config(config)
         self._set_combo_text(self.path_field, str(config.get("path_field_name", "")))
         self._set_combo_text(self.file_field, str(config.get("file_link_field_name", "")))
         self._set_combo_text(self.folder_field, str(config.get("folder_link_field_name", "")))
@@ -4557,13 +4577,21 @@ class LayerConfigDialog(QDialog):
         self._set_data_sources(config.get("external_data_sources", []))
 
     def values(self) -> dict:
-        roots = [line.strip() for line in self.local_roots.toPlainText().splitlines() if line.strip()]
+        roots = self._global_nextcloud_roots()
         return {
-            "nextcloud_base_url": self.base_url.text().strip(),
-            "nextcloud_user": self.user.text().strip(),
-            "nextcloud_app_password": self.app_password.text(),
+            "nextcloud_base_url": str(
+                self._global_nextcloud_config.get("nextcloud_base_url", "")
+            ).strip(),
+            "nextcloud_user": str(
+                self._global_nextcloud_config.get("nextcloud_user", "")
+            ).strip(),
+            "nextcloud_app_password": str(
+                self._global_nextcloud_config.get("nextcloud_app_password", "")
+            ),
             "local_nextcloud_roots": roots,
-            "nextcloud_folder_marker": self.marker.text().strip(),
+            "nextcloud_folder_marker": str(
+                self._global_nextcloud_config.get("nextcloud_folder_marker", "")
+            ).strip(),
             "path_field_name": self._combo_text(self.path_field),
             "file_link_field_name": self._combo_text(self.file_field),
             "folder_link_field_name": self._combo_text(self.folder_field),
@@ -4591,10 +4619,6 @@ def _master_setting_key(name: str) -> str:
     return f"{MASTER_SETTINGS_PREFIX}/{name}"
 
 
-def _user_setting_key(name: str) -> str:
-    return f"{USER_SETTINGS_PREFIX}/{name}"
-
-
 def _load_nextcloud_settings_for_prefix(prefix_key_builder) -> dict:
     settings = QSettings()
     cfg = {}
@@ -4608,17 +4632,6 @@ def _load_nextcloud_settings_for_prefix(prefix_key_builder) -> dict:
         else:
             cfg[key] = str(raw or "").strip()
     return cfg
-
-
-def _save_user_config(config: dict):
-    settings = QSettings()
-    for key in USER_CONFIG_KEYS:
-        value = config.get(key, DEFAULT_CONFIG.get(key))
-        if key == "local_nextcloud_roots":
-            roots = [str(v).strip() for v in (value or []) if str(v).strip()]
-            settings.setValue(_user_setting_key(key), json.dumps(roots))
-        else:
-            settings.setValue(_user_setting_key(key), str(value or "").strip())
 
 
 def _to_bool(value, default=False):
@@ -4648,13 +4661,7 @@ def _parse_roots(value) -> list[str]:
 
 
 def _load_user_config() -> dict:
-    legacy_cfg = _load_nextcloud_settings_for_prefix(_user_setting_key)
-    master_cfg = _load_nextcloud_settings_for_prefix(_master_setting_key)
-    if not master_cfg:
-        return legacy_cfg
-    merged = dict(legacy_cfg)
-    merged.update(master_cfg)
-    return merged
+    return _load_nextcloud_settings_for_prefix(_master_setting_key)
 
 
 def _normalize_operator_entry(entry) -> dict:

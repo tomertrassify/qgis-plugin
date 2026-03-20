@@ -56,7 +56,6 @@ DEFAULT_CONFIG = {
     ],
 }
 
-USER_SETTINGS_PREFIX = "AttributionButler/user_config"
 MASTER_SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
 USER_CONFIG_KEYS = (
     "nextcloud_base_url",
@@ -71,10 +70,6 @@ _SHARE_CACHE: dict[tuple[str, str, str], str] = {}
 
 def _property_key(name: str) -> str:
     return f"{PROPERTY_PREFIX}{name}"
-
-
-def _user_setting_key(name: str) -> str:
-    return f"{USER_SETTINGS_PREFIX}/{name}"
 
 
 def _master_setting_key(name: str) -> str:
@@ -123,13 +118,7 @@ def _parse_roots(value) -> list[str]:
 
 
 def _load_user_config() -> dict:
-    legacy_cfg = _load_nextcloud_settings_for_prefix(_user_setting_key)
-    master_cfg = _load_nextcloud_settings_for_prefix(_master_setting_key)
-    if not master_cfg:
-        return legacy_cfg
-    merged = dict(legacy_cfg)
-    merged.update(master_cfg)
-    return merged
+    return _load_nextcloud_settings_for_prefix(_master_setting_key)
 
 
 def _normalize_operator_entry(entry) -> dict:
