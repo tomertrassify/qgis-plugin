@@ -472,6 +472,17 @@ class LayerConfigDialog(QDialog):
         )
         external_operators_layout.addWidget(self.external_operator_search_input)
 
+        self.external_show_local_only_checkbox = QCheckBox(
+            "Nur Betreiber aus Projektliste anzeigen"
+        )
+        self.external_show_local_only_checkbox.setToolTip(
+            "Zeigt in der externen Liste nur Betreiber an, die bereits in der lokalen Projektliste vorhanden sind."
+        )
+        self.external_show_local_only_checkbox.toggled.connect(
+            self._refilter_external_operator_table
+        )
+        external_operators_layout.addWidget(self.external_show_local_only_checkbox)
+
         self.external_operator_table = QTableWidget(0, 7)
         self.external_operator_table.setHorizontalHeaderLabels(
             [
@@ -784,6 +795,22 @@ class LayerConfigDialog(QDialog):
                 row_tokens.append(token)
         return row_tokens
 
+    def _local_operator_name_tokens(self) -> set[str]:
+        tokens = set()
+        for row in range(self.operator_table.rowCount()):
+            item = self.operator_table.item(row, 1)
+            name = item.text().strip() if item else ""
+            token = self._normalize_operator_match_token(name)
+            if token:
+                tokens.add(token)
+        return tokens
+
+    def _refilter_external_operator_table(self):
+        self._apply_table_text_filter(
+            self.external_operator_table,
+            self._external_search_text(),
+        )
+
     def _append_external_operator_row(
         self,
         operator_name: str = "",
@@ -938,19 +965,40 @@ class LayerConfigDialog(QDialog):
             raw = str(text or "")
             tokens = self._external_search_tokens(raw)
             list_mode = len(tokens) > 1 or any(sep in raw for sep in ("\n", "\r", ";", ",", "|", "\t"))
-            if list_mode:
-                for row in range(table.rowCount()):
-                    operator_item = table.item(row, 1)
-                    operator_name = operator_item.text() if operator_item is not None else ""
-                    operator_token = self._normalize_operator_match_token(operator_name)
-                    visible = True
+            show_local_only = (
+                hasattr(self, "external_show_local_only_checkbox")
+                and self.external_show_local_only_checkbox.isChecked()
+            )
+            local_tokens = self._local_operator_name_tokens() if show_local_only else set()
+
+            for row in range(table.rowCount()):
+                operator_item = table.item(row, 1)
+                operator_name = operator_item.text() if operator_item is not None else ""
+                operator_token = self._normalize_operator_match_token(operator_name)
+                visible = True
+
+                if list_mode:
                     if tokens:
                         visible = any(
                             self._external_search_token_matches_operator(token, operator_token)
                             for token in tokens
                         )
-                    table.setRowHidden(row, not visible)
-                return
+                else:
+                    token = raw.strip().casefold()
+                    if token:
+                        row_values = []
+                        for col in range(table.columnCount()):
+                            item = table.item(row, col)
+                            if item is not None:
+                                row_values.append(item.text())
+                        row_text = " | ".join(row_values).casefold()
+                        visible = token in row_text
+
+                if show_local_only:
+                    visible = visible and bool(operator_token) and operator_token in local_tokens
+
+                table.setRowHidden(row, not visible)
+            return
 
         token = str(text or "").strip().casefold()
         for row in range(table.rowCount()):
@@ -1084,6 +1132,7 @@ class LayerConfigDialog(QDialog):
             if sorting_enabled:
                 self.operator_table.setSortingEnabled(True)
         self._apply_table_text_filter(self.operator_table, self.operator_search_input.text())
+        self._refilter_external_operator_table()
 
     def _operator_path_alias(self, path_value: str) -> str:
         raw = str(path_value or "").strip()
@@ -1170,19 +1219,23 @@ class LayerConfigDialog(QDialog):
         stand_item.setText(oldest_date)
 
     def _on_operator_table_item_changed(self, item: QTableWidgetItem):
-        if item is None or item.column() != 8:
+        if item is None:
             return
 
-        current_text = item.text().strip()
-        stored_full_path = str(item.data(Qt.UserRole) or "").strip()
-        if stored_full_path and current_text == self._operator_path_alias(stored_full_path):
-            return
+        if item.column() == 8:
+            current_text = item.text().strip()
+            stored_full_path = str(item.data(Qt.UserRole) or "").strip()
+            if stored_full_path and current_text == self._operator_path_alias(stored_full_path):
+                self._refilter_external_operator_table()
+                return
 
-        old_block = self.operator_table.blockSignals(True)
-        try:
-            self._set_operator_path_item(item.row(), current_text)
-        finally:
-            self.operator_table.blockSignals(old_block)
+            old_block = self.operator_table.blockSignals(True)
+            try:
+                self._set_operator_path_item(item.row(), current_text)
+            finally:
+                self.operator_table.blockSignals(old_block)
+
+        self._refilter_external_operator_table()
 
     def _install_operator_folder_button(self, row_index: int):
         button = QToolButton(self.operator_table)
@@ -1212,6 +1265,7 @@ class LayerConfigDialog(QDialog):
         for row_index in row_indices:
             self.operator_table.removeRow(row_index)
         self._apply_table_text_filter(self.operator_table, self.operator_search_input.text())
+        self._refilter_external_operator_table()
 
     def _choose_folder_for_row(self, row_index: int):
         if row_index < 0 or row_index >= self.operator_table.rowCount():
@@ -1716,6 +1770,7 @@ class LayerConfigDialog(QDialog):
             else:
                 values = ["", str(entry or ""), "", "", "", "", "", "", ""]
             self._add_operator_row(values)
+        self._refilter_external_operator_table()
 
     def _operators(self):
         result = []
