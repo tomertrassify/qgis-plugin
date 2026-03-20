@@ -96,28 +96,6 @@ def save_favorite_module_keys(keys: list[str] | tuple[str, ...]) -> list[str]:
     return normalized
 
 
-def load_last_loaded_module_keys() -> list[str]:
-    settings = QSettings()
-    raw = settings.value(ui_setting_key("last_loaded_module_keys"), "[]")
-    return _parse_string_list(raw)
-
-
-def save_last_loaded_module_keys(keys: list[str] | tuple[str, ...]) -> list[str]:
-    settings = QSettings()
-    normalized = []
-    seen = set()
-
-    for key in keys:
-        text = str(key or "").strip()
-        if not text or text in seen:
-            continue
-        normalized.append(text)
-        seen.add(text)
-
-    settings.setValue(ui_setting_key("last_loaded_module_keys"), json.dumps(normalized))
-    return normalized
-
-
 def save_shared_settings(config: dict) -> dict:
     settings = QSettings()
     normalized = normalize_shared_settings(config)

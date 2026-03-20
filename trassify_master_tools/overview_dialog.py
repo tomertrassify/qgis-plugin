@@ -424,12 +424,12 @@ class MasterOverviewDialog(QDialog):
         favorite_hint = ""
         if row["is_favorite"] and row["tool_type"] == "background":
             favorite_hint = (
-                " Dieses Hintergrundtool ist als Favorit gespeichert und erscheint in der Favoritenliste, "
-                "aber nicht als extra Toolbar-Button."
+                " Dieses Hintergrundtool ist als Favorit gespeichert und erscheint in der Favoritenliste."
             )
         elif row["is_favorite"]:
             favorite_hint = (
-                " Dieses Tool ist als Favorit gespeichert und erscheint zusaetzlich als Icon in der Master-Toolbar."
+                " Dieses Tool ist als Favorit gespeichert und wird beim Start automatisch geladen, "
+                "damit sein eigener Button oder seine eigene Toolbar direkt verfuegbar ist."
             )
 
         if about_text and about_text != row["description"]:
@@ -442,7 +442,8 @@ class MasterOverviewDialog(QDialog):
             )
         else:
             self.about_label.setText(
-                "Dieses Modul ist im Master-Plugin enthalten und kann bei Bedarf geladen werden."
+                "Dieses Modul ist im Master-Plugin enthalten und kann bei Bedarf geladen werden. "
+                "Als Favorit markierte Module werden beim Start automatisch geladen."
                 + favorite_hint
             )
 

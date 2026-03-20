@@ -19,10 +19,8 @@ from .shared_settings import (
     build_postgres_ogr_uri,
     has_saved_shared_settings,
     load_favorite_module_keys,
-    load_last_loaded_module_keys,
     load_shared_settings,
     save_favorite_module_keys,
-    save_last_loaded_module_keys,
     save_shared_settings,
     sync_attribution_butler_settings,
 )
@@ -57,7 +55,6 @@ class TrassifyMasterToolsPlugin:
         self.load_errors = []
         self.conflicts = []
         self.load_actions = {}
-        self.favorite_actions = {}
         self._registry_keys = []
         self._added_import_paths = []
         self._module_metadata_cache = {}
@@ -68,14 +65,6 @@ class TrassifyMasterToolsPlugin:
         if self.favorite_module_keys != stored_favorite_keys:
             self.favorite_module_keys = save_favorite_module_keys(
                 self.favorite_module_keys
-            )
-        stored_last_loaded_keys = load_last_loaded_module_keys()
-        self.last_loaded_module_keys = self._sanitize_interactive_module_keys(
-            stored_last_loaded_keys
-        )
-        if self.last_loaded_module_keys != stored_last_loaded_keys:
-            self.last_loaded_module_keys = save_last_loaded_module_keys(
-                self.last_loaded_module_keys
             )
         self._unloaded = False
 
@@ -106,10 +95,9 @@ class TrassifyMasterToolsPlugin:
         self._create_load_actions()
         self._refresh_conflicts()
         background_summary = self._load_background_modules()
-        restored_interactive_count = self._restore_last_loaded_modules()
+        favorite_summary = self._load_favorite_modules()
         self._refresh_conflicts()
-        self._rebuild_favorite_toolbar_actions()
-        self._show_startup_message(background_summary, restored_interactive_count)
+        self._show_startup_message(background_summary, favorite_summary)
 
     def unload(self):
         if self._unloaded:
@@ -127,10 +115,8 @@ class TrassifyMasterToolsPlugin:
         overview_dialog = self.overview_dialog
         overview_action = self.overview_action
         load_actions = list(self.load_actions.values())
-        favorite_actions = list(self.favorite_actions.values())
         loaded_plugins = list(self.loaded_plugins)
         toolbar_created = self._toolbar_created
-        self._persist_last_loaded_modules_from_runtime(loaded_plugins)
 
         for spec, plugin in reversed(loaded_plugins):
             try:
@@ -148,12 +134,6 @@ class TrassifyMasterToolsPlugin:
             self._safe_qt_call(toolbar.removeAction, overview_action)
         if self._is_qt_object_alive(overview_action):
             self._safe_qt_call(overview_action.deleteLater)
-
-        for action in favorite_actions:
-            if self._is_qt_object_alive(toolbar) and self._is_qt_object_alive(action):
-                self._safe_qt_call(toolbar.removeAction, action)
-            if self._is_qt_object_alive(action):
-                self._safe_qt_call(action.deleteLater)
 
         for action in load_actions:
             if self._is_qt_object_alive(action):
@@ -251,7 +231,12 @@ class TrassifyMasterToolsPlugin:
 
         return summary
 
-    def _show_startup_message(self, background_summary, restored_interactive_count=0):
+    def _show_startup_message(self, background_summary, favorite_summary=None):
+        favorite_summary = favorite_summary or {
+            "loaded": [],
+            "conflicts": [],
+            "errors": [],
+        }
         message_parts = ["Master-Toolbar aktiv."]
 
         loaded_count = len(background_summary["loaded"])
@@ -272,12 +257,40 @@ class TrassifyMasterToolsPlugin:
                 f"{error_count} Hintergrundtool(s) mit Fehler."
             )
 
-        if restored_interactive_count:
+        favorite_loaded_count = len(favorite_summary["loaded"])
+        if favorite_loaded_count:
             message_parts.append(
-                f"{restored_interactive_count} zuletzt geladene(s) Tool(s) wieder aktiv."
+                f"{favorite_loaded_count} Favorit(en) automatisch geladen."
             )
 
-        if not loaded_count and not conflict_count and not error_count:
+        favorite_conflict_count = len(favorite_summary["conflicts"])
+        if favorite_conflict_count:
+            message_parts.append(
+                f"{favorite_conflict_count} Favorit(en) blockiert."
+            )
+
+        favorite_error_count = len(favorite_summary["errors"])
+        if favorite_error_count:
+            message_parts.append(
+                f"{favorite_error_count} Favorit(en) mit Fehler."
+            )
+
+        has_issues = (
+            conflict_count
+            or error_count
+            or favorite_conflict_count
+            or favorite_error_count
+        )
+        has_activity = (
+            loaded_count
+            or conflict_count
+            or error_count
+            or favorite_loaded_count
+            or favorite_conflict_count
+            or favorite_error_count
+        )
+
+        if not has_activity:
             message_parts.append(
                 "Einstellungen ueber die Uebersicht oeffnen."
             )
@@ -285,8 +298,8 @@ class TrassifyMasterToolsPlugin:
         self.iface.messageBar().pushMessage(
             self.MENU_TITLE,
             " ".join(message_parts),
-            level=Qgis.Warning if conflict_count or error_count else Qgis.Info,
-            duration=6 if conflict_count or error_count else 5,
+            level=Qgis.Warning if has_issues else Qgis.Info,
+            duration=6 if has_issues else 5,
         )
 
     def is_favorite(self, key):
@@ -308,8 +321,20 @@ class TrassifyMasterToolsPlugin:
             favorite_keys.append(key)
 
         self.favorite_module_keys = save_favorite_module_keys(favorite_keys)
-        self._refresh_ui_state()
-        return key in self.favorite_module_keys
+        is_now_favorite = key in self.favorite_module_keys
+        spec = self._spec_by_key(key)
+
+        if (
+            is_now_favorite
+            and spec is not None
+            and spec.get("tool_type", INTERACTIVE_TOOL) == INTERACTIVE_TOOL
+            and not self._is_loaded(spec)
+        ):
+            self._load_single_module(spec)
+        else:
+            self._refresh_ui_state()
+
+        return is_now_favorite
 
     def _load_single_module(self, spec, announce=True):
         if self._is_loaded(spec):
@@ -346,8 +371,6 @@ class TrassifyMasterToolsPlugin:
             plugin.initGui()
             self._apply_shared_settings_to_plugin(spec, plugin, module)
             self.loaded_plugins.append((spec, plugin))
-            if spec.get("tool_type", INTERACTIVE_TOOL) == INTERACTIVE_TOOL:
-                self._remember_last_loaded_module_key(spec["key"])
             self._clear_error(spec)
             self._disable_load_action(spec)
             if announce:
@@ -493,7 +516,6 @@ class TrassifyMasterToolsPlugin:
             self.overview_dialog.refresh()
 
     def _refresh_ui_state(self):
-        self._rebuild_favorite_toolbar_actions()
         self._refresh_overview_dialog()
 
     def get_module_rows(self):
@@ -537,6 +559,10 @@ class TrassifyMasterToolsPlugin:
             else:
                 if tool_type == BACKGROUND_TOOL:
                     detail = f"{label} wird beim Start automatisch als Hintergrundtool geladen."
+                elif self.is_favorite(spec["key"]):
+                    detail = (
+                        f"{label} ist als Favorit gespeichert und wird beim Start automatisch geladen."
+                    )
                 else:
                     detail = f"{label} kann jetzt ueber das Master-Plugin geladen werden."
 
@@ -569,59 +595,34 @@ class TrassifyMasterToolsPlugin:
         return rows
 
     def load_module_by_key(self, key):
-        for spec in BUNDLED_PLUGINS:
-            if spec["key"] == key:
-                return self._load_single_module(spec)
+        spec = self._spec_by_key(key)
+        if spec is not None:
+            return self._load_single_module(spec)
         return False
 
-    def _restore_last_loaded_modules(self):
-        if not self.last_loaded_module_keys:
-            return 0
-
-        interactive_specs_by_key = {
-            spec["key"]: spec for spec in self._interactive_specs()
+    def _load_favorite_modules(self):
+        summary = {
+            "loaded": [],
+            "conflicts": [],
+            "errors": [],
         }
-        restored_count = 0
 
-        for key in self.last_loaded_module_keys:
-            spec = interactive_specs_by_key.get(key)
-            if spec is None:
-                continue
-            if self._load_single_module(spec, announce=False):
-                restored_count += 1
-
-        return restored_count
-
-    def _persist_last_loaded_modules_from_runtime(self, loaded_plugins=None):
-        source = loaded_plugins if loaded_plugins is not None else self.loaded_plugins
-        keys = []
-        seen = set()
-
-        for spec, _plugin in source:
+        for spec in self._favorite_specs():
             if spec.get("tool_type", INTERACTIVE_TOOL) != INTERACTIVE_TOOL:
                 continue
-            key = str(spec.get("key", "") or "").strip()
-            if not key or key in seen:
+            if self._is_loaded(spec):
                 continue
-            keys.append(key)
-            seen.add(key)
 
-        self._set_last_loaded_module_keys(keys)
+            if self._load_single_module(spec, announce=False):
+                summary["loaded"].append(spec["label"])
+                continue
 
-    def _remember_last_loaded_module_key(self, key):
-        keys = list(self.last_loaded_module_keys)
-        text = str(key or "").strip()
-        if not text:
-            return
-        if text not in keys:
-            keys.append(text)
-        self._set_last_loaded_module_keys(keys)
+            if self._get_conflict_message(spec):
+                summary["conflicts"].append(spec["label"])
+            else:
+                summary["errors"].append(spec["label"])
 
-    def _set_last_loaded_module_keys(self, keys):
-        sanitized = self._sanitize_interactive_module_keys(keys)
-        if sanitized == self.last_loaded_module_keys:
-            return
-        self.last_loaded_module_keys = save_last_loaded_module_keys(sanitized)
+        return summary
 
     def _favorite_specs(self):
         specs_by_key = {
@@ -632,6 +633,12 @@ class TrassifyMasterToolsPlugin:
             for key in self.favorite_module_keys
             if key in specs_by_key
         ]
+
+    def _spec_by_key(self, key):
+        for spec in BUNDLED_PLUGINS:
+            if spec["key"] == key:
+                return spec
+        return None
 
     def _purge_bundled_package(self, package_name):
         removable_modules = []
@@ -843,73 +850,6 @@ class TrassifyMasterToolsPlugin:
             seen.add(text)
 
         return normalized
-
-    def _sanitize_interactive_module_keys(self, keys):
-        valid_keys = {spec["key"] for spec in self._interactive_specs()}
-        normalized = []
-        seen = set()
-
-        for key in keys:
-            text = str(key or "").strip()
-            if not text or text not in valid_keys or text in seen:
-                continue
-            normalized.append(text)
-            seen.add(text)
-
-        return normalized
-
-    def _rebuild_favorite_toolbar_actions(self):
-        toolbar = self._find_master_toolbar() or self.toolbar
-        self._clear_favorite_toolbar_actions(toolbar)
-        if not self._is_qt_object_alive(toolbar):
-            return
-
-        rows_by_key = {
-            row["key"]: row for row in self.get_module_rows()
-        }
-        new_actions = {}
-
-        for spec in self._favorite_specs():
-            row = rows_by_key.get(spec["key"])
-            if row is None or row["tool_type"] == BACKGROUND_TOOL:
-                continue
-
-            action = QAction(
-                QIcon(row["icon_path"]),
-                row["label"],
-                self.iface.mainWindow(),
-            )
-            action.setToolTip(self._favorite_toolbar_tooltip(row))
-            action.setStatusTip(action.toolTip())
-            action.setEnabled(row["status_code"] == "ready")
-            action.triggered.connect(
-                lambda _checked=False, key=spec["key"]: self.load_module_by_key(key)
-            )
-            toolbar.addAction(action)
-            new_actions[spec["key"]] = action
-
-        self.favorite_actions = new_actions
-
-    def _clear_favorite_toolbar_actions(self, toolbar=None):
-        favorite_actions = list(self.favorite_actions.values())
-        if not favorite_actions:
-            return
-
-        resolved_toolbar = toolbar or self._find_master_toolbar() or self.toolbar
-        for action in favorite_actions:
-            if self._is_qt_object_alive(resolved_toolbar) and self._is_qt_object_alive(action):
-                self._safe_qt_call(resolved_toolbar.removeAction, action)
-            if self._is_qt_object_alive(action):
-                self._safe_qt_call(action.deleteLater)
-
-        self.favorite_actions = {}
-
-    def _favorite_toolbar_tooltip(self, row):
-        if row["status_code"] == "ready":
-            return f"{row['label']} laden"
-        if row["status_code"] == "loaded":
-            return f"{row['label']} ist bereits geladen"
-        return f"{row['label']}: {row['detail']}"
 
     def _module_directory_candidates(self, spec):
         yield self._bundled_plugin_dir(spec)

@@ -22,6 +22,6 @@ Wichtig:
 - Nicht mehr verwendete Tool-Kopien und alte Plugin-ZIPs werden aus `plugin_sources/` entfernt, damit der Source-Baum dem aktiven Bundle entspricht.
 - In QGIS oeffnet das Master-Plugin ueber sein Toolbar-Icon eine Uebersicht aller enthaltenen Module.
 - Das Master-Plugin unterscheidet jetzt zwischen normalen Tools und Hintergrundtools.
-- Normale Tools werden gezielt ueber die Master-Uebersicht geladen.
+- Normale Tools koennen ueber die Master-Uebersicht geladen werden; als Favorit markierte Tools werden beim Start automatisch mitgeladen.
 - Hintergrundtools werden beim Start automatisch aktiviert und sind fuer Kontextmenues oder unauffaellige Hilfsfunktionen gedacht.
 - Fuer das GitHub-Setup kannst du `./prepare_plugin_repository.sh` ausfuehren. Das aktualisiert `plugins.xml` und `trassify_master_tools.zip`.
