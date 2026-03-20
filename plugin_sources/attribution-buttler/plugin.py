@@ -80,8 +80,8 @@ DEFAULT_CONFIG = {
     "operator_contact_field_name": "betr_anspr",
     "operator_phone_field_name": "betr_tel",
     "operator_email_field_name": "betr_email",
-    "operator_fault_field_name": "Stör-Nr.",
-    "operator_validity_field_name": "Gültigk.",
+    "operator_fault_field_name": "stoer-nr",
+    "operator_validity_field_name": "gueltigk",
     "operator_stand_field_name": "Stand",
     "overwrite_existing_values": True,
     "fill_on_form_open": False,
@@ -98,7 +98,7 @@ DEFAULT_CONFIG = {
             "contact_name_field": "betr_anspr",
             "phone_field": "betr_tel",
             "email_field": "betr_email",
-            "fault_number_field": "Stör-Nr.",
+            "fault_number_field": "stoer-nr",
             "folder_path_field": "",
         },
         {
@@ -116,7 +116,7 @@ DEFAULT_CONFIG = {
             "contact_name_field": "betr_anspr",
             "phone_field": "betr_tel",
             "email_field": "betr_email",
-            "fault_number_field": "Stör-Nr.",
+            "fault_number_field": "stoer-nr",
             "folder_path_field": "",
         }
     ],
@@ -1039,8 +1039,8 @@ class LayerConfigDialog(QDialog):
             "op_contact": ["betr_anspr", "ansprechpartner", "kontaktperson", "contact"],
             "op_phone": ["betr_tel", "telefon", "telefonnummer", "phone", "tel"],
             "op_email": ["betr_email", "email", "e_mail", "mail"],
-            "op_fault": ["Stör-Nr.", "Stoer-Nr.", "stoernummer", "betr_stoer", "störnummer"],
-            "op_validity": ["Gültigk.", "Gueltigk.", "gueltigkeit", "gültigkeit", "validity"],
+            "op_fault": ["stoer-nr", "Stör-Nr.", "Stoer-Nr.", "stoernummer", "betr_stoer", "störnummer"],
+            "op_validity": ["gueltigk", "Gültigk.", "Gueltigk.", "gueltigkeit", "gültigkeit", "validity"],
             "op_stand": ["Stand", "stand", "gueltig_ab", "gültig_ab", "statusdatum"],
         }
 
