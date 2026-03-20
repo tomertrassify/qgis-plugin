@@ -9,7 +9,7 @@ from pathlib import Path
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar, QToolButton
 from qgis.core import Qgis, QgsMessageLog
 
 from .manifest import BACKGROUND_TOOL, BUNDLED_PLUGINS, INTERACTIVE_TOOL
@@ -40,6 +40,16 @@ class TrassifyMasterToolsPlugin:
         INTERACTIVE_TOOL: "Normales Tool",
         BACKGROUND_TOOL: "Hintergrundtool",
     }
+    FALLBACK_TOOLBAR_ATTRS_BY_KEY = {
+        "attribution_buttler": ("action_bind",),
+        "export_pro": ("action",),
+        "freehand_raster_georeferencer": ("actionAddLayer", "actionGeoref2PRaster"),
+        "geobasis_loader": ("main_menu",),
+        "layer_fuser": ("action",),
+        "projektstarter": ("action",),
+        "quick_map_services": ("menu", "qms_search_action"),
+        "schutzrohr": ("action",),
+    }
 
     def __init__(self, iface):
         self.iface = iface
@@ -55,6 +65,8 @@ class TrassifyMasterToolsPlugin:
         self.load_errors = []
         self.conflicts = []
         self.load_actions = {}
+        self.module_toolbar_actions = {}
+        self.toolbar_separator_action = None
         self._registry_keys = []
         self._added_import_paths = []
         self._module_metadata_cache = {}
@@ -97,6 +109,7 @@ class TrassifyMasterToolsPlugin:
         background_summary = self._load_background_modules()
         favorite_summary = self._load_favorite_modules()
         self._refresh_conflicts()
+        self._rebuild_master_toolbar_actions()
         self._show_startup_message(background_summary, favorite_summary)
 
     def unload(self):
@@ -116,7 +129,12 @@ class TrassifyMasterToolsPlugin:
         overview_action = self.overview_action
         load_actions = list(self.load_actions.values())
         loaded_plugins = list(self.loaded_plugins)
+        toolbar_separator_action = self.toolbar_separator_action
         toolbar_created = self._toolbar_created
+
+        self._clear_master_toolbar_actions(toolbar)
+        self.module_toolbar_actions = {}
+        self.toolbar_separator_action = None
 
         for spec, plugin in reversed(loaded_plugins):
             try:
@@ -134,6 +152,9 @@ class TrassifyMasterToolsPlugin:
             self._safe_qt_call(toolbar.removeAction, overview_action)
         if self._is_qt_object_alive(overview_action):
             self._safe_qt_call(overview_action.deleteLater)
+
+        if self._is_qt_object_alive(toolbar) and self._is_qt_object_alive(toolbar_separator_action):
+            self._safe_qt_call(toolbar.removeAction, toolbar_separator_action)
 
         for action in load_actions:
             if self._is_qt_object_alive(action):
@@ -356,6 +377,7 @@ class TrassifyMasterToolsPlugin:
 
         self._purge_bundled_package(spec["package"])
         plugin = None
+        toolbar_state_before_load = self._capture_toolbar_state()
         try:
             module = importlib.import_module(spec["package"])
             self._inject_master_context(module)
@@ -370,6 +392,11 @@ class TrassifyMasterToolsPlugin:
             self._register_bundled_plugin(spec["package"], plugin)
             plugin.initGui()
             self._apply_shared_settings_to_plugin(spec, plugin, module)
+            self.module_toolbar_actions[spec["key"]] = self._collect_module_toolbar_actions(
+                spec,
+                plugin,
+                toolbar_state_before_load,
+            )
             self.loaded_plugins.append((spec, plugin))
             self._clear_error(spec)
             self._disable_load_action(spec)
@@ -385,6 +412,7 @@ class TrassifyMasterToolsPlugin:
         except Exception:
             self._unregister_bundled_plugin(spec["package"])
             self._purge_bundled_package(spec["package"])
+            self.module_toolbar_actions.pop(spec["key"], None)
             self._log_exception(spec["label"], "Fehler beim Laden")
             self._record_error(spec, self._short_exception_message())
             if announce:
@@ -516,6 +544,7 @@ class TrassifyMasterToolsPlugin:
             self.overview_dialog.refresh()
 
     def _refresh_ui_state(self):
+        self._rebuild_master_toolbar_actions()
         self._refresh_overview_dialog()
 
     def get_module_rows(self):
@@ -547,7 +576,9 @@ class TrassifyMasterToolsPlugin:
                     status_text = "Im Hintergrund aktiv"
                     detail = f"{label} laeuft bereits im Hintergrund ueber das Master-Plugin."
                 else:
-                    detail = f"{label} ist bereits ueber das Master-Plugin aktiv."
+                    detail = (
+                        f"{label} ist bereits geladen und in der gemeinsamen Master-Toolbar verfuegbar."
+                    )
             elif spec["key"] in conflict_by_key:
                 status_code = "conflict"
                 status_text = "Blockiert"
@@ -639,6 +670,231 @@ class TrassifyMasterToolsPlugin:
             if spec["key"] == key:
                 return spec
         return None
+
+    def _capture_toolbar_state(self):
+        state = {}
+
+        try:
+            main_window = self.iface.mainWindow()
+        except Exception:
+            return state
+
+        if main_window is None:
+            return state
+
+        try:
+            toolbars = main_window.findChildren(QToolBar)
+        except Exception:
+            return state
+
+        for toolbar in toolbars:
+            if not self._is_qt_object_alive(toolbar):
+                continue
+
+            state[id(toolbar)] = {
+                "toolbar": toolbar,
+                "actions": list(toolbar.actions()),
+            }
+
+        return state
+
+    def _collect_module_toolbar_actions(self, spec, plugin, toolbar_state_before_load):
+        if spec.get("tool_type", INTERACTIVE_TOOL) != INTERACTIVE_TOOL:
+            return []
+
+        collected_actions = []
+        toolbar_state_after_load = self._capture_toolbar_state()
+        master_toolbar = self._find_master_toolbar() or self.toolbar
+
+        for toolbar_id, entry in toolbar_state_after_load.items():
+            toolbar = entry["toolbar"]
+            if not self._is_qt_object_alive(toolbar):
+                continue
+            if toolbar is master_toolbar:
+                continue
+
+            if toolbar_id not in toolbar_state_before_load:
+                for action in entry["actions"]:
+                    self._append_unique_action(collected_actions, action)
+                    self._remove_action_from_toolbar(toolbar, action)
+                self._safe_qt_call(toolbar.setVisible, False)
+                continue
+
+            existing_actions = toolbar_state_before_load[toolbar_id]["actions"]
+            for action in entry["actions"]:
+                if action in existing_actions:
+                    continue
+                self._append_unique_action(collected_actions, action)
+                self._remove_action_from_toolbar(toolbar, action)
+
+        if not collected_actions:
+            for action in self._fallback_module_toolbar_actions(spec, plugin):
+                self._append_unique_action(collected_actions, action)
+
+        return self._normalize_module_toolbar_actions(spec, collected_actions)
+
+    def _append_unique_action(self, actions, action):
+        if action is None:
+            return
+        if action in actions:
+            return
+        actions.append(action)
+
+    def _remove_action_from_toolbar(self, toolbar, action):
+        if not self._is_qt_object_alive(toolbar):
+            return
+        if not self._is_qt_object_alive(action):
+            return
+        self._safe_qt_call(toolbar.removeAction, action)
+
+    def _fallback_module_toolbar_actions(self, spec, plugin):
+        attr_names = self.FALLBACK_TOOLBAR_ATTRS_BY_KEY.get(spec["key"], ())
+        generic_attr_names = (
+            "action",
+            "action_bind",
+            "actionAddLayer",
+            "actionGeoref2PRaster",
+            "main_menu",
+            "menu",
+        )
+        seen_attr_names = []
+
+        for attr_name in attr_names + generic_attr_names:
+            if attr_name in seen_attr_names:
+                continue
+            seen_attr_names.append(attr_name)
+            action = self._toolbar_action_from_candidate(
+                getattr(plugin, attr_name, None)
+            )
+            if action is not None:
+                yield action
+
+    def _toolbar_action_from_candidate(self, candidate):
+        if isinstance(candidate, QAction):
+            return candidate if self._is_qt_object_alive(candidate) else None
+
+        menu_action_getter = getattr(candidate, "menuAction", None)
+        if not callable(menu_action_getter):
+            return None
+        try:
+            action = menu_action_getter()
+        except Exception:
+            return None
+
+        return action if self._is_qt_object_alive(action) else None
+
+    def _normalize_module_toolbar_actions(self, spec, actions):
+        normalized = []
+        previous_was_separator = True
+
+        for action in actions:
+            if not self._is_qt_object_alive(action):
+                continue
+
+            if action.isSeparator():
+                if previous_was_separator:
+                    continue
+                normalized.append(action)
+                previous_was_separator = True
+                continue
+
+            self._ensure_module_toolbar_action_presentation(spec, action)
+            normalized.append(action)
+            previous_was_separator = False
+
+        while normalized and normalized[-1].isSeparator():
+            normalized.pop()
+
+        return normalized
+
+    def _ensure_module_toolbar_action_presentation(self, spec, action):
+        icon = action.icon()
+        if icon.isNull():
+            icon = QIcon(self._resolve_module_icon_path(spec, ""))
+            action.setIcon(icon)
+
+        if not str(action.toolTip() or "").strip():
+            action.setToolTip(spec["label"])
+        if not str(action.statusTip() or "").strip():
+            action.setStatusTip(action.toolTip())
+
+    def _rebuild_master_toolbar_actions(self):
+        toolbar = self._find_master_toolbar() or self.toolbar
+        if not self._is_qt_object_alive(toolbar):
+            return
+        if not self._is_qt_object_alive(self.overview_action):
+            return
+
+        self._clear_master_toolbar_actions(toolbar)
+
+        inserted_actions = []
+        for spec in self._ordered_toolbar_specs():
+            for action in self.module_toolbar_actions.get(spec["key"], ()):
+                if not self._is_qt_object_alive(action):
+                    continue
+                if action in inserted_actions:
+                    continue
+                self._safe_qt_call(toolbar.insertAction, self.overview_action, action)
+                self._configure_toolbar_widget(action)
+                inserted_actions.append(action)
+
+        if inserted_actions:
+            self.toolbar_separator_action = self._safe_qt_call(
+                toolbar.insertSeparator,
+                self.overview_action,
+            )
+        else:
+            self.toolbar_separator_action = None
+
+    def _clear_master_toolbar_actions(self, toolbar=None):
+        resolved_toolbar = toolbar or self._find_master_toolbar() or self.toolbar
+        if not self._is_qt_object_alive(resolved_toolbar):
+            return
+
+        for actions in self.module_toolbar_actions.values():
+            for action in actions:
+                if self._is_qt_object_alive(action):
+                    self._safe_qt_call(resolved_toolbar.removeAction, action)
+
+        if self._is_qt_object_alive(self.toolbar_separator_action):
+            self._safe_qt_call(resolved_toolbar.removeAction, self.toolbar_separator_action)
+
+    def _ordered_toolbar_specs(self):
+        loaded_specs = [
+            spec
+            for spec, _plugin in self.loaded_plugins
+            if spec.get("tool_type", INTERACTIVE_TOOL) == INTERACTIVE_TOOL
+        ]
+        loaded_by_key = {
+            spec["key"]: spec for spec in loaded_specs
+        }
+
+        non_favorite_specs = [
+            spec
+            for spec in loaded_specs
+            if spec["key"] not in self.favorite_module_keys
+        ]
+        favorite_specs = [
+            loaded_by_key[key]
+            for key in self.favorite_module_keys
+            if key in loaded_by_key
+        ]
+
+        return non_favorite_specs + favorite_specs
+
+    def _configure_toolbar_widget(self, action):
+        toolbar = self._find_master_toolbar() or self.toolbar
+        if not self._is_qt_object_alive(toolbar):
+            return
+        if not self._is_qt_object_alive(action):
+            return
+        if action.menu() is None:
+            return
+
+        widget = self._safe_qt_call(toolbar.widgetForAction, action)
+        if isinstance(widget, QToolButton):
+            widget.setPopupMode(QToolButton.InstantPopup)
+            widget.setToolButtonStyle(Qt.ToolButtonIconOnly)
 
     def _purge_bundled_package(self, package_name):
         removable_modules = []

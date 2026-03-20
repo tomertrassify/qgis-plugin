@@ -429,7 +429,7 @@ class MasterOverviewDialog(QDialog):
         elif row["is_favorite"]:
             favorite_hint = (
                 " Dieses Tool ist als Favorit gespeichert und wird beim Start automatisch geladen, "
-                "damit sein eigener Button oder seine eigene Toolbar direkt verfuegbar ist."
+                "damit es in der gemeinsamen Master-Toolbar direkt verfuegbar ist."
             )
 
         if about_text and about_text != row["description"]:
@@ -443,7 +443,7 @@ class MasterOverviewDialog(QDialog):
         else:
             self.about_label.setText(
                 "Dieses Modul ist im Master-Plugin enthalten und kann bei Bedarf geladen werden. "
-                "Als Favorit markierte Module werden beim Start automatisch geladen."
+                "Als Favorit markierte Module werden beim Start automatisch geladen und in die gemeinsame Master-Toolbar eingehaengt."
                 + favorite_hint
             )
 
