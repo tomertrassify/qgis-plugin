@@ -13,7 +13,7 @@ from email.utils import parsedate_to_datetime
 
 from qgis.PyQt.QtCore import Qt, QStringListModel, QSettings
 from qgis.PyQt.QtWidgets import QComboBox, QCompleter, QLineEdit, QMessageBox, QWidget
-from qgis.core import Qgis, QgsMessageLog, QgsVectorLayer
+from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsVectorLayer
 
 
 PROPERTY_PREFIX = "nextcloud_form/"
@@ -393,6 +393,42 @@ def _join_root_and_relative(root: str, relative_nc_path: str) -> str:
     return root.rstrip("/") + "/" + relative_nc_path.lstrip("/")
 
 
+def _project_base_dirs() -> list[str]:
+    dirs = []
+    try:
+        project = QgsProject.instance()
+    except Exception:
+        project = None
+
+    if project is not None:
+        for candidate in (
+            str(project.homePath() or "").strip(),
+            os.path.dirname(str(project.fileName() or "").strip()),
+        ):
+            text = _normalize_path(candidate).rstrip("/")
+            if text and text not in dirs:
+                dirs.append(text)
+    return dirs
+
+
+def _resolve_relative_local_path(path: str, roots: list[str]) -> str | None:
+    relative = str(path or "").strip()
+    if not relative or os.path.isabs(relative):
+        return None
+
+    bases = []
+    for base in list(roots or []) + _project_base_dirs() + [_normalize_path(os.getcwd()).rstrip("/")]:
+        token = _normalize_path(base).rstrip("/")
+        if token and token not in bases:
+            bases.append(token)
+
+    for base in bases:
+        candidate = _normalize_path(os.path.normpath(os.path.join(base, relative)))
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 def _to_nextcloud_and_local_path(raw_path: str, config: dict) -> tuple[str | None, str | None]:
     if not raw_path:
         return None, None
@@ -402,6 +438,11 @@ def _to_nextcloud_and_local_path(raw_path: str, config: dict) -> tuple[str | Non
         return None, None
 
     roots = [_normalize_path(p).rstrip("/") for p in config["local_nextcloud_roots"] if p]
+    if not os.path.isabs(path):
+        resolved_relative = _resolve_relative_local_path(path, roots)
+        if resolved_relative:
+            path = resolved_relative
+
     lower_path = path.lower()
 
     for root in roots:
