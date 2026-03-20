@@ -13,7 +13,7 @@ from email.utils import parsedate_to_datetime
 
 from qgis.PyQt.QtCore import Qt, QStringListModel, QSettings
 from qgis.PyQt.QtWidgets import QComboBox, QCompleter, QLineEdit, QMessageBox, QWidget
-from qgis.core import QgsVectorLayer
+from qgis.core import Qgis, QgsMessageLog, QgsVectorLayer
 
 
 PROPERTY_PREFIX = "nextcloud_form/"
@@ -70,12 +70,23 @@ USER_CONFIG_KEYS = (
 _SHARE_CACHE: dict[tuple[str, str, str], str] = {}
 _SHARE_BACKOFF_UNTIL: dict[tuple[str, str, str], float] = {}
 _DEFAULT_RATE_LIMIT_SECONDS = 60
+_NEXTCLOUD_LOG_SEEN: set[str] = set()
 
 
 class NextcloudRateLimitError(RuntimeError):
     def __init__(self, message: str, retry_after: int | None = None):
         super().__init__(message)
         self.retry_after = retry_after
+
+
+def _log_nextcloud_warning(message: str):
+    text = str(message or "").strip()
+    if not text:
+        return
+    if text in _NEXTCLOUD_LOG_SEEN:
+        return
+    _NEXTCLOUD_LOG_SEEN.add(text)
+    QgsMessageLog.logMessage(text, "AttributionButler", Qgis.Warning)
 
 
 def _property_key(name: str) -> str:
@@ -427,10 +438,30 @@ def _to_nextcloud_and_local_path(raw_path: str, config: dict) -> tuple[str | Non
             abs_path = _join_root_and_relative(base, tail) if base else tail
             return tail, abs_path
 
-    nc_path = path if path.startswith("/") else "/" + path
-    base = roots[0] if roots else ""
-    abs_path = _join_root_and_relative(base, nc_path) if base else nc_path
-    return nc_path, abs_path
+    # Wenn ein lokaler Absolutpfad nicht auf einen konfigurierten Sync-Root zeigt,
+    # ist kein sicheres Mapping auf einen Nextcloud-Serverpfad moeglich.
+    if os.path.isabs(path):
+        unix_style = path.startswith("/")
+        if unix_style and (
+            path.startswith("/Users/")
+            or path.startswith("/Volumes/")
+            or path.startswith("/private/")
+            or path.startswith("/Applications/")
+        ):
+            return None, None
+        return path if path.startswith("/") else "/" + path, path
+
+    relative = path.lstrip("/")
+    if not relative:
+        return None, None
+
+    if roots:
+        candidate_abs = _join_root_and_relative(roots[0], relative)
+        if os.path.exists(candidate_abs):
+            return "/" + relative, candidate_abs
+        return None, None
+
+    return "/" + relative, "/" + relative
 
 
 def _ocs_request(
@@ -1294,6 +1325,10 @@ def _apply_operator_lookup(
 
     nc_folder_path, _ = _to_nextcloud_and_local_path(folder_source_path, config)
     if not nc_folder_path:
+        _log_nextcloud_warning(
+            "Kein Nextcloud-Mapping fuer Betreiber-Ordnerpfad: "
+            f"'{folder_source_path}'. Pruefe Trassify Master Tools > Einstellungen > Lokale Sync-Roots."
+        )
         return True
 
     try:
@@ -1301,6 +1336,9 @@ def _apply_operator_lookup(
     except Exception as exc:
         message = str(exc)
         if _is_missing_path_error(message) or _is_rate_limit_error(message):
+            _log_nextcloud_warning(
+                f"Betreiber-Ordnerlink konnte nicht erzeugt werden ({message}); Pfad: {nc_folder_path}"
+            )
             return True
         raise
     _set_if_allowed(dialog, feature, folder_field, folder_link, overwrite)
@@ -1570,6 +1608,10 @@ def form_open(dialog, layer, feature):
 
             nc_file_path, abs_file_path = _to_nextcloud_and_local_path(raw_path, config)
             if not nc_file_path:
+                _log_nextcloud_warning(
+                    "Kein Nextcloud-Mapping fuer Dateipfad: "
+                    f"'{raw_path}'. Pruefe Trassify Master Tools > Einstellungen > Lokale Sync-Roots."
+                )
                 return
 
             file_link = None
@@ -1589,6 +1631,9 @@ def form_open(dialog, layer, feature):
         except Exception as exc:
             message = str(exc)
             if _is_missing_path_error(message) or _is_rate_limit_error(message):
+                _log_nextcloud_warning(
+                    f"Datei-Link konnte nicht erzeugt werden ({message}); Eingabepfad: {raw_path}"
+                )
                 return
             QMessageBox.warning(dialog, "Nextcloud-Fehler", message)
 
