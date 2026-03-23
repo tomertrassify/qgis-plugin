@@ -4,7 +4,7 @@ import os
 import sys
 
 from qgis.PyQt import sip
-from qgis.PyQt.QtCore import QObject, QEvent, Qt, QSettings, QTimer, QVariant
+from qgis.PyQt.QtCore import QObject, QEvent, Qt, QSettings, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon, QImage, QPixmap
 from qgis.PyQt.QtWidgets import (
     QAction,
@@ -17,8 +17,6 @@ from qgis.PyQt.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QLabel,
-    QLineEdit,
-    QMessageBox,
     QRadioButton,
     QToolBar,
     QVBoxLayout,
@@ -28,8 +26,6 @@ from qgis.core import (
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
     QgsFeature,
-    QgsFieldConstraints,
-    QgsField,
     QgsGeometry,
     QgsProject,
     QgsUnitTypes,
@@ -68,7 +64,6 @@ class LiveCorridorPlugin(QObject):
     SETTINGS_BOX_ONLY_MODE = "box_only_mode"
     SETTINGS_OUTPUT_MODE = "output_mode"
     SETTINGS_TEMP_GEOM = "temp_geom"
-    SETTINGS_BOX_FORM = "show_box_form"
 
     def __init__(self, iface):
         super().__init__()
@@ -107,7 +102,6 @@ class LiveCorridorPlugin(QObject):
         self.box_only_mode = False
         self.output_mode = self.OUTPUT_ACTIVE_LAYER
         self.temp_geom_mode = self.TEMP_GEOM_LINE
-        self.show_box_attribute_form = True
 
         # Reused temporary output layers
         self.temp_box_line_layer_id = None
@@ -744,10 +738,6 @@ class LiveCorridorPlugin(QObject):
         mode_layout.addWidget(hint_label)
         root.addWidget(mode_group)
 
-        box_form_checkbox = QCheckBox("Attributformular für Box beim Erzeugen öffnen", dialog)
-        box_form_checkbox.setChecked(self.show_box_attribute_form)
-        root.addWidget(box_form_checkbox)
-
         def _update_temp_options_enabled():
             enabled = temp_layer_radio.isChecked()
             temp_geom_label.setEnabled(enabled)
@@ -779,7 +769,6 @@ class LiveCorridorPlugin(QObject):
             self.TEMP_GEOM_LINE,
             self.TEMP_GEOM_POLYGON,
         ) else self.TEMP_GEOM_LINE
-        self.show_box_attribute_form = bool(box_form_checkbox.isChecked())
 
         self._save_settings()
         self._show_width_feedback()
@@ -924,49 +913,21 @@ class LiveCorridorPlugin(QObject):
             return
 
         any_saved = False
-        canceled_boxes = 0
-        if self.show_box_attribute_form:
-            self.iface.messageBar().pushInfo(
-                "Schutzrohr",
-                "Box-Attributformular wird geöffnet.",
-            )
-            saved_boxes, canceled_boxes = self._add_box_features_with_form(
-                box_layer,
-                box_geometries,
-            )
-            any_saved = saved_boxes > 0
-            if saved_boxes == 0 and canceled_boxes == 0:
+        box_features = self._build_features(box_layer, box_geometries)
+        if box_features:
+            if self._add_features_to_layer(box_layer, box_features):
+                any_saved = True
+            else:
                 self.iface.messageBar().pushWarning(
                     "Schutzrohr",
-                    "Box konnte nicht gespeichert werden (Attribute/Constraints prüfen).",
+                    "Box konnte nicht gespeichert werden. Prüfe den Ziellayer auf Pflichtfelder oder Constraints.",
                 )
         else:
-            box_features, canceled_boxes = self._build_features(
-                box_layer,
-                box_geometries,
-                role="box",
-                open_form=False,
-            )
-            if box_features:
-                if self._add_features_to_layer(box_layer, box_features):
-                    any_saved = True
-                else:
-                    self.iface.messageBar().pushWarning(
-                        "Schutzrohr",
-                        "Box konnte nicht gespeichert werden (Attribute/Constraints prüfen).",
-                    )
-            elif canceled_boxes == 0:
-                self.iface.messageBar().pushWarning(
-                    "Schutzrohr", "Keine gültige Box-Geometrie zum Speichern vorhanden."
-                )
-
-        if canceled_boxes > 0:
-            self.iface.messageBar().pushInfo(
-                "Schutzrohr",
-                f"{canceled_boxes} Box-Feature(s) wurden im Attributformular abgebrochen.",
+            self.iface.messageBar().pushWarning(
+                "Schutzrohr", "Keine gültige Box-Geometrie zum Speichern vorhanden."
             )
 
-        if not any_saved and canceled_boxes == 0:
+        if not any_saved:
             self.iface.messageBar().pushWarning(
                 "Schutzrohr", "Für diesen Abschnitt wurde nichts gespeichert."
             )
@@ -1242,12 +1203,11 @@ class LiveCorridorPlugin(QObject):
             return self._polygon_to_single_parts(corridor_polygon)
         return []
 
-    def _build_features(self, layer, geometries, role, open_form):
+    def _build_features(self, layer, geometries):
         if not layer or not geometries:
-            return [], 0
+            return []
 
         features = []
-        canceled = 0
         default_attrs = self._default_attrs(layer)
         fields = layer.fields()
 
@@ -1258,167 +1218,10 @@ class LiveCorridorPlugin(QObject):
             feature.setGeometry(geom)
             if default_attrs is not None:
                 feature.setAttributes(list(default_attrs))
-            self._set_generated_attributes(layer, feature, role)
-
-            if open_form and role == "box":
-                if not self._prompt_box_attributes_dialog(layer, feature):
-                    canceled += 1
-                    continue
 
             features.append(feature)
 
-        return features, canceled
-
-    def _add_box_features_with_form(self, layer, geometries):
-        features, _ = self._build_features(
-            layer,
-            geometries,
-            role="box",
-            open_form=False,
-        )
-        if not features:
-            return 0, 0
-
-        self._ensure_layer_editable(layer)
-
-        saved = 0
-        canceled = 0
-        for feature in features:
-            if not self._prompt_box_attributes_dialog(layer, feature):
-                canceled += 1
-                continue
-
-            add_result = layer.addFeature(feature)
-            add_ok = add_result[0] if isinstance(add_result, tuple) else bool(add_result)
-            if not add_ok:
-                continue
-            saved += 1
-
-        if saved > 0 or canceled > 0:
-            layer.updateExtents()
-            layer.triggerRepaint()
-        return saved, canceled
-
-    def _prompt_box_attributes_dialog(self, layer, feature):
-        # Use the native layer form so aliases/widgets/layout/styles match
-        # exactly what is configured on the target layer.
-        try:
-            form = self.iface.getFeatureForm(layer, feature)
-            if form is not None:
-                return form.exec_() == QDialog.Accepted
-        except Exception:
-            pass
-
-        try:
-            return bool(self.iface.openFeatureForm(layer, feature, False, True))
-        except TypeError:
-            try:
-                return bool(self.iface.openFeatureForm(layer, feature, False))
-            except Exception:
-                return False
-        except Exception:
-            return False
-
-    def _apply_editor_values_to_feature(self, feature, editors):
-        for idx, field, widget in editors:
-            value, error = self._editor_value_for_field(field, widget)
-            if error:
-                return False, error
-            feature.setAttribute(idx, value)
-        return True, ""
-
-    def _editor_value_for_field(self, field, widget):
-        name = field.name()
-        required = self._field_is_required(field)
-
-        if isinstance(widget, QCheckBox):
-            return bool(widget.isChecked()), ""
-
-        text = widget.text().strip()
-        if text == "":
-            if required:
-                return None, f"Feld '{name}' ist ein Pflichtfeld."
-            return None, ""
-
-        if self._field_is_int(field):
-            try:
-                return int(text), ""
-            except Exception:
-                return None, f"Feld '{name}' erwartet eine ganze Zahl."
-
-        if self._field_is_float(field):
-            try:
-                return float(text.replace(",", ".")), ""
-            except Exception:
-                return None, f"Feld '{name}' erwartet eine Dezimalzahl."
-
-        return text, ""
-
-    @staticmethod
-    def _field_type_name(field):
-        try:
-            return (field.typeName() or "").lower()
-        except Exception:
-            return ""
-
-    def _field_is_bool(self, field):
-        t = self._field_type_name(field)
-        bool_type = getattr(QVariant, "Bool", None)
-        if "bool" in t:
-            return True
-        return bool_type is not None and field.type() == bool_type
-
-    def _field_is_int(self, field):
-        t = self._field_type_name(field)
-        if any(k in t for k in ("int", "long", "short")):
-            return True
-        int_types = []
-        for name in ("Int", "UInt", "LongLong", "ULongLong"):
-            value = getattr(QVariant, name, None)
-            if value is not None:
-                int_types.append(value)
-        return field.type() in int_types
-
-    def _field_is_float(self, field):
-        t = self._field_type_name(field)
-        if any(k in t for k in ("double", "real", "float", "numeric", "decimal")):
-            return True
-        double_type = getattr(QVariant, "Double", None)
-        return double_type is not None and field.type() == double_type
-
-    @staticmethod
-    def _field_is_required(field):
-        try:
-            constraints = field.constraints().constraints()
-            return bool(constraints & QgsFieldConstraints.ConstraintNotNull)
-        except Exception:
-            return False
-
-    @staticmethod
-    def _is_null_attr_value(value):
-        if value is None:
-            return True
-        try:
-            # PyQt null QVariant in some bindings
-            return value.isNull()
-        except Exception:
-            return False
-
-    def _set_generated_attributes(self, layer, feature, role):
-        half_width = float(self.corridor_half_width_meters)
-        total_width = half_width * 2.0
-        self._set_feature_attr_if_present(layer, feature, "corr_role", role)
-        self._set_feature_attr_if_present(layer, feature, "half_w_m", half_width)
-        self._set_feature_attr_if_present(layer, feature, "full_w_m", total_width)
-
-    @staticmethod
-    def _set_feature_attr_if_present(layer, feature, field_name, value):
-        try:
-            idx = layer.fields().indexFromName(field_name)
-            if idx >= 0:
-                feature[idx] = value
-        except Exception:
-            pass
+        return features
 
     def _add_features_to_layer(self, layer, features):
         if not layer or not features:
@@ -1489,7 +1292,8 @@ class LiveCorridorPlugin(QObject):
             return False
         if not self._same_crs(layer, source_layer):
             return False
-        self._ensure_temp_fields(layer, source_layer)
+        if len(layer.fields()) != 0:
+            return False
         self._ensure_layer_editable(layer)
         return True
 
@@ -1505,7 +1309,6 @@ class LiveCorridorPlugin(QObject):
         if not layer.isValid():
             return None
 
-        self._ensure_temp_fields(layer, source_line_layer)
         QgsProject.instance().addMapLayer(layer)
         self._ensure_layer_editable(layer)
 
@@ -1514,50 +1317,6 @@ class LiveCorridorPlugin(QObject):
             f"Temporärer Layer erstellt: {layer_name}",
         )
         return layer
-
-    def _ensure_temp_fields(self, temp_layer, source_layer):
-        provider = temp_layer.dataProvider()
-        existing_names = {field.name() for field in temp_layer.fields()}
-        new_fields = []
-
-        for src_field in source_layer.fields():
-            name = src_field.name()
-            if name in existing_names:
-                continue
-            try:
-                copied = QgsField(
-                    src_field.name(),
-                    src_field.type(),
-                    src_field.typeName(),
-                    src_field.length(),
-                    src_field.precision(),
-                    src_field.comment(),
-                )
-            except Exception:
-                copied = QgsField(
-                    src_field.name(),
-                    src_field.type(),
-                    src_field.typeName(),
-                    src_field.length(),
-                    src_field.precision(),
-                )
-            new_fields.append(copied)
-            existing_names.add(name)
-
-        plugin_fields = [
-            QgsField("corr_role", QVariant.String, "string", 16),
-            QgsField("half_w_m", QVariant.Double, "double", 20, 3),
-            QgsField("full_w_m", QVariant.Double, "double", 20, 3),
-        ]
-        for plugin_field in plugin_fields:
-            if plugin_field.name() in existing_names:
-                continue
-            new_fields.append(plugin_field)
-            existing_names.add(plugin_field.name())
-
-        if new_fields:
-            provider.addAttributes(new_fields)
-            temp_layer.updateFields()
 
     @staticmethod
     def _same_crs(a_layer, b_layer):
@@ -1623,11 +1382,6 @@ class LiveCorridorPlugin(QObject):
             else self.TEMP_GEOM_LINE
         )
 
-        self.show_box_attribute_form = self._to_bool(
-            settings.value(self._settings_key(self.SETTINGS_BOX_FORM), True),
-            default=True,
-        )
-
     def _save_settings(self):
         settings = QSettings()
         settings.setValue(
@@ -1645,10 +1399,6 @@ class LiveCorridorPlugin(QObject):
         settings.setValue(
             self._settings_key(self.SETTINGS_TEMP_GEOM),
             self.temp_geom_mode,
-        )
-        settings.setValue(
-            self._settings_key(self.SETTINGS_BOX_FORM),
-            bool(self.show_box_attribute_form),
         )
 
     def _settings_key(self, key):

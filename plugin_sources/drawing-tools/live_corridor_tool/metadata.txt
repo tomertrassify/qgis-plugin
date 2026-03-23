@@ -1,7 +1,7 @@
 [general]
 name=Schutzrohr
-description=Toggle kann mitten im normalen QGIS-Linienzeichnen an/aus; Nur-Box-Modus ohne Mittellinie, Temp-Layer (Linie/Polygon), Attributformular und Breite.
-version=0.8.5
+description=Toggle kann mitten im normalen QGIS-Linienzeichnen an/aus; Nur-Box-Modus ohne Mittellinie, Temp-Layer (Linie/Polygon) ohne Attribute und Breite.
+version=0.8.6
 qgisMinimumVersion=3.22
 author=Tomer + Codex
 email=

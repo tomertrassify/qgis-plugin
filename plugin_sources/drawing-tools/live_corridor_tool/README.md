@@ -18,8 +18,7 @@
 - Abstand je Seite als Eingabefeld (zusätzlich zum Mausrad).
 - Nur-Box-Modus (ohne Mittellinie): zeichnet nur die Box, blockiert dabei das native Linienzeichnen während Toggle AN.
 - Ausgabe in aktivem Linienlayer oder in temporärem Layer.
-- Bei temporärem Layer: Box als Linien- oder Polygon-Geometrie erzeugen.
-- Attributformular für die Box beim Erzeugen anzeigen.
+- Bei temporärem Layer: Box als Linien- oder Polygon-Geometrie ohne Attribute erzeugen.
 
 ## Hinweis
 - Im Nur-Box-Modus bleibt die Live-Vorschau aktiv, es wird aber keine Mittellinie mitgezeichnet oder erzeugt.
