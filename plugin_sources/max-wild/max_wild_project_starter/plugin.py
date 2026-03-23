@@ -10,6 +10,11 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 from zipfile import BadZipFile, ZipFile
 
+try:
+    from osgeo import ogr
+except ImportError:
+    ogr = None
+
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QFile, QIODevice, QSettings, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
@@ -21,6 +26,7 @@ from qgis.core import (
     QgsCoordinateTransform,
     QgsCsException,
     QgsDxfExport,
+    QgsFeatureRequest,
     QgsLayerTreeGroup,
     QgsLayerTreeLayer,
     QgsMapLayerUtils,
@@ -271,7 +277,9 @@ class ProjectStarterPlugin:
             project_dir,
             preserve_manual_georef=preserve_manual_georef,
         )
-        project_area_layer = self._load_project_geopackage_layers(project_gpkg, project_group)
+        project_area_layer = self._find_vector_layer_by_name(project_group, self.PROJECT_AREA_LAYER_NAME)
+        if project_area_layer is None:
+            project_area_layer = self._load_project_geopackage_layers(project_gpkg, project_group)
         if not project_area_layer:
             self._show_message(
                 "Projektstarter",
@@ -286,8 +294,9 @@ class ProjectStarterPlugin:
         self._update_connection_icon(bool(self._managed_layers))
         self._sync_georeferenced_plans(georef_group=georef_group, notify=False)
 
-        self._add_osm_basemap(basemap_group)
-        self._load_alkis_for_project(project_area_layer, basemap_group)
+        if not self._group_has_children(basemap_group):
+            self._add_osm_basemap(basemap_group)
+            self._load_alkis_for_project(project_area_layer, basemap_group)
         self._export_auxiliary_formats(notify=False)
         self._save_project_file(project_dir, notify=False, sync_georef=False)
         self._schedule_final_zoom(project_area_layer)
@@ -646,6 +655,10 @@ class ProjectStarterPlugin:
         self._set_relative_project_paths(project)
         if sync_georef and self._current_project_dir is not None:
             self._sync_georeferenced_plans(notify=False)
+        self._sync_project_layers_to_geopackage(project_dir)
+        project_root_group = self._find_root_group(project.layerTreeRoot(), self.GROUP_PROJECT)
+        if project_root_group is not None:
+            self._register_managed_project_layers(project_root_group)
 
         if project.write():
             if notify:
@@ -711,25 +724,35 @@ class ProjectStarterPlugin:
         root = QgsProject.instance().layerTreeRoot()
         self._clear_managed_layer_connections()
         self._remove_legacy_group(root, project_dir)
+        preserve_existing_workspace = self._should_preserve_existing_workspace(project_dir)
 
         project_root_group = self._get_or_create_root_group(root, self.GROUP_PROJECT, 0)
         georef_root_group = self._get_or_create_root_group(root, self.GROUP_GEOREF, 1)
         basemap_root_group = self._get_or_create_root_group(root, self.GROUP_BASEMAPS, 2)
 
-        project_group = self._get_or_create_managed_subgroup(project_root_group)
+        if not preserve_existing_workspace:
+            self._reset_group(project_root_group)
+            self._reset_group(basemap_root_group)
+
+        project_group = self._normalize_free_workspace_group(project_root_group)
         georef_group = self._get_or_create_georef_auto_group(georef_root_group)
         self._get_or_create_georef_manual_group(georef_root_group)
-        basemap_group = self._get_or_create_managed_subgroup(basemap_root_group)
+        basemap_group = self._normalize_free_workspace_group(basemap_root_group)
 
-        self._reset_group(project_group)
         if preserve_manual_georef:
             self._reset_managed_georef_group(georef_group)
         else:
             self._reset_group(georef_group)
-        self._reset_group(basemap_group)
         return project_group, georef_group, basemap_group
 
     def _should_preserve_manual_georef_layers(self, project_dir):
+        if project_dir is None:
+            return False
+        if self._current_project_dir == project_dir:
+            return True
+        return self._detect_connected_project_dir() == project_dir
+
+    def _should_preserve_existing_workspace(self, project_dir):
         if project_dir is None:
             return False
         if self._current_project_dir == project_dir:
@@ -779,6 +802,20 @@ class ProjectStarterPlugin:
             if isinstance(child, QgsLayerTreeGroup) and child.name() == self.MANAGED_SUBGROUP_NAME:
                 return child
         return None
+
+    def _normalize_free_workspace_group(self, parent_group):
+        managed_group = self._find_managed_subgroup(parent_group)
+        if managed_group is None:
+            return parent_group
+
+        insert_index = list(parent_group.children()).index(managed_group)
+        for child in list(managed_group.children()):
+            parent_group.insertChildNode(insert_index, child.clone())
+            insert_index += 1
+            managed_group.removeChildNode(child)
+
+        parent_group.removeChildNode(managed_group)
+        return parent_group
 
     def _get_or_create_indexed_child_group(self, parent_group, group_name, index, legacy_names=()):
         for child_index, child in enumerate(parent_group.children()):
@@ -1255,6 +1292,12 @@ class ProjectStarterPlugin:
         project_area_layer = None
         for sublayer_name in self._ordered_sublayer_names(sublayer_names):
             layer_source = f"{gpkg_file}|layername={sublayer_name}"
+            existing_layer = self._find_vector_layer_by_source(target_group, layer_source)
+            if existing_layer is not None:
+                if sublayer_name == self.PROJECT_AREA_LAYER_NAME:
+                    project_area_layer = existing_layer
+                    self._apply_project_area_style(existing_layer)
+                continue
             layer = QgsVectorLayer(layer_source, sublayer_name, "ogr")
             if not layer.isValid():
                 continue
@@ -1283,6 +1326,19 @@ class ProjectStarterPlugin:
             if len(parts) > 1:
                 sublayer_names.append(parts[1])
         return sublayer_names
+
+    def _find_vector_layer_by_source(self, group, layer_source):
+        normalized_source = self._normalized_layer_source(layer_source)
+        if not normalized_source:
+            return None
+
+        for layer in self._iter_group_vector_layers(group, spatial_only=False):
+            if self._normalized_layer_source(layer.source()) == normalized_source:
+                return layer
+        return None
+
+    def _normalized_layer_source(self, layer_source):
+        return str(layer_source or "").strip()
 
     def _ordered_sublayer_names(self, sublayer_names):
         ordered_names = []
@@ -1329,14 +1385,7 @@ class ProjectStarterPlugin:
         self._clear_managed_layer_connections()
 
         managed_layers = []
-        for child in project_group.children():
-            if not isinstance(child, QgsLayerTreeLayer):
-                continue
-            layer = child.layer()
-            if not isinstance(layer, QgsVectorLayer):
-                continue
-            if self._current_project_dir is not None and not self._is_managed_layer_source(layer):
-                continue
+        for layer in self._iter_group_vector_layers(project_group, spatial_only=True):
             try:
                 layer.afterCommitChanges.connect(self._on_managed_layer_committed)
             except TypeError:
@@ -1404,11 +1453,7 @@ class ProjectStarterPlugin:
             self._connect_project(project_dir, notify=False)
             return
 
-        project_group = self._find_managed_subgroup(project_root_group)
-        if project_group is None:
-            self._connect_project(project_dir, notify=False)
-            return
-
+        project_group = self._normalize_free_workspace_group(project_root_group)
         self._register_managed_project_layers(project_group)
         if not self._managed_layers or self._project_area_layer() is None:
             self._connect_project(project_dir, notify=False)
@@ -1470,29 +1515,45 @@ class ProjectStarterPlugin:
         if project_root_group is None:
             return None
 
-        managed_project_group = self._find_managed_subgroup(project_root_group)
-        for search_group in (managed_project_group, project_root_group):
-            if search_group is None:
-                continue
-            layer = self._find_vector_layer_by_name(search_group, self.PROJECT_AREA_LAYER_NAME)
-            if layer is not None:
-                return layer
-
-        return None
+        return self._find_vector_layer_by_name(project_root_group, self.PROJECT_AREA_LAYER_NAME)
 
     def _find_vector_layer_by_name(self, group, layer_name):
+        for layer in self._iter_group_vector_layers(group, spatial_only=False):
+            if layer.name() == layer_name:
+                return layer
+        return None
+
+    def _iter_group_vector_layers(self, group, spatial_only=True):
+        if group is None:
+            return
+
+        seen_layer_ids = set()
         for child in group.children():
             if isinstance(child, QgsLayerTreeLayer):
                 layer = child.layer()
-                if isinstance(layer, QgsVectorLayer) and layer.name() == layer_name:
-                    return layer
+                if not isinstance(layer, QgsVectorLayer):
+                    continue
+                if spatial_only and not layer.isSpatial():
+                    continue
+                layer_id = layer.id()
+                if layer_id in seen_layer_ids:
+                    continue
+                seen_layer_ids.add(layer_id)
+                yield layer
                 continue
+
             if not isinstance(child, QgsLayerTreeGroup):
                 continue
-            layer = self._find_vector_layer_by_name(child, layer_name)
-            if layer is not None:
-                return layer
-        return None
+
+            for layer in self._iter_group_vector_layers(child, spatial_only=spatial_only):
+                layer_id = layer.id()
+                if layer_id in seen_layer_ids:
+                    continue
+                seen_layer_ids.add(layer_id)
+                yield layer
+
+    def _group_has_children(self, group):
+        return group is not None and any(True for _child in group.children())
 
     def _add_osm_basemap(self, target_group):
         uri = (
@@ -2204,16 +2265,112 @@ class ProjectStarterPlugin:
         return words
 
     def _vector_export_layers(self):
-        vector_layers = []
-        for layer in self._managed_layers:
-            if layer is None:
-                continue
-            if layer.type() != Qgis.LayerType.Vector:
-                continue
-            if not layer.isSpatial():
-                continue
-            vector_layers.append(layer)
-        return vector_layers
+        project_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
+        if project_group is None:
+            return []
+        return list(self._iter_group_vector_layers(project_group, spatial_only=True))
+
+    def _sync_project_layers_to_geopackage(self, project_dir):
+        vector_layers = self._vector_export_layers()
+        if project_dir is None or not vector_layers:
+            return False
+
+        gpkg_file = self._prepare_project_geopackage(project_dir)
+        if not gpkg_file:
+            return False
+
+        existing_sublayer_names = set(self._list_sublayer_names(gpkg_file))
+        desired_sublayer_names = []
+        used_names = set()
+
+        try:
+            for layer in self._ordered_project_output_layers(vector_layers):
+                if layer.name() == self.PROJECT_AREA_LAYER_NAME:
+                    layer_name = self.PROJECT_AREA_LAYER_NAME
+                    used_names.add(layer_name.lower())
+                else:
+                    layer_name = self._unique_name(layer.name(), used_names)
+                desired_sublayer_names.append(layer_name)
+                export_layer = self._snapshot_vector_layer(layer)
+                self._write_vector_layer(
+                    export_layer,
+                    gpkg_file,
+                    "GPKG",
+                    layer_name=layer_name,
+                    action_on_existing=QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer,
+                )
+        except Exception as error:
+            self._show_message(
+                "Projektstarter",
+                f"GeoPackage-Sync fehlgeschlagen: {error}",
+                Qgis.Warning,
+            )
+            return False
+
+        obsolete_layer_names = existing_sublayer_names - set(desired_sublayer_names)
+        if obsolete_layer_names:
+            self._delete_geopackage_layers(gpkg_file, obsolete_layer_names)
+
+        return True
+
+    def _ordered_project_output_layers(self, vector_layers):
+        project_area_layers = []
+        remaining_layers = []
+        for layer in vector_layers:
+            if layer.name() == self.PROJECT_AREA_LAYER_NAME:
+                project_area_layers.append(layer)
+            else:
+                remaining_layers.append(layer)
+        return project_area_layers + remaining_layers
+
+    def _snapshot_vector_layer(self, layer):
+        try:
+            snapshot = layer.materialize(QgsFeatureRequest())
+        except Exception:
+            snapshot = None
+
+        if snapshot is None or not snapshot.isValid():
+            return layer
+
+        snapshot.setName(layer.name())
+        return snapshot
+
+    def _delete_geopackage_layers(self, gpkg_file, layer_names):
+        if ogr is None or not layer_names:
+            return False
+
+        dataset = ogr.Open(str(gpkg_file), update=1)
+        if dataset is None:
+            return False
+
+        layer_indexes = []
+        for layer_name in layer_names:
+            layer_index = self._geopackage_layer_index(dataset, layer_name)
+            if layer_index >= 0:
+                layer_indexes.append(layer_index)
+
+        deleted_any = False
+        for layer_index in sorted(set(layer_indexes), reverse=True):
+            if dataset.DeleteLayer(layer_index) == 0:
+                deleted_any = True
+
+        dataset = None
+        return deleted_any
+
+    def _geopackage_layer_index(self, dataset, layer_name):
+        try:
+            layer_count = dataset.GetLayerCount()
+        except Exception:
+            return -1
+
+        for layer_index in range(layer_count):
+            try:
+                layer = dataset.GetLayerByIndex(layer_index)
+            except Exception:
+                layer = None
+            if layer is not None and layer.GetName() == layer_name:
+                return layer_index
+        return -1
 
     def _result_directory(self):
         if self._current_project_dir is None:
