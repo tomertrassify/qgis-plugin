@@ -216,6 +216,7 @@ class LayerConfigDialog(QDialog):
 
         config_tab = QWidget()
         config_layout = QVBoxLayout(config_tab)
+        self.config_layout = config_layout
         self._config_page_index = self.page_stack.addWidget(config_tab)
         config_icon = self.style().standardIcon(QStyle.SP_FileDialogDetailedView)
 
@@ -228,6 +229,26 @@ class LayerConfigDialog(QDialog):
                 DEFAULT_CONFIG.get("nextcloud_folder_marker", "Nextcloud") or "Nextcloud"
             ).strip(),
         }
+
+        self.project_context_group = QGroupBox("0) Projekt")
+        project_context_form = QFormLayout(self.project_context_group)
+        self.project_context_status_value = QLabel("-")
+        self.project_context_status_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.project_context_dir_value = QLabel("-")
+        self.project_context_dir_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.project_context_profile_value = QLabel("-")
+        self.project_context_profile_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.project_context_layer_value = QLabel("-")
+        self.project_context_layer_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.project_context_note = QLabel("")
+        self.project_context_note.setWordWrap(True)
+        project_context_form.addRow("Projektstatus", self.project_context_status_value)
+        project_context_form.addRow("Projektordner", self.project_context_dir_value)
+        project_context_form.addRow("Projektprofil", self.project_context_profile_value)
+        project_context_form.addRow("Layer im Overlay", self.project_context_layer_value)
+        project_context_form.addRow("", self.project_context_note)
+        self.project_context_group.setVisible(False)
+        config_layout.addWidget(self.project_context_group)
 
         master_hint = QLabel(
             "Hinweis: Nextcloud-Verbindung wird zentral aus "
@@ -4532,6 +4553,18 @@ class LayerConfigDialog(QDialog):
             "operators": self._operators(),
             "external_data_sources": self._data_sources(),
         }
+
+    def set_project_context_info(self, info: dict | None):
+        if not isinstance(info, dict):
+            self.project_context_group.setVisible(False)
+            return
+
+        self.project_context_status_value.setText(str(info.get("status", "") or "-"))
+        self.project_context_dir_value.setText(str(info.get("project_dir", "") or "-"))
+        self.project_context_profile_value.setText(str(info.get("profile_path", "") or "-"))
+        self.project_context_layer_value.setText(str(info.get("layer_name", "") or "-"))
+        self.project_context_note.setText(str(info.get("note", "") or "").strip())
+        self.project_context_group.setVisible(True)
 
 
 def _property_key(name: str) -> str:

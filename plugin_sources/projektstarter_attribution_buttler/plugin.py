@@ -4,8 +4,6 @@ from qgis.PyQt.QtWidgets import (
     QAction,
     QDialog,
     QDialogButtonBox,
-    QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -47,42 +45,6 @@ class ProjectStarterButlerDialog(QDialog):
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
 
-        intro_label = QLabel(
-            "Projektordner, Projektstatus und Betreiber-/Layer-Konfiguration liegen hier in einem Overlay. "
-            "Die Betreiberliste und Datenquellen kommen direkt aus der eingebetteten Butler-Konfiguration."
-        )
-        intro_label.setWordWrap(True)
-        root_layout.addWidget(intro_label)
-
-        project_group = QGroupBox("Projekt")
-        project_layout = QGridLayout(project_group)
-        project_layout.setColumnStretch(1, 1)
-
-        self.connection_value = QLabel("-")
-        self.connection_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.project_dir_value = QLabel("-")
-        self.project_dir_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.profile_path_value = QLabel("-")
-        self.profile_path_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.active_layer_value = QLabel("-")
-        self.active_layer_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
-
-        project_layout.addWidget(QLabel("Projektstatus"), 0, 0)
-        project_layout.addWidget(self.connection_value, 0, 1)
-        project_layout.addWidget(QLabel("Projektordner"), 1, 0)
-        project_layout.addWidget(self.project_dir_value, 1, 1)
-        project_layout.addWidget(QLabel("Projektprofil"), 2, 0)
-        project_layout.addWidget(self.profile_path_value, 2, 1)
-        project_layout.addWidget(QLabel("Layer im Overlay"), 3, 0)
-        project_layout.addWidget(self.active_layer_value, 3, 1)
-
-        note_label = QLabel(
-            "Hinweis: Das Projektprofil speichert Betreiberliste, Datenquellen und Feldzuordnung projektweit. "
-            "Das Nextcloud-App-Passwort bleibt aus Sicherheitsgruenden lokal auf dem jeweiligen Rechner."
-        )
-        note_label.setWordWrap(True)
-        project_layout.addWidget(note_label, 4, 0, 1, 2)
-
         button_row = QHBoxLayout()
         self.choose_project_button = QPushButton("Projektordner waehlen...")
         self.choose_project_button.clicked.connect(self._choose_project)
@@ -98,9 +60,7 @@ class ProjectStarterButlerDialog(QDialog):
         ):
             button_row.addWidget(button)
         button_row.addStretch(1)
-        project_layout.addLayout(button_row, 5, 0, 1, 2)
-
-        root_layout.addWidget(project_group)
+        root_layout.addLayout(button_row)
 
         self.layer_host = QWidget(self)
         self.layer_host_layout = QVBoxLayout(self.layer_host)
@@ -174,23 +134,31 @@ class ProjectStarterButlerDialog(QDialog):
         dialog = LayerConfigDialog(layer, self)
         dialog.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         dialog.set_values(_effective_layer_config(layer))
+        dialog.set_project_context_info(self._project_context_info(layer))
         if getattr(dialog, "button_box", None) is not None:
             dialog.button_box.hide()
         self.layer_config_dialog = dialog
         self.layer_host_layout.addWidget(dialog)
 
-    def refresh_state(self, rebuild_layer=False):
+    def _project_context_info(self, panel_layer):
         project_dir = self.plugin._current_project_dir
         connected = self.plugin._has_active_connection()
+        profile_path = current_profile_path_string().strip() or "Wird nach dem ersten Projektspeichern angelegt."
+        layer_name = panel_layer.name() if panel_layer is not None else "-"
+        return {
+            "status": "Verbunden" if connected else "Nicht verbunden",
+            "project_dir": str(project_dir) if project_dir is not None else "-",
+            "profile_path": profile_path,
+            "layer_name": layer_name,
+            "note": (
+                "Das Projektprofil speichert Betreiberliste, Datenquellen und Feldzuordnung projektweit. "
+                "Das Nextcloud-App-Passwort bleibt aus Sicherheitsgruenden lokal auf dem jeweiligen Rechner."
+            ),
+        }
 
-        self.connection_value.setText("Verbunden" if connected else "Nicht verbunden")
-        self.project_dir_value.setText(str(project_dir) if project_dir is not None else "-")
-
-        profile_path = current_profile_path_string().strip()
-        self.profile_path_value.setText(profile_path or "Wird nach dem ersten Projektspeichern angelegt.")
-
+    def refresh_state(self, rebuild_layer=False):
+        project_dir = self.plugin._current_project_dir
         panel_layer = self._panel_layer()
-        self.active_layer_value.setText(panel_layer.name() if panel_layer is not None else "-")
 
         self.choose_project_button.setVisible(project_dir is None)
         self.sync_plans_button.setEnabled(project_dir is not None)
@@ -200,6 +168,8 @@ class ProjectStarterButlerDialog(QDialog):
 
         if rebuild_layer or panel_layer is not self.current_layer:
             self._rebuild_layer_panel(panel_layer)
+        elif self.layer_config_dialog is not None:
+            self.layer_config_dialog.set_project_context_info(self._project_context_info(panel_layer))
 
     def _choose_project(self):
         self.plugin._select_and_connect_project()
