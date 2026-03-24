@@ -929,7 +929,7 @@ def _stand_date(abs_file_path: str | None) -> str | None:
     if not abs_file_path or not os.path.exists(abs_file_path):
         return None
     ts = os.path.getmtime(abs_file_path)
-    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y")
 
 
 def _normalized_operator_name(value) -> str:

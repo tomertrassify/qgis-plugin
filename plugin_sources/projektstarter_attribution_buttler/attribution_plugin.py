@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from qgis.PyQt import sip
-from qgis.PyQt.QtCore import QSize, Qt, QSettings
+from qgis.PyQt.QtCore import Qt, QSettings
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
@@ -30,13 +30,9 @@ from qgis.PyQt.QtWidgets import (
     QPushButton,
     QHeaderView,
     QInputDialog,
-    QListWidget,
-    QListWidgetItem,
     QTableWidget,
     QTableWidgetItem,
     QStackedWidget,
-    QSplitter,
-    QStyle,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
@@ -172,6 +168,8 @@ OPERATOR_COLUMN_FAULT = 7
 OPERATOR_COLUMN_PATH = 8
 OPERATOR_COLUMN_NEXTCLOUD_LINK = 9
 
+KNOWN_DATE_FORMATS = ("%d.%m.%Y", "%Y-%m-%d")
+
 
 def _layer_field_names(layer) -> list[str]:
     return [field.name() for field in layer.fields()]
@@ -207,15 +205,42 @@ def _expand_local_root_placeholder(value: str, roots: list[str]) -> str:
     return LOCAL_ROOT_PLACEHOLDER_PATTERN.sub(lambda _match: root, text)
 
 
+def _format_display_date_from_timestamp(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y")
+
+
+def _parse_known_date(value: str):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in KNOWN_DATE_FORMATS:
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _date_values_match(left: str, right: str) -> bool:
+    left_text = str(left or "").strip()
+    right_text = str(right or "").strip()
+    if left_text == right_text:
+        return True
+    left_date = _parse_known_date(left_text)
+    right_date = _parse_known_date(right_text)
+    if left_date is not None and right_date is not None:
+        return left_date == right_date
+    return False
+
+
 class LayerConfigDialog(QDialog):
     def __init__(self, layer, parent=None):
         super().__init__(parent)
         self.layer = layer
         self.layer_fields = _layer_field_names(layer)
         self._auto_pg_table_cache = {}
-        self._config_page_index = -1
         self._operators_page_index = -1
-        self._data_page_index = -1
+        self._settings_page_index = -1
         self._last_external_load_debug = []
 
         self.setWindowTitle("AttributionButler konfigurieren")
@@ -226,27 +251,23 @@ class LayerConfigDialog(QDialog):
         root_layout.setContentsMargins(10, 10, 10, 10)
         root_layout.setSpacing(8)
 
-        content_splitter = QSplitter(Qt.Horizontal, self)
-        content_splitter.setChildrenCollapsible(False)
-        root_layout.addWidget(content_splitter, 1)
-
-        self.nav_list = QListWidget(self)
-        self.nav_list.setFixedWidth(190)
-        self.nav_list.setIconSize(QSize(18, 18))
-        self.nav_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        content_splitter.addWidget(self.nav_list)
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addStretch(1)
+        self.open_settings_button = QPushButton("Einstellungen")
+        self.open_settings_button.clicked.connect(self._show_settings_page)
+        self.back_to_operators_button = QPushButton("Zur Betreiberliste")
+        self.back_to_operators_button.clicked.connect(self._show_operators_page)
+        top_row.addWidget(self.open_settings_button)
+        top_row.addWidget(self.back_to_operators_button)
+        root_layout.addLayout(top_row)
 
         self.page_stack = QStackedWidget(self)
-        content_splitter.addWidget(self.page_stack)
-        content_splitter.setStretchFactor(0, 0)
-        content_splitter.setStretchFactor(1, 1)
-        self.nav_list.currentItemChanged.connect(self._on_nav_item_changed)
+        root_layout.addWidget(self.page_stack, 1)
 
         config_tab = QWidget()
         config_layout = QVBoxLayout(config_tab)
         self.config_layout = config_layout
-        self._config_page_index = self.page_stack.addWidget(config_tab)
-        config_icon = self.style().standardIcon(QStyle.SP_FileDialogDetailedView)
 
         self._global_nextcloud_config = {
             "nextcloud_base_url": str(DEFAULT_CONFIG.get("nextcloud_base_url", "") or "").strip(),
@@ -349,8 +370,6 @@ class LayerConfigDialog(QDialog):
 
         operators_tab = QWidget()
         operators_layout = QVBoxLayout(operators_tab)
-        self._operators_page_index = self.page_stack.addWidget(operators_tab)
-        operators_icon = self.style().standardIcon(QStyle.SP_DirIcon)
         self._local_operator_overlays = []
         self._refreshing_local_operator_table = False
         self.operator_tabs = QTabWidget(self)
@@ -525,9 +544,6 @@ class LayerConfigDialog(QDialog):
 
         data_tab = QWidget()
         data_layout = QVBoxLayout(data_tab)
-        self._data_page_index = self.page_stack.addWidget(data_tab)
-        data_icon_flag = getattr(QStyle, "SP_DriveNetIcon", QStyle.SP_DirOpenIcon)
-        data_icon = self.style().standardIcon(data_icon_flag)
 
         file_sources_group = QGroupBox("Dateiquellen (Excel, CSV, ODS, GPKG ...)")
         file_sources_layout = QVBoxLayout(file_sources_group)
@@ -579,30 +595,38 @@ class LayerConfigDialog(QDialog):
         db_sources_layout.addLayout(db_source_buttons)
         data_layout.addWidget(db_sources_group, 1)
 
+        settings_page = QWidget()
+        settings_layout = QVBoxLayout(settings_page)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.setSpacing(8)
+        self.settings_tabs = QTabWidget(self)
+        self.settings_tabs.addTab(data_tab, "Datenquellen")
+        self.settings_tabs.addTab(config_tab, "Konfiguration")
+        settings_layout.addWidget(self.settings_tabs, 1)
+
+        self._operators_page_index = self.page_stack.addWidget(operators_tab)
+        self._settings_page_index = self.page_stack.addWidget(settings_page)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         self.button_box = buttons
         root_layout.addWidget(buttons)
 
-        # Navigation order on the left: Betreiberliste, Datenquellen, Konfiguration.
-        self._add_nav_item("Betreiberliste", operators_icon, self._operators_page_index)
-        self._add_nav_item("Datenquellen", data_icon, self._data_page_index)
-        self._add_nav_item("Konfiguration", config_icon, self._config_page_index)
         self._refresh_operator_source_selector()
-        self.nav_list.setCurrentRow(0)
+        self._set_main_page(self._operators_page_index)
 
-    def _add_nav_item(self, title: str, icon: QIcon, page_index: int):
-        item = QListWidgetItem(icon, title)
-        item.setData(Qt.UserRole, int(page_index))
-        self.nav_list.addItem(item)
-
-    def _on_nav_item_changed(self, current: QListWidgetItem, previous: QListWidgetItem):
-        del previous
-        if current is None:
-            return
-        page_index = int(current.data(Qt.UserRole))
+    def _set_main_page(self, page_index: int):
         self.page_stack.setCurrentIndex(page_index)
+        settings_visible = page_index == self._settings_page_index
+        self.open_settings_button.setVisible(not settings_visible)
+        self.back_to_operators_button.setVisible(settings_visible)
+
+    def _show_settings_page(self):
+        self._set_main_page(self._settings_page_index)
+
+    def _show_operators_page(self):
+        self._set_main_page(self._operators_page_index)
 
     def _set_global_nextcloud_config(self, config: dict):
         self._global_nextcloud_config = {
@@ -704,7 +728,7 @@ class LayerConfigDialog(QDialog):
         try:
             if os.path.isfile(target):
                 ts = os.path.getmtime(target)
-                return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                return _format_display_date_from_timestamp(ts)
 
             if not os.path.isdir(target):
                 return ""
@@ -722,7 +746,7 @@ class LayerConfigDialog(QDialog):
 
             if newest_ts is None:
                 return ""
-            return datetime.fromtimestamp(newest_ts).strftime("%Y-%m-%d")
+            return _format_display_date_from_timestamp(newest_ts)
         except Exception:
             return ""
 
@@ -753,7 +777,7 @@ class LayerConfigDialog(QDialog):
 
                 auto_stand = self._latest_file_date_in_path(folder_path)
                 saved_stand = str((overlay or {}).get("stand", "") or "").strip()
-                stand_value = saved_stand if saved_stand and saved_stand != auto_stand else auto_stand
+                stand_value = saved_stand if saved_stand and not _date_values_match(saved_stand, auto_stand) else auto_stand
 
                 values = [
                     folder_name,
@@ -860,7 +884,7 @@ class LayerConfigDialog(QDialog):
             stand_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_STAND)
             stand = stand_item.text().strip() if stand_item else ""
             auto_stand = str(stand_item.data(Qt.UserRole) or "").strip() if stand_item else ""
-            if stand == auto_stand:
+            if _date_values_match(stand, auto_stand):
                 stand = ""
             link_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK)
             nextcloud_link = link_item.text().strip() if link_item else ""
@@ -1581,7 +1605,7 @@ class LayerConfigDialog(QDialog):
         try:
             if os.path.isfile(target):
                 ts = os.path.getmtime(target)
-                return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                return _format_display_date_from_timestamp(ts)
 
             if not os.path.isdir(target):
                 return ""
@@ -1599,7 +1623,7 @@ class LayerConfigDialog(QDialog):
 
             if oldest_ts is None:
                 return ""
-            return datetime.fromtimestamp(oldest_ts).strftime("%Y-%m-%d")
+            return _format_display_date_from_timestamp(oldest_ts)
         except Exception:
             return ""
 
