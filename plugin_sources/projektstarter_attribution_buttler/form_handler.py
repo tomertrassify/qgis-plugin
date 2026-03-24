@@ -193,11 +193,26 @@ def _normalize_operator_entry(entry) -> dict:
                 )
                 or ""
             ).strip(),
+            "nextcloud_link": str(
+                entry.get(
+                    "nextcloud_link",
+                    entry.get(
+                        "nextcloudlink",
+                        entry.get(
+                            "folder_link",
+                            entry.get("ordnerlink", entry.get("share_folder", "")),
+                        ),
+                    ),
+                )
+                or ""
+            ).strip(),
         }
     if isinstance(entry, (list, tuple)):
         raw_values = [str(v or "").strip() for v in list(entry)]
-        if len(raw_values) >= 9:
-            values = raw_values[:9]
+        if len(raw_values) >= 10:
+            values = raw_values[:10]
+        elif len(raw_values) >= 9:
+            values = raw_values[:9] + [""]
         elif len(raw_values) >= 7:
             values = [
                 raw_values[0],
@@ -209,10 +224,11 @@ def _normalize_operator_entry(entry) -> dict:
                 raw_values[4],
                 raw_values[5],
                 raw_values[6],
+                "",
             ]
         else:
-            values = [""] + raw_values[:8]
-        while len(values) < 9:
+            values = [""] + raw_values[:9]
+        while len(values) < 10:
             values.append("")
         return {
             "source_name": values[0],
@@ -224,6 +240,7 @@ def _normalize_operator_entry(entry) -> dict:
             "email": values[6],
             "fault_number": values[7],
             "folder_path": values[8],
+            "nextcloud_link": values[9],
         }
     return {
         "source_name": "",
@@ -235,6 +252,7 @@ def _normalize_operator_entry(entry) -> dict:
         "email": "",
         "fault_number": "",
         "folder_path": "",
+        "nextcloud_link": "",
     }
 
 
@@ -325,6 +343,7 @@ def _parse_operators(value) -> list[dict]:
                 normalized["email"],
                 normalized["fault_number"],
                 normalized["folder_path"],
+                normalized["nextcloud_link"],
             ]
         ):
             result.append(normalized)
@@ -1119,7 +1138,9 @@ def _best_local_overlay(local_entries: list[dict], operator_name: str, source_na
         entry_validity_token = str(normalized.get("validity", "") or "").strip().casefold()
         validity_score = 1 if validity_token and entry_validity_token == validity_token else 0
         fill_score = sum(
-            1 for key in ("stand", "folder_path") if str(normalized.get(key, "") or "").strip()
+            1
+            for key in ("stand", "folder_path", "nextcloud_link")
+            if str(normalized.get(key, "") or "").strip()
         )
         matches.append((source_score, validity_score, fill_score, normalized))
 
@@ -1333,6 +1354,8 @@ def _all_operator_entries(config: dict) -> list[dict]:
                     merged["stand"] = str(overlay.get("stand", "") or "").strip()
                 if str(overlay.get("folder_path", "") or "").strip():
                     merged["folder_path"] = str(overlay.get("folder_path", "") or "").strip()
+                if str(overlay.get("nextcloud_link", "") or "").strip():
+                    merged["nextcloud_link"] = str(overlay.get("nextcloud_link", "") or "").strip()
                 matched_local_keys.add(
                     (
                         _normalized_source_name(overlay.get("source_name", "")),
@@ -1376,6 +1399,7 @@ def _operator_entry_score(entry: dict) -> int:
         str(entry.get("email", "") or "").strip(),
         str(entry.get("fault_number", "") or "").strip(),
         str(entry.get("folder_path", "") or "").strip(),
+        str(entry.get("nextcloud_link", "") or "").strip(),
     ]
     return sum(1 for value in values if value)
 
@@ -1396,6 +1420,7 @@ def _unique_operator_entry(operator_entries: list[dict], operator_name_value) ->
             str(entry.get("email", "") or "").strip().lower(),
             str(entry.get("fault_number", "") or "").strip().lower(),
             str(entry.get("folder_path", "") or "").strip().lower(),
+            str(entry.get("nextcloud_link", "") or "").strip().lower(),
         )
 
     signatures = {_sig(entry) for entry in matches}
@@ -1441,46 +1466,16 @@ def _apply_operator_lookup(
         _set_if_allowed(dialog, feature, field_name, field_value, overwrite)
 
     folder_field = str(config.get("folder_link_field_name", "") or "").strip()
-    folder_source_path = ""
-    folder_candidates = []
-    for candidate in matches:
-        candidate_path = str(candidate.get("folder_path", "") or "").strip()
-        if not candidate_path:
-            continue
-        source_name = str(
-            candidate.get("source_name", candidate.get("_source_name", "")) or ""
-        ).strip().lower()
-        local_priority = 0 if (not source_name or "projekt" in source_name or "lokal" in source_name) else 1
-        folder_candidates.append(
-            (local_priority, -_operator_entry_score(candidate), candidate_path)
-        )
-    if folder_candidates:
-        folder_source_path = sorted(folder_candidates, key=lambda item: (item[0], item[1], item[2]))[0][2]
-    elif entry:
-        folder_source_path = str(entry.get("folder_path", "") or "").strip()
-
-    if not folder_field or not folder_source_path:
+    if not folder_field:
         return True
-
-    nc_folder_path, _ = _to_nextcloud_and_local_path(folder_source_path, config)
-    if not nc_folder_path:
-        _log_nextcloud_warning(
-            "Kein Nextcloud-Mapping fuer Betreiber-Ordnerpfad: "
-            f"'{folder_source_path}'. Pruefe Trassify Master Tools > Einstellungen > Lokale Sync-Roots."
-        )
+    folder_link = str(entry.get("nextcloud_link", "") or "").strip()
+    if folder_link:
+        _set_if_allowed(dialog, feature, folder_field, folder_link, overwrite)
         return True
-
     try:
-        folder_link = get_or_create_public_link(config, nc_folder_path)
-    except Exception as exc:
-        message = str(exc)
-        if _is_missing_path_error(message) or _is_rate_limit_error(message):
-            _log_nextcloud_warning(
-                f"Betreiber-Ordnerlink konnte nicht erzeugt werden ({message}); Pfad: {nc_folder_path}"
-            )
-            return True
-        raise
-    _set_if_allowed(dialog, feature, folder_field, folder_link, overwrite)
+        dialog.changeAttribute(folder_field, None)
+    except Exception:
+        pass
     return True
 
 
@@ -1492,6 +1487,7 @@ def _clear_operator_lookup_fields(dialog, config: dict):
         str(config.get("operator_fault_field_name", "") or "").strip(),
         str(config.get("operator_validity_field_name", "") or "").strip(),
         str(config.get("operator_stand_field_name", "") or "").strip(),
+        str(config.get("folder_link_field_name", "") or "").strip(),
     ]
     for field_name in fields:
         if not field_name:

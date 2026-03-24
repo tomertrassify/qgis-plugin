@@ -14,6 +14,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QAction,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -57,6 +58,12 @@ from .project_profile import (
     normalize_config_for_storage,
     save_layer_profile_config,
     save_shared_settings_from_config,
+)
+from .form_handler import (
+    _is_missing_path_error,
+    _is_rate_limit_error,
+    _to_nextcloud_and_local_path,
+    get_or_create_public_link,
 )
 
 
@@ -145,6 +152,25 @@ USER_CONFIG_KEYS = (
     "local_nextcloud_roots",
     "nextcloud_folder_marker",
 )
+
+LOCAL_OPERATOR_COLUMN_FOLDER = 0
+LOCAL_OPERATOR_COLUMN_OPERATOR = 1
+LOCAL_OPERATOR_COLUMN_SOURCE = 2
+LOCAL_OPERATOR_COLUMN_VALIDITY = 3
+LOCAL_OPERATOR_COLUMN_STAND = 4
+LOCAL_OPERATOR_COLUMN_PATH = 5
+LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK = 6
+
+OPERATOR_COLUMN_SOURCE = 0
+OPERATOR_COLUMN_OPERATOR = 1
+OPERATOR_COLUMN_VALIDITY = 2
+OPERATOR_COLUMN_STAND = 3
+OPERATOR_COLUMN_CONTACT = 4
+OPERATOR_COLUMN_PHONE = 5
+OPERATOR_COLUMN_EMAIL = 6
+OPERATOR_COLUMN_FAULT = 7
+OPERATOR_COLUMN_PATH = 8
+OPERATOR_COLUMN_NEXTCLOUD_LINK = 9
 
 
 def _layer_field_names(layer) -> list[str]:
@@ -337,7 +363,7 @@ class LayerConfigDialog(QDialog):
         self.local_operator_status_label.setWordWrap(True)
         local_layout.addWidget(self.local_operator_status_label)
         self.local_operator_hint_label = QLabel(
-            "Waehle rechts in der Betreiberliste einen Eintrag aus und uebernimm ihn dann fuer die markierten lokalen Ordner."
+            "Waehle rechts einen Betreiber aus, uebernimm ihn fuer die markierten lokalen Ordner und erzeuge danach bei Bedarf die Nextcloud Links direkt hier im Tab."
         )
         self.local_operator_hint_label.setWordWrap(True)
         local_layout.addWidget(self.local_operator_hint_label)
@@ -347,7 +373,7 @@ class LayerConfigDialog(QDialog):
             lambda text: self._apply_table_text_filter(self.local_operator_table, text)
         )
         local_layout.addWidget(self.local_operator_search_input)
-        self.local_operator_table = QTableWidget(0, 6)
+        self.local_operator_table = QTableWidget(0, 7)
         self.local_operator_table.setHorizontalHeaderLabels(
             [
                 "Ordner",
@@ -356,6 +382,7 @@ class LayerConfigDialog(QDialog):
                 "Gültigkeit",
                 "Stand",
                 "Pfad",
+                "Nextcloud Link",
             ]
         )
         self._configure_standard_table(
@@ -371,23 +398,28 @@ class LayerConfigDialog(QDialog):
         local_header.setSectionResizeMode(2, QHeaderView.Interactive)
         local_header.setSectionResizeMode(3, QHeaderView.Interactive)
         local_header.setSectionResizeMode(4, QHeaderView.Interactive)
-        local_header.setSectionResizeMode(5, QHeaderView.Stretch)
+        local_header.setSectionResizeMode(5, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(6, QHeaderView.Stretch)
         local_header.resizeSection(0, 220)
         local_header.resizeSection(1, 240)
         local_header.resizeSection(2, 180)
         local_header.resizeSection(3, 150)
         local_header.resizeSection(4, 130)
-        local_header.resizeSection(5, 360)
+        local_header.resizeSection(5, 280)
+        local_header.resizeSection(6, 380)
         local_header.setTextElideMode(Qt.ElideNone)
         local_layout.addWidget(self.local_operator_table, 1)
         local_buttons = QHBoxLayout()
         self.local_operator_assign_button = QPushButton("Aus Betreiberliste uebernehmen")
         self.local_operator_assign_button.clicked.connect(self._assign_selected_external_operator_to_local_rows)
+        self.local_operator_link_button = QPushButton("Nextcloud Links erzeugen")
+        self.local_operator_link_button.clicked.connect(self._generate_local_operator_nextcloud_links)
         self.local_operator_clear_button = QPushButton("Zuordnung loeschen")
         self.local_operator_clear_button.clicked.connect(self._clear_selected_local_operator_rows)
         self.local_operator_reload_button = QPushButton("Ordner neu laden")
         self.local_operator_reload_button.clicked.connect(self._refresh_local_operator_table)
         local_buttons.addWidget(self.local_operator_assign_button)
+        local_buttons.addWidget(self.local_operator_link_button)
         local_buttons.addWidget(self.local_operator_clear_button)
         local_buttons.addWidget(self.local_operator_reload_button)
         local_buttons.addStretch(1)
@@ -417,7 +449,7 @@ class LayerConfigDialog(QDialog):
         )
         external_layout.addWidget(self.operator_search_input)
 
-        self.operator_table = QTableWidget(0, 9)
+        self.operator_table = QTableWidget(0, 10)
         self.operator_table.setHorizontalHeaderLabels(
             [
                 "Datenquelle",
@@ -429,6 +461,7 @@ class LayerConfigDialog(QDialog):
                 "E-Mail",
                 "Störnummer",
                 "Pfad",
+                "Nextcloud Link",
             ]
         )
         self._configure_standard_table(
@@ -448,6 +481,7 @@ class LayerConfigDialog(QDialog):
         header.setSectionResizeMode(6, QHeaderView.Interactive)
         header.setSectionResizeMode(7, QHeaderView.Interactive)
         header.setSectionResizeMode(8, QHeaderView.Interactive)
+        header.setSectionResizeMode(9, QHeaderView.Interactive)
         header.resizeSection(0, 190)
         header.resizeSection(1, 220)
         header.resizeSection(2, 150)
@@ -456,7 +490,8 @@ class LayerConfigDialog(QDialog):
         header.resizeSection(5, 170)
         header.resizeSection(6, 220)
         header.resizeSection(7, 170)
-        header.resizeSection(8, 360)
+        header.resizeSection(8, 280)
+        header.resizeSection(9, 380)
         header.setTextElideMode(Qt.ElideNone)
         self._set_operator_table_visual_order()
         self.operator_table.itemChanged.connect(self._on_operator_table_item_changed)
@@ -618,6 +653,7 @@ class LayerConfigDialog(QDialog):
             "validity": str(normalized.get("validity", "") or "").strip(),
             "stand": str(normalized.get("stand", "") or "").strip(),
             "folder_path": str(normalized.get("folder_path", "") or "").strip(),
+            "nextcloud_link": str(normalized.get("nextcloud_link", "") or "").strip(),
         }
 
     def _normalized_source_name(self, value: str) -> str:
@@ -686,14 +722,21 @@ class LayerConfigDialog(QDialog):
                 str((overlay or {}).get("validity", "") or "").strip(),
                 str((overlay or {}).get("stand", "") or "").strip(),
                 self._operator_path_alias(folder_path),
+                str((overlay or {}).get("nextcloud_link", "") or "").strip(),
             ]
             for col, text in enumerate(values):
                 item = QTableWidgetItem(text)
-                if col in (0, 5):
+                if col in (
+                    LOCAL_OPERATOR_COLUMN_FOLDER,
+                    LOCAL_OPERATOR_COLUMN_PATH,
+                    LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK,
+                ):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                if col == 5:
+                if col == LOCAL_OPERATOR_COLUMN_PATH:
                     item.setData(Qt.UserRole, folder_path)
                     item.setToolTip(folder_path)
+                elif col == LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK:
+                    item.setToolTip(text)
                 self.local_operator_table.setItem(row, col, item)
 
         for folder_name, folder_path in rows:
@@ -749,6 +792,7 @@ class LayerConfigDialog(QDialog):
                     normalized["source_name"],
                     normalized["validity"],
                     normalized["stand"],
+                    normalized["nextcloud_link"],
                 )
             ):
                 continue
@@ -757,20 +801,22 @@ class LayerConfigDialog(QDialog):
     def _collect_local_operator_overlays_from_table(self) -> list[dict]:
         result = []
         for row in range(self.local_operator_table.rowCount()):
-            folder_item = self.local_operator_table.item(row, 5)
+            folder_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_PATH)
             folder_path = ""
             if folder_item is not None:
                 folder_path = str(folder_item.data(Qt.UserRole) or "").strip()
 
-            source_item = self.local_operator_table.item(row, 2)
+            source_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_SOURCE)
             source_name = source_item.text().strip() if source_item else ""
-            operator_item = self.local_operator_table.item(row, 1)
+            operator_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_OPERATOR)
             operator_name = operator_item.text().strip() if operator_item else ""
-            validity_item = self.local_operator_table.item(row, 3)
+            validity_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_VALIDITY)
             validity = validity_item.text().strip() if validity_item else ""
-            stand_item = self.local_operator_table.item(row, 4)
+            stand_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_STAND)
             stand = stand_item.text().strip() if stand_item else ""
-            if not any((operator_name, source_name, validity, stand)):
+            link_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK)
+            nextcloud_link = link_item.text().strip() if link_item else ""
+            if not any((operator_name, source_name, validity, stand, nextcloud_link)):
                 continue
 
             result.append(
@@ -780,6 +826,7 @@ class LayerConfigDialog(QDialog):
                     "validity": validity,
                     "stand": stand,
                     "folder_path": folder_path,
+                    "nextcloud_link": nextcloud_link,
                 }
             )
         return result
@@ -807,9 +854,9 @@ class LayerConfigDialog(QDialog):
             return
 
         external_row = selected_external_rows[0].row()
-        operator_name = self.operator_table.item(external_row, 1).text().strip() if self.operator_table.item(external_row, 1) else ""
-        source_name = self.operator_table.item(external_row, 0).text().strip() if self.operator_table.item(external_row, 0) else ""
-        validity = self.operator_table.item(external_row, 2).text().strip() if self.operator_table.item(external_row, 2) else ""
+        operator_name = self.operator_table.item(external_row, OPERATOR_COLUMN_OPERATOR).text().strip() if self.operator_table.item(external_row, OPERATOR_COLUMN_OPERATOR) else ""
+        source_name = self.operator_table.item(external_row, OPERATOR_COLUMN_SOURCE).text().strip() if self.operator_table.item(external_row, OPERATOR_COLUMN_SOURCE) else ""
+        validity = self.operator_table.item(external_row, OPERATOR_COLUMN_VALIDITY).text().strip() if self.operator_table.item(external_row, OPERATOR_COLUMN_VALIDITY) else ""
 
         if not operator_name:
             QMessageBox.information(
@@ -821,7 +868,11 @@ class LayerConfigDialog(QDialog):
 
         for model_index in selected_local_rows:
             row = model_index.row()
-            for col, value in ((1, operator_name), (2, source_name), (3, validity)):
+            for col, value in (
+                (LOCAL_OPERATOR_COLUMN_OPERATOR, operator_name),
+                (LOCAL_OPERATOR_COLUMN_SOURCE, source_name),
+                (LOCAL_OPERATOR_COLUMN_VALIDITY, validity),
+            ):
                 item = self.local_operator_table.item(row, col)
                 if item is None:
                     item = QTableWidgetItem()
@@ -848,7 +899,12 @@ class LayerConfigDialog(QDialog):
 
         for model_index in selected_rows:
             row = model_index.row()
-            for col in (1, 2, 3, 4):
+            for col in (
+                LOCAL_OPERATOR_COLUMN_OPERATOR,
+                LOCAL_OPERATOR_COLUMN_SOURCE,
+                LOCAL_OPERATOR_COLUMN_VALIDITY,
+                LOCAL_OPERATOR_COLUMN_STAND,
+            ):
                 item = self.local_operator_table.item(row, col)
                 if item is None:
                     item = QTableWidgetItem()
@@ -883,7 +939,13 @@ class LayerConfigDialog(QDialog):
             entry_validity_token = str(entry.get("validity", "") or "").strip().casefold()
             validity_score = 1 if validity_token and entry_validity_token == validity_token else 0
             fill_score = sum(
-                1 for value in (entry.get("stand", ""), entry.get("folder_path", "")) if str(value or "").strip()
+                1
+                for value in (
+                    entry.get("stand", ""),
+                    entry.get("folder_path", ""),
+                    entry.get("nextcloud_link", ""),
+                )
+                if str(value or "").strip()
             )
             matches.append((source_score, validity_score, fill_score, entry))
 
@@ -915,6 +977,8 @@ class LayerConfigDialog(QDialog):
                         normalized["stand"] = str(overlay.get("stand", "") or "").strip()
                     if overlay.get("folder_path"):
                         normalized["folder_path"] = str(overlay.get("folder_path", "") or "").strip()
+                    if overlay.get("nextcloud_link"):
+                        normalized["nextcloud_link"] = str(overlay.get("nextcloud_link", "") or "").strip()
                     matched_keys.add(
                         (
                             self._normalized_source_name(source_name),
@@ -930,6 +994,8 @@ class LayerConfigDialog(QDialog):
                 _normalized_operator_name(overlay.get("operator_name", "")),
                 str(overlay.get("validity", "") or "").strip().casefold(),
             )
+            if not str(overlay.get("operator_name", "") or "").strip():
+                continue
             if key in matched_keys:
                 continue
             merged.append(
@@ -943,6 +1009,7 @@ class LayerConfigDialog(QDialog):
                     "email": "",
                     "fault_number": "",
                     "folder_path": str(overlay.get("folder_path", "") or "").strip(),
+                    "nextcloud_link": str(overlay.get("nextcloud_link", "") or "").strip(),
                 }
             )
         return merged
@@ -1241,11 +1308,11 @@ class LayerConfigDialog(QDialog):
                 item = table.item(row, col)
                 if item is not None:
                     row_values.append(item.text())
-                    if table is self.operator_table and col == 8:
+                    if table is self.operator_table and col == OPERATOR_COLUMN_PATH:
                         hidden_path = str(item.data(Qt.UserRole) or "").strip()
                         if hidden_path and hidden_path != item.text():
                             row_values.append(hidden_path)
-                    if table is self.local_operator_table and col == 5:
+                    if table is self.local_operator_table and col == LOCAL_OPERATOR_COLUMN_PATH:
                         hidden_path = str(item.data(Qt.UserRole) or "").strip()
                         if hidden_path and hidden_path != item.text():
                             row_values.append(hidden_path)
@@ -1258,8 +1325,19 @@ class LayerConfigDialog(QDialog):
 
     def _set_operator_table_visual_order(self):
         header = self.operator_table.horizontalHeader()
-        # Sichtbare Reihenfolge: Betreibername | Gueltigkeit | Ansprechpartner | Telefon | E-Mail | Stoernummer | Stand | Pfad | Datenquelle
-        desired = [1, 2, 4, 5, 6, 7, 3, 8, 0]
+        # Sichtbare Reihenfolge: Betreibername | Gueltigkeit | Ansprechpartner | Telefon | E-Mail | Stoernummer | Stand | Pfad | Nextcloud Link | Datenquelle
+        desired = [
+            OPERATOR_COLUMN_OPERATOR,
+            OPERATOR_COLUMN_VALIDITY,
+            OPERATOR_COLUMN_CONTACT,
+            OPERATOR_COLUMN_PHONE,
+            OPERATOR_COLUMN_EMAIL,
+            OPERATOR_COLUMN_FAULT,
+            OPERATOR_COLUMN_STAND,
+            OPERATOR_COLUMN_PATH,
+            OPERATOR_COLUMN_NEXTCLOUD_LINK,
+            OPERATOR_COLUMN_SOURCE,
+        ]
         for target_visual_index, logical_index in enumerate(desired):
             current_visual_index = header.visualIndex(logical_index)
             if current_visual_index < 0 or current_visual_index == target_visual_index:
@@ -1351,7 +1429,7 @@ class LayerConfigDialog(QDialog):
     def _add_operator_row(self, values=None, payload=None):
         if isinstance(values, bool):
             values = None
-        values = values or ["", "", "", "", "", "", "", "", ""]
+        values = values or ["", "", "", "", "", "", "", "", "", ""]
         row = -1
         sorting_enabled = self.operator_table.isSortingEnabled()
         if sorting_enabled:
@@ -1359,18 +1437,20 @@ class LayerConfigDialog(QDialog):
         try:
             row = self.operator_table.rowCount()
             self.operator_table.insertRow(row)
-            for col in range(9):
+            for col in range(10):
                 text = str(values[col]) if col < len(values) else ""
-                if col == 8:
+                if col == OPERATOR_COLUMN_PATH:
                     self._set_operator_path_item(row, text)
+                elif col == OPERATOR_COLUMN_NEXTCLOUD_LINK:
+                    self._set_operator_nextcloud_link_item(row, text)
                 else:
                     item = QTableWidgetItem(text)
-                    if col in (0, 3):
+                    if col in (OPERATOR_COLUMN_SOURCE, OPERATOR_COLUMN_STAND):
                         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                    if col == 1 and payload is not None:
+                    if col == OPERATOR_COLUMN_OPERATOR and payload is not None:
                         item.setData(Qt.UserRole, payload)
                     self.operator_table.setItem(row, col, item)
-            self.operator_table.setCurrentCell(row, 1)
+            self.operator_table.setCurrentCell(row, OPERATOR_COLUMN_OPERATOR)
         finally:
             if sorting_enabled:
                 self.operator_table.setSortingEnabled(True)
@@ -1399,7 +1479,7 @@ class LayerConfigDialog(QDialog):
         return trimmed
 
     def _operator_path_value(self, row_index: int) -> str:
-        item = self.operator_table.item(row_index, 8)
+        item = self.operator_table.item(row_index, OPERATOR_COLUMN_PATH)
         if item is None:
             return ""
         stored = str(item.data(Qt.UserRole) or "").strip()
@@ -1410,15 +1490,29 @@ class LayerConfigDialog(QDialog):
     def _set_operator_path_item(self, row_index: int, path_value: str):
         full_path = str(path_value or "").strip()
         alias = self._operator_path_alias(full_path)
-        item = self.operator_table.item(row_index, 8)
+        item = self.operator_table.item(row_index, OPERATOR_COLUMN_PATH)
         if item is None:
             item = QTableWidgetItem()
-            self.operator_table.setItem(row_index, 8, item)
+            self.operator_table.setItem(row_index, OPERATOR_COLUMN_PATH, item)
         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         item.setData(Qt.UserRole, full_path)
         item.setToolTip(full_path)
         item.setText(alias if full_path else "")
         self._auto_fill_operator_stand_from_path(row_index, full_path)
+
+    def _operator_nextcloud_link_value(self, row_index: int) -> str:
+        item = self.operator_table.item(row_index, OPERATOR_COLUMN_NEXTCLOUD_LINK)
+        return item.text().strip() if item is not None else ""
+
+    def _set_operator_nextcloud_link_item(self, row_index: int, link_value: str):
+        text = str(link_value or "").strip()
+        item = self.operator_table.item(row_index, OPERATOR_COLUMN_NEXTCLOUD_LINK)
+        if item is None:
+            item = QTableWidgetItem()
+            self.operator_table.setItem(row_index, OPERATOR_COLUMN_NEXTCLOUD_LINK, item)
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        item.setToolTip(text)
+        item.setText(text)
 
     def _oldest_file_date_in_path(self, path_value: str) -> str:
         target = str(path_value or "").strip()
@@ -1458,10 +1552,10 @@ class LayerConfigDialog(QDialog):
         if not str(full_path or "").strip():
             return
 
-        stand_item = self.operator_table.item(row_index, 3)
+        stand_item = self.operator_table.item(row_index, OPERATOR_COLUMN_STAND)
         if stand_item is None:
             stand_item = QTableWidgetItem("")
-            self.operator_table.setItem(row_index, 3, stand_item)
+            self.operator_table.setItem(row_index, OPERATOR_COLUMN_STAND, stand_item)
 
         current_text = stand_item.text().strip().lower()
         if current_text and current_text not in ("<null>", "null", "none"):
@@ -1477,7 +1571,7 @@ class LayerConfigDialog(QDialog):
         if item is None:
             return
 
-        if item.column() == 8:
+        if item.column() == OPERATOR_COLUMN_PATH:
             current_text = item.text().strip()
             stored_full_path = str(item.data(Qt.UserRole) or "").strip()
             if stored_full_path and current_text == self._operator_path_alias(stored_full_path):
@@ -1704,6 +1798,16 @@ class LayerConfigDialog(QDialog):
                 "path",
                 "pfad",
             ],
+            "nextcloud_link": [
+                "nextcloud_link",
+                "nextcloudlink",
+                "nextcloud link",
+                "ordnerlink",
+                "folder_link",
+                "link_folder",
+                "share_folder",
+                "sharelink",
+            ],
         }
 
         normalized_headers = {
@@ -1764,6 +1868,9 @@ class LayerConfigDialog(QDialog):
                     "folder_path": str(row.get(mapping["folder_path"], "") or "").strip()
                     if mapping["folder_path"]
                     else "",
+                    "nextcloud_link": str(row.get(mapping["nextcloud_link"], "") or "").strip()
+                    if mapping.get("nextcloud_link")
+                    else "",
                 }
                 normalized = _normalize_operator_entry(entry)
                 if any(
@@ -1776,6 +1883,7 @@ class LayerConfigDialog(QDialog):
                         normalized["email"],
                         normalized["fault_number"],
                         normalized["folder_path"],
+                        normalized["nextcloud_link"],
                     ]
                 ):
                     operators.append(normalized)
@@ -1792,6 +1900,7 @@ class LayerConfigDialog(QDialog):
             "E-Mail",
             "Störnummer",
             "Ordnerpfad",
+            "Nextcloud Link",
         ]
         with open(file_path, "w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter=";")
@@ -1809,6 +1918,7 @@ class LayerConfigDialog(QDialog):
                         "E-Mail": normalized["email"],
                         "Störnummer": normalized["fault_number"],
                         "Ordnerpfad": normalized["folder_path"],
+                        "Nextcloud Link": normalized["nextcloud_link"],
                     }
                 )
 
@@ -1851,6 +1961,7 @@ class LayerConfigDialog(QDialog):
                             normalized["email"],
                             normalized["fault_number"],
                             normalized["folder_path"],
+                            normalized["nextcloud_link"],
                         ]
                     ):
                         operators.append(normalized)
@@ -1874,6 +1985,7 @@ class LayerConfigDialog(QDialog):
                                     normalized["email"],
                                     normalized["fault_number"],
                                     normalized["folder_path"],
+                                    normalized["nextcloud_link"],
                                 ]
                             ):
                                 operators.append(normalized)
@@ -2251,6 +2363,7 @@ class LayerConfigDialog(QDialog):
                         str(values.get("email", "") or ""),
                         str(values.get("fault_number", "") or ""),
                         str((overlay or {}).get("folder_path", "") or ""),
+                        str((overlay or {}).get("nextcloud_link", "") or ""),
                     ],
                     payload={
                         "feature_id": row_data.get("feature_id"),
@@ -2267,7 +2380,14 @@ class LayerConfigDialog(QDialog):
                     },
                 )
                 if not context.get("editable", False):
-                    for col in (1, 2, 4, 5, 6, 7):
+                    for col in (
+                        OPERATOR_COLUMN_OPERATOR,
+                        OPERATOR_COLUMN_VALIDITY,
+                        OPERATOR_COLUMN_CONTACT,
+                        OPERATOR_COLUMN_PHONE,
+                        OPERATOR_COLUMN_EMAIL,
+                        OPERATOR_COLUMN_FAULT,
+                    ):
                         item = self.operator_table.item(row, col)
                         if item is not None:
                             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
@@ -2281,7 +2401,7 @@ class LayerConfigDialog(QDialog):
         add_mode = "neue Zeilen moeglich" if context.get("addable", False) else "keine neuen Zeilen"
         self.operator_status_label.setText(
             f"{context['source_name']} ({provider_name}, {mode}, {add_mode}) - "
-            f"{len(rows)} Zeilen geladen. 'Stand' und 'Pfad' werden nur lokal im Projekt gespeichert."
+            f"{len(rows)} Zeilen geladen. 'Stand', 'Pfad' und 'Nextcloud Link' werden nur lokal im Projekt gespeichert."
         )
         self.operator_reload_button.setEnabled(True)
         self.operator_save_button.setEnabled(bool(context["editable"]))
@@ -2289,7 +2409,7 @@ class LayerConfigDialog(QDialog):
         self.operator_remove_button.setEnabled(
             bool(context.get("editable", False) and (context.get("deletable", False) or context.get("addable", False)))
         )
-        self.operator_table.setColumnHidden(0, self.operator_source_combo.count() <= 1)
+        self.operator_table.setColumnHidden(OPERATOR_COLUMN_SOURCE, self.operator_source_combo.count() <= 1)
         self._apply_table_text_filter(
             self.operator_table,
             self.operator_search_input.text(),
@@ -2348,6 +2468,7 @@ class LayerConfigDialog(QDialog):
                 self.external_operator_table.item(row_index, 5).text().strip()
                 if self.external_operator_table.item(row_index, 5)
                 else "",
+                "",
                 "",
             ]
             if any(values[1:8]):
@@ -2408,6 +2529,7 @@ class LayerConfigDialog(QDialog):
                 "",
                 "",
                 "",
+                "",
             ],
             payload={
                 "feature_id": None,
@@ -2444,7 +2566,7 @@ class LayerConfigDialog(QDialog):
             return
 
         row_index = selected[0].row()
-        operator_item = self.operator_table.item(row_index, 1)
+        operator_item = self.operator_table.item(row_index, OPERATOR_COLUMN_OPERATOR)
         payload = operator_item.data(Qt.UserRole) if operator_item else None
         if not isinstance(payload, dict):
             payload = {}
@@ -2574,38 +2696,38 @@ class LayerConfigDialog(QDialog):
 
         def _row_values(row_index: int) -> dict:
             return {
-                "operator_name": self.operator_table.item(row_index, 1).text().strip()
-                if self.operator_table.item(row_index, 1)
+                "operator_name": self.operator_table.item(row_index, OPERATOR_COLUMN_OPERATOR).text().strip()
+                if self.operator_table.item(row_index, OPERATOR_COLUMN_OPERATOR)
                 else "",
-                "contact_name": self.operator_table.item(row_index, 4).text().strip()
-                if self.operator_table.item(row_index, 4)
+                "contact_name": self.operator_table.item(row_index, OPERATOR_COLUMN_CONTACT).text().strip()
+                if self.operator_table.item(row_index, OPERATOR_COLUMN_CONTACT)
                 else "",
-                "phone": self.operator_table.item(row_index, 5).text().strip()
-                if self.operator_table.item(row_index, 5)
+                "phone": self.operator_table.item(row_index, OPERATOR_COLUMN_PHONE).text().strip()
+                if self.operator_table.item(row_index, OPERATOR_COLUMN_PHONE)
                 else "",
-                "email": self.operator_table.item(row_index, 6).text().strip()
-                if self.operator_table.item(row_index, 6)
+                "email": self.operator_table.item(row_index, OPERATOR_COLUMN_EMAIL).text().strip()
+                if self.operator_table.item(row_index, OPERATOR_COLUMN_EMAIL)
                 else "",
-                "fault_number": self.operator_table.item(row_index, 7).text().strip()
-                if self.operator_table.item(row_index, 7)
+                "fault_number": self.operator_table.item(row_index, OPERATOR_COLUMN_FAULT).text().strip()
+                if self.operator_table.item(row_index, OPERATOR_COLUMN_FAULT)
                 else "",
-                "validity": self.operator_table.item(row_index, 2).text().strip()
-                if self.operator_table.item(row_index, 2)
+                "validity": self.operator_table.item(row_index, OPERATOR_COLUMN_VALIDITY).text().strip()
+                if self.operator_table.item(row_index, OPERATOR_COLUMN_VALIDITY)
                 else "",
             }
 
         table_columns = [
-            ("operator_name", 1),
-            ("contact_name", 4),
-            ("phone", 5),
-            ("email", 6),
-            ("fault_number", 7),
-            ("validity", 2),
+            ("operator_name", OPERATOR_COLUMN_OPERATOR),
+            ("contact_name", OPERATOR_COLUMN_CONTACT),
+            ("phone", OPERATOR_COLUMN_PHONE),
+            ("email", OPERATOR_COLUMN_EMAIL),
+            ("fault_number", OPERATOR_COLUMN_FAULT),
+            ("validity", OPERATOR_COLUMN_VALIDITY),
         ]
 
         pending_new_rows = []
         for row_index in range(self.operator_table.rowCount()):
-            operator_item = self.operator_table.item(row_index, 1)
+            operator_item = self.operator_table.item(row_index, OPERATOR_COLUMN_OPERATOR)
             payload = operator_item.data(Qt.UserRole) if operator_item else None
             if not isinstance(payload, dict) or payload.get("feature_id") is None:
                 values = _row_values(row_index)
@@ -2637,7 +2759,7 @@ class LayerConfigDialog(QDialog):
         added_rows = 0
 
         for row_index in range(self.operator_table.rowCount()):
-            operator_item = self.operator_table.item(row_index, 1)
+            operator_item = self.operator_table.item(row_index, OPERATOR_COLUMN_OPERATOR)
             payload = operator_item.data(Qt.UserRole) if operator_item else None
             values = _row_values(row_index)
 
@@ -2728,6 +2850,173 @@ class LayerConfigDialog(QDialog):
 
         self._reload_selected_external_operator_source()
         return True
+
+    def _nextcloud_config_for_local_links(self) -> dict:
+        return {
+            "nextcloud_base_url": str(self._global_nextcloud_config.get("nextcloud_base_url", "") or "").strip(),
+            "nextcloud_user": str(self._global_nextcloud_config.get("nextcloud_user", "") or "").strip(),
+            "nextcloud_app_password": str(self._global_nextcloud_config.get("nextcloud_app_password", "") or ""),
+            "local_nextcloud_roots": self._global_nextcloud_roots(),
+            "nextcloud_folder_marker": str(
+                self._global_nextcloud_config.get(
+                    "nextcloud_folder_marker",
+                    DEFAULT_CONFIG.get("nextcloud_folder_marker", "Nextcloud"),
+                )
+                or ""
+            ).strip(),
+        }
+
+    def _set_local_operator_nextcloud_link_item(self, row_index: int, link_value: str):
+        text = str(link_value or "").strip()
+        item = self.local_operator_table.item(row_index, LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK)
+        if item is None:
+            item = QTableWidgetItem()
+            self.local_operator_table.setItem(row_index, LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK, item)
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        item.setToolTip(text)
+        item.setText(text)
+
+    def _generate_local_operator_nextcloud_links(self):
+        row_count = self.local_operator_table.rowCount()
+        if row_count <= 0:
+            QMessageBox.information(
+                self,
+                "Lokale Ordner",
+                "Es sind keine lokalen Ordner zum Erzeugen von Nextcloud-Links vorhanden.",
+            )
+            return
+
+        config = self._nextcloud_config_for_local_links()
+        if (
+            not config["nextcloud_base_url"]
+            or not config["nextcloud_user"]
+            or not config["nextcloud_app_password"]
+        ):
+            QMessageBox.warning(
+                self,
+                "Lokale Ordner",
+                "Nextcloud URL, Benutzer und App-Passwort sind nicht vollstaendig konfiguriert.",
+            )
+            return
+        if not config["local_nextcloud_roots"]:
+            QMessageBox.warning(
+                self,
+                "Lokale Ordner",
+                "Es sind keine lokalen Sync-Roots konfiguriert. Bitte zuerst in Trassify Master Tools > Einstellungen setzen.",
+            )
+            return
+
+        selected_rows = [index.row() for index in self.local_operator_table.selectionModel().selectedRows()]
+        refresh_existing = bool(selected_rows)
+        if refresh_existing:
+            target_rows = sorted(set(selected_rows))
+        else:
+            target_rows = []
+            for row_index in range(row_count):
+                existing_link = self.local_operator_table.item(row_index, LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK)
+                if existing_link is not None and existing_link.text().strip():
+                    continue
+                target_rows.append(row_index)
+
+        if not target_rows:
+            QMessageBox.information(
+                self,
+                "Lokale Ordner",
+                "Es gibt keine fehlenden Nextcloud-Links. Fuer ein erneutes Erzeugen bitte die Zeilen zuerst markieren.",
+            )
+            return
+
+        original_label = str(self.local_operator_status_label.text() or "")
+        self.local_operator_link_button.setEnabled(False)
+
+        created = 0
+        unchanged = 0
+        skipped = 0
+        errors = []
+        stopped_on_rate_limit = False
+
+        try:
+            for position, row_index in enumerate(target_rows, start=1):
+                folder_item = self.local_operator_table.item(row_index, LOCAL_OPERATOR_COLUMN_FOLDER)
+                folder_name = folder_item.text().strip() if folder_item is not None else f"Ordner {row_index + 1}"
+                path_item = self.local_operator_table.item(row_index, LOCAL_OPERATOR_COLUMN_PATH)
+                folder_path = str(path_item.data(Qt.UserRole) or "").strip() if path_item is not None else ""
+                if not folder_path:
+                    skipped += 1
+                    continue
+
+                self.local_operator_status_label.setText(
+                    f"Erzeuge Nextcloud-Link {position}/{len(target_rows)}: {folder_name}"
+                )
+                QApplication.processEvents()
+
+                nc_folder_path, _ = _to_nextcloud_and_local_path(folder_path, config)
+                if not nc_folder_path:
+                    skipped += 1
+                    errors.append(f"{folder_name}: kein Nextcloud-Mapping fuer '{folder_path}' gefunden.")
+                    continue
+
+                try:
+                    link_value = get_or_create_public_link(config, nc_folder_path)
+                except Exception as exc:
+                    message = str(exc)
+                    errors.append(f"{folder_name}: {message}")
+                    if _is_rate_limit_error(message):
+                        stopped_on_rate_limit = True
+                        break
+                    if _is_missing_path_error(message):
+                        continue
+                    continue
+
+                old_value = self.local_operator_table.item(
+                    row_index, LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK
+                )
+                current_text = old_value.text().strip() if old_value is not None else ""
+                if link_value == current_text:
+                    unchanged += 1
+                    continue
+
+                self._set_local_operator_nextcloud_link_item(row_index, link_value)
+                created += 1
+        finally:
+            self.local_operator_link_button.setEnabled(True)
+
+        self._store_current_local_operator_overlays_from_table()
+        if self._external_operator_context is not None:
+            self._reload_selected_external_operator_source()
+        self._apply_table_text_filter(
+            self.local_operator_table,
+            self.local_operator_search_input.text(),
+        )
+
+        if stopped_on_rate_limit:
+            self.local_operator_status_label.setText(
+                "Nextcloud hat das Erzeugen voruebergehend gebremst. Bereits erzeugte Links bleiben gespeichert."
+            )
+        elif created > 0:
+            self.local_operator_status_label.setText(
+                f"{created} Nextcloud-Links aktualisiert. Diese Werte werden jetzt projektweit mitgespeichert."
+            )
+        else:
+            self.local_operator_status_label.setText(original_label)
+
+        summary = [
+            f"{created} Link(s) erzeugt oder aktualisiert.",
+            f"{unchanged} Link(s) waren bereits aktuell.",
+            f"{skipped} Eintrag(e) konnten nicht auf Nextcloud gemappt werden.",
+        ]
+        if errors:
+            detail = "\n".join(errors[:8])
+            if len(errors) > 8:
+                detail += f"\n... und {len(errors) - 8} weitere."
+            QMessageBox.information(
+                self,
+                "Lokale Ordner",
+                "\n".join(summary) + "\n\nHinweise:\n" + detail,
+            )
+            return
+
+        QMessageBox.information(self, "Lokale Ordner", "\n".join(summary))
 
     def _source_uri_and_provider(self, source: dict) -> tuple[str, str]:
         source_type = str(source.get("source_type", "file") or "file").strip().lower()
@@ -4919,11 +5208,26 @@ def _normalize_operator_entry(entry) -> dict:
                 )
                 or ""
             ).strip(),
+            "nextcloud_link": str(
+                entry.get(
+                    "nextcloud_link",
+                    entry.get(
+                        "nextcloudlink",
+                        entry.get(
+                            "folder_link",
+                            entry.get("ordnerlink", entry.get("share_folder", "")),
+                        ),
+                    ),
+                )
+                or ""
+            ).strip(),
         }
     if isinstance(entry, (list, tuple)):
         raw_values = [str(v or "").strip() for v in list(entry)]
-        if len(raw_values) >= 9:
-            values = raw_values[:9]
+        if len(raw_values) >= 10:
+            values = raw_values[:10]
+        elif len(raw_values) >= 9:
+            values = raw_values[:9] + [""]
         elif len(raw_values) >= 7:
             values = [
                 raw_values[0],
@@ -4935,10 +5239,11 @@ def _normalize_operator_entry(entry) -> dict:
                 raw_values[4],
                 raw_values[5],
                 raw_values[6],
+                "",
             ]
         else:
-            values = [""] + raw_values[:8]
-        while len(values) < 9:
+            values = [""] + raw_values[:9]
+        while len(values) < 10:
             values.append("")
         return {
             "source_name": values[0],
@@ -4950,6 +5255,7 @@ def _normalize_operator_entry(entry) -> dict:
             "email": values[6],
             "fault_number": values[7],
             "folder_path": values[8],
+            "nextcloud_link": values[9],
         }
     return {
         "source_name": "",
@@ -4961,6 +5267,7 @@ def _normalize_operator_entry(entry) -> dict:
         "email": "",
         "fault_number": "",
         "folder_path": "",
+        "nextcloud_link": "",
     }
 
 
@@ -5051,6 +5358,7 @@ def _parse_operators(value) -> list[dict]:
                 normalized["email"],
                 normalized["fault_number"],
                 normalized["folder_path"],
+                normalized["nextcloud_link"],
             ]
         ):
             result.append(normalized)
@@ -5201,6 +5509,7 @@ def _unique_operator_entry_from_entries(entries, operator_name_value) -> dict | 
             str(entry.get("email", "") or "").strip().lower(),
             str(entry.get("fault_number", "") or "").strip().lower(),
             str(entry.get("folder_path", "") or "").strip().lower(),
+            str(entry.get("nextcloud_link", "") or "").strip().lower(),
         )
 
     signatures = {_signature(entry) for entry in matches}
@@ -5216,6 +5525,7 @@ def _unique_operator_entry_from_entries(entries, operator_name_value) -> dict | 
             str(entry.get("email", "") or "").strip(),
             str(entry.get("fault_number", "") or "").strip(),
             str(entry.get("folder_path", "") or "").strip(),
+            str(entry.get("nextcloud_link", "") or "").strip(),
         ]
         return sum(1 for value in values if value)
 
@@ -5243,6 +5553,7 @@ def _sync_layer_operator_fields(layer, config: dict, operator_entries=None) -> d
         }
 
     target_specs = [
+        ("folder_link_field_name", "nextcloud_link"),
         ("operator_contact_field_name", "contact_name"),
         ("operator_phone_field_name", "phone"),
         ("operator_email_field_name", "email"),
@@ -5466,6 +5777,7 @@ def _apply_configuration_to_layer(
     has_operator_targets = any(
         str(config.get(key, "") or "").strip()
         for key in (
+            "folder_link_field_name",
             "operator_contact_field_name",
             "operator_phone_field_name",
             "operator_email_field_name",
