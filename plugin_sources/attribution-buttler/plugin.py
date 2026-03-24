@@ -289,6 +289,7 @@ class LayerConfigDialog(QDialog):
         operators_layout = QVBoxLayout(operators_tab)
         self._operators_page_index = self.page_stack.addWidget(operators_tab)
         operators_icon = self.style().standardIcon(QStyle.SP_DirIcon)
+        self._local_operator_overlays = []
 
         source_row = QHBoxLayout()
         source_row.setContentsMargins(0, 0, 0, 0)
@@ -297,19 +298,18 @@ class LayerConfigDialog(QDialog):
         source_row.addWidget(self.operator_source_combo, 1)
         operators_layout.addLayout(source_row)
 
-        self.operator_view_stack = QStackedWidget()
-        operators_layout.addWidget(self.operator_view_stack, 1)
-
-        local_operators_page = QWidget()
-        local_operators_layout = QVBoxLayout(local_operators_page)
-        local_operators_layout.setContentsMargins(0, 0, 0, 0)
+        self.operator_status_label = QLabel(
+            "Waehle oben eine Datenquelle. Die Liste zeigt dann direkt die verbundenen Betreiberdaten."
+        )
+        self.operator_status_label.setWordWrap(True)
+        operators_layout.addWidget(self.operator_status_label)
 
         self.operator_search_input = QLineEdit()
-        self.operator_search_input.setPlaceholderText("Projektliste suchen...")
+        self.operator_search_input.setPlaceholderText("Betreiberliste suchen...")
         self.operator_search_input.textChanged.connect(
             lambda text: self._apply_table_text_filter(self.operator_table, text)
         )
-        local_operators_layout.addWidget(self.operator_search_input)
+        operators_layout.addWidget(self.operator_search_input)
 
         self.operator_table = QTableWidget(0, 9)
         self.operator_table.setHorizontalHeaderLabels(
@@ -352,141 +352,39 @@ class LayerConfigDialog(QDialog):
         header.resizeSection(7, 170)
         header.resizeSection(8, 360)
         header.setTextElideMode(Qt.ElideNone)
-        # Kompakte Projektansicht: Betreibername + Stand + Quelle + Pfad.
-        self.operator_table.setColumnHidden(2, True)
-        self.operator_table.setColumnHidden(4, True)
-        self.operator_table.setColumnHidden(5, True)
-        self.operator_table.setColumnHidden(6, True)
-        self.operator_table.setColumnHidden(7, True)
-        # Betreibername links, danach Stand und die restlichen Projektspalten.
         self._set_operator_table_visual_order()
         self.operator_table.itemChanged.connect(self._on_operator_table_item_changed)
-        local_operators_layout.addWidget(self.operator_table, 1)
+        operators_layout.addWidget(self.operator_table, 1)
 
         operator_buttons = QHBoxLayout()
-        add_operator_button = QPushButton("Zeile hinzufuegen")
-        add_operator_button.clicked.connect(self._add_operator_row)
-        import_operator_button = QPushButton("Importieren...")
-        import_operator_button.clicked.connect(self._import_operators)
-        export_operator_button = QPushButton("Exportieren...")
-        export_operator_button.clicked.connect(self._export_operators)
-        choose_folder_button = QPushButton("Ordner fuer Auswahl...")
-        choose_folder_button.clicked.connect(self._choose_folder_for_selected_row)
-        bulk_assign_button = QPushButton("Ueberordner zuordnen...")
-        bulk_assign_button.setToolTip(
+        self.operator_reload_button = QPushButton("Daten neu laden")
+        self.operator_reload_button.clicked.connect(self._reload_selected_external_operator_source)
+        self.operator_save_button = QPushButton("Aenderungen speichern")
+        self.operator_save_button.clicked.connect(self._save_external_operator_changes)
+        self.operator_add_button = QPushButton("Zeile hinzufuegen")
+        self.operator_add_button.clicked.connect(self._add_external_operator_row)
+        self.operator_choose_folder_button = QPushButton("Ordner fuer Auswahl...")
+        self.operator_choose_folder_button.clicked.connect(self._choose_folder_for_selected_row)
+        self.operator_bulk_assign_button = QPushButton("Ueberordner zuordnen...")
+        self.operator_bulk_assign_button.setToolTip(
             "Waehlt einen Ueberordner und uebernimmt passende Betreiberordner automatisch in 'Pfad'."
         )
-        bulk_assign_button.clicked.connect(self._bulk_assign_operator_paths_from_parent)
-        remove_operator_button = QPushButton("Ausgewaehlte Zeilen loeschen")
-        remove_operator_button.clicked.connect(self._remove_selected_operator_row)
-        operator_buttons.addWidget(add_operator_button)
-        operator_buttons.addWidget(import_operator_button)
-        operator_buttons.addWidget(export_operator_button)
-        operator_buttons.addWidget(choose_folder_button)
-        operator_buttons.addWidget(bulk_assign_button)
-        operator_buttons.addWidget(remove_operator_button)
+        self.operator_bulk_assign_button.clicked.connect(self._bulk_assign_operator_paths_from_parent)
+        self.operator_remove_button = QPushButton("Ausgewaehlte Zeilen loeschen")
+        self.operator_remove_button.clicked.connect(self._remove_selected_external_operator_row)
+        operator_buttons.addWidget(self.operator_reload_button)
+        operator_buttons.addWidget(self.operator_save_button)
+        operator_buttons.addWidget(self.operator_add_button)
+        operator_buttons.addWidget(self.operator_choose_folder_button)
+        operator_buttons.addWidget(self.operator_bulk_assign_button)
+        operator_buttons.addWidget(self.operator_remove_button)
         operator_buttons.addStretch(1)
-        local_operators_layout.addLayout(operator_buttons)
-        self.operator_view_stack.addWidget(local_operators_page)
-
-        external_operators_page = QWidget()
-        external_operators_layout = QVBoxLayout(external_operators_page)
-        external_operators_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.external_operator_hint = QLabel(
-            "Waehle oben eine Datenquelle. Dann kannst du die angebundenen Betreiberdaten laden und bearbeiten."
-        )
-        self.external_operator_hint.setWordWrap(True)
-        external_operators_layout.addWidget(self.external_operator_hint)
-
-        self.external_operator_search_input = QPlainTextEdit()
-        self.external_operator_search_input.setPlaceholderText("Externe Liste suchen...")
-        self.external_operator_search_input.setFixedHeight(58)
-        self.external_operator_search_input.setTabChangesFocus(True)
-        self.external_operator_search_input.textChanged.connect(
-            lambda: self._apply_table_text_filter(
-                self.external_operator_table,
-                self._external_search_text(),
-            )
-        )
-        external_operators_layout.addWidget(self.external_operator_search_input)
-
-        self.external_show_local_only_checkbox = QCheckBox(
-            "Nur Betreiber aus Projektliste anzeigen"
-        )
-        self.external_show_local_only_checkbox.setToolTip(
-            "Zeigt in der externen Liste nur Betreiber an, die bereits in der lokalen Projektliste vorhanden sind."
-        )
-        self.external_show_local_only_checkbox.toggled.connect(
-            self._refilter_external_operator_table
-        )
-        external_operators_layout.addWidget(self.external_show_local_only_checkbox)
-
-        self.external_operator_table = QTableWidget(0, 7)
-        self.external_operator_table.setHorizontalHeaderLabels(
-            [
-                "",
-                "Betreibername",
-                "Ansprechpartner",
-                "Telefonnummer",
-                "E-Mail",
-                "Störnummer",
-                "Gültigk.",
-            ]
-        )
-        self._configure_standard_table(self.external_operator_table)
-        ext_header = self.external_operator_table.horizontalHeader()
-        ext_header.setStretchLastSection(False)
-        ext_header.setMinimumSectionSize(90)
-        ext_header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        ext_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        ext_header.setSectionResizeMode(1, QHeaderView.Interactive)
-        ext_header.setSectionResizeMode(2, QHeaderView.Interactive)
-        ext_header.setSectionResizeMode(3, QHeaderView.Interactive)
-        ext_header.setSectionResizeMode(4, QHeaderView.Interactive)
-        ext_header.setSectionResizeMode(5, QHeaderView.Interactive)
-        ext_header.setSectionResizeMode(6, QHeaderView.Interactive)
-        ext_header.resizeSection(0, 40)
-        ext_header.resizeSection(1, 220)
-        ext_header.resizeSection(2, 200)
-        ext_header.resizeSection(3, 170)
-        ext_header.resizeSection(4, 240)
-        ext_header.resizeSection(5, 170)
-        ext_header.resizeSection(6, 120)
-        ext_header.setTextElideMode(Qt.ElideNone)
-        external_operators_layout.addWidget(self.external_operator_table, 1)
-
-        external_buttons = QHBoxLayout()
-        self.external_operator_reload_button = QPushButton("Daten neu laden")
-        self.external_operator_reload_button.clicked.connect(self._reload_selected_external_operator_source)
-        self.external_operator_add_to_local_button = QPushButton("Auswahl zur Projektliste")
-        self.external_operator_add_to_local_button.clicked.connect(self._add_selected_external_rows_to_local)
-        self.external_operator_suggest_missing_button = QPushButton("Fehlende ergaenzen")
-        self.external_operator_suggest_missing_button.setToolTip(
-            "Prueft die Suchliste und legt fehlende Betreiber als neue Zeilen in dieser externen Quelle an."
-        )
-        self.external_operator_suggest_missing_button.clicked.connect(
-            self._suggest_missing_external_search_entries
-        )
-        self.external_operator_add_row_button = QPushButton("Zeile hinzufuegen")
-        self.external_operator_add_row_button.clicked.connect(self._add_external_operator_row)
-        self.external_operator_remove_row_button = QPushButton("Zeile loeschen")
-        self.external_operator_remove_row_button.clicked.connect(self._remove_selected_external_operator_row)
-        self.external_operator_save_button = QPushButton("Aenderungen speichern")
-        self.external_operator_save_button.clicked.connect(self._save_external_operator_changes)
-        external_buttons.addWidget(self.external_operator_reload_button)
-        external_buttons.addWidget(self.external_operator_add_to_local_button)
-        external_buttons.addWidget(self.external_operator_suggest_missing_button)
-        external_buttons.addWidget(self.external_operator_add_row_button)
-        external_buttons.addWidget(self.external_operator_remove_row_button)
-        external_buttons.addWidget(self.external_operator_save_button)
-        external_buttons.addStretch(1)
-        external_operators_layout.addLayout(external_buttons)
-        self.operator_view_stack.addWidget(external_operators_page)
+        operators_layout.addLayout(operator_buttons)
         self._external_operator_context = None
-        self.external_operator_add_to_local_button.setEnabled(False)
-        self.external_operator_suggest_missing_button.setEnabled(False)
-        self.external_operator_remove_row_button.setEnabled(False)
+        self.operator_reload_button.setEnabled(False)
+        self.operator_save_button.setEnabled(False)
+        self.operator_add_button.setEnabled(False)
+        self.operator_remove_button.setEnabled(False)
 
         data_tab = QWidget()
         data_layout = QVBoxLayout(data_tab)
@@ -612,6 +510,166 @@ class LayerConfigDialog(QDialog):
         if not editable:
             table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
+    def _normalize_local_overlay_entry(self, entry) -> dict:
+        normalized = _normalize_operator_entry(entry)
+        return {
+            "source_name": str(normalized.get("source_name", "") or "").strip(),
+            "operator_name": str(normalized.get("operator_name", "") or "").strip(),
+            "validity": str(normalized.get("validity", "") or "").strip(),
+            "stand": str(normalized.get("stand", "") or "").strip(),
+            "folder_path": str(normalized.get("folder_path", "") or "").strip(),
+        }
+
+    def _normalized_source_name(self, value: str) -> str:
+        return str(value or "").strip().casefold()
+
+    def _set_local_operator_overlays(self, operators):
+        self._local_operator_overlays = []
+        for entry in operators or []:
+            normalized = self._normalize_local_overlay_entry(entry)
+            if not normalized["operator_name"]:
+                continue
+            if not any((normalized["stand"], normalized["folder_path"])):
+                continue
+            self._local_operator_overlays.append(normalized)
+
+    def _current_operator_source_name(self) -> str:
+        if isinstance(self._external_operator_context, dict):
+            return str(self._external_operator_context.get("source_name", "") or "").strip()
+        return ""
+
+    def _collect_local_operator_overlays_from_table(self) -> list[dict]:
+        result = []
+        for row in range(self.operator_table.rowCount()):
+            source_name = ""
+            source_item = self.operator_table.item(row, 0)
+            if source_item is not None:
+                source_name = source_item.text().strip()
+
+            operator_item = self.operator_table.item(row, 1)
+            operator_name = operator_item.text().strip() if operator_item else ""
+            validity_item = self.operator_table.item(row, 2)
+            validity = validity_item.text().strip() if validity_item else ""
+            stand_item = self.operator_table.item(row, 3)
+            stand = stand_item.text().strip() if stand_item else ""
+            folder_path = self._operator_path_value(row)
+
+            if not operator_name or not any((stand, folder_path)):
+                continue
+
+            result.append(
+                {
+                    "source_name": source_name,
+                    "operator_name": operator_name,
+                    "validity": validity,
+                    "stand": stand,
+                    "folder_path": folder_path,
+                }
+            )
+        return result
+
+    def _store_current_local_operator_overlays_from_table(self):
+        current_source_name = self._current_operator_source_name()
+        current_source_token = self._normalized_source_name(current_source_name)
+        current_rows = self._collect_local_operator_overlays_from_table()
+
+        if not current_source_token and not current_rows:
+            return
+
+        if current_source_token:
+            kept = [
+                entry
+                for entry in self._local_operator_overlays
+                if self._normalized_source_name(entry.get("source_name", "")) != current_source_token
+            ]
+        else:
+            kept = []
+        self._local_operator_overlays = kept + current_rows
+
+    def _best_local_overlay_for_row(self, source_name: str, operator_name: str, validity: str = "") -> dict | None:
+        operator_token = _normalized_operator_name(operator_name)
+        if not operator_token:
+            return None
+
+        source_token = self._normalized_source_name(source_name)
+        validity_token = str(validity or "").strip().casefold()
+        matches = []
+        for entry in self._local_operator_overlays:
+            if _normalized_operator_name(entry.get("operator_name", "")) != operator_token:
+                continue
+
+            entry_source_token = self._normalized_source_name(entry.get("source_name", ""))
+            if source_token and entry_source_token and entry_source_token != source_token:
+                continue
+
+            source_score = 2 if source_token and entry_source_token == source_token else 1 if not entry_source_token else 0
+            entry_validity_token = str(entry.get("validity", "") or "").strip().casefold()
+            validity_score = 1 if validity_token and entry_validity_token == validity_token else 0
+            fill_score = sum(
+                1 for value in (entry.get("stand", ""), entry.get("folder_path", "")) if str(value or "").strip()
+            )
+            matches.append((source_score, validity_score, fill_score, entry))
+
+        if not matches:
+            return None
+
+        matches.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+        return dict(matches[0][3])
+
+    def merged_operator_entries(self) -> list[dict]:
+        self._store_current_local_operator_overlays_from_table()
+        overlays = [dict(entry) for entry in self._local_operator_overlays]
+        merged = []
+        matched_keys = set()
+
+        for idx, source in enumerate(self._data_sources()):
+            normalized_source = _normalize_data_source_entry(source)
+            source_name = self._source_display_name(normalized_source, idx)
+            for entry in self._operator_entries_from_external_source(normalized_source):
+                normalized = _normalize_operator_entry(entry)
+                normalized["source_name"] = source_name
+                overlay = self._best_local_overlay_for_row(
+                    source_name,
+                    normalized.get("operator_name", ""),
+                    normalized.get("validity", ""),
+                )
+                if overlay:
+                    if overlay.get("stand"):
+                        normalized["stand"] = str(overlay.get("stand", "") or "").strip()
+                    if overlay.get("folder_path"):
+                        normalized["folder_path"] = str(overlay.get("folder_path", "") or "").strip()
+                    matched_keys.add(
+                        (
+                            self._normalized_source_name(source_name),
+                            _normalized_operator_name(normalized.get("operator_name", "")),
+                            str(overlay.get("validity", "") or "").strip().casefold(),
+                        )
+                    )
+                merged.append(normalized)
+
+        for overlay in overlays:
+            key = (
+                self._normalized_source_name(overlay.get("source_name", "")),
+                _normalized_operator_name(overlay.get("operator_name", "")),
+                str(overlay.get("validity", "") or "").strip().casefold(),
+            )
+            if key in matched_keys:
+                continue
+            merged.append(
+                {
+                    "source_name": str(overlay.get("source_name", "") or "").strip(),
+                    "operator_name": str(overlay.get("operator_name", "") or "").strip(),
+                    "validity": str(overlay.get("validity", "") or "").strip(),
+                    "stand": str(overlay.get("stand", "") or "").strip(),
+                    "contact_name": "",
+                    "phone": "",
+                    "email": "",
+                    "fault_number": "",
+                    "folder_path": str(overlay.get("folder_path", "") or "").strip(),
+                }
+            )
+        return merged
+
     def _make_field_combo(self) -> QComboBox:
         combo = QComboBox()
         combo.setEditable(True)
@@ -680,6 +738,8 @@ class LayerConfigDialog(QDialog):
         return common >= 1
 
     def _external_operator_row_tokens(self) -> list[str]:
+        if not hasattr(self, "external_operator_table"):
+            return []
         row_tokens = []
         for row in range(self.external_operator_table.rowCount()):
             item = self.external_operator_table.item(row, 1)
@@ -700,6 +760,8 @@ class LayerConfigDialog(QDialog):
         return tokens
 
     def _refilter_external_operator_table(self):
+        if not hasattr(self, "external_operator_table"):
+            return
         self._apply_table_text_filter(
             self.external_operator_table,
             self._external_search_text(),
@@ -855,7 +917,8 @@ class LayerConfigDialog(QDialog):
             self._save_external_operator_changes()
 
     def _apply_table_text_filter(self, table: QTableWidget, text: str):
-        if table is self.external_operator_table:
+        external_table = getattr(self, "external_operator_table", None)
+        if external_table is not None and table is external_table:
             raw = str(text or "")
             tokens = self._external_search_tokens(raw)
             list_mode = len(tokens) > 1 or any(sep in raw for sep in ("\n", "\r", ";", ",", "|", "\t"))
@@ -914,8 +977,8 @@ class LayerConfigDialog(QDialog):
 
     def _set_operator_table_visual_order(self):
         header = self.operator_table.horizontalHeader()
-        # Sichtbare Reihenfolge: Betreibername | Stand | Datenquelle | Pfad
-        desired = [1, 3, 0, 8, 2, 4, 5, 6, 7]
+        # Sichtbare Reihenfolge: Betreibername | Gueltigkeit | Ansprechpartner | Telefon | E-Mail | Stoernummer | Stand | Pfad | Datenquelle
+        desired = [1, 2, 4, 5, 6, 7, 3, 8, 0]
         for target_visual_index, logical_index in enumerate(desired):
             current_visual_index = header.visualIndex(logical_index)
             if current_visual_index < 0 or current_visual_index == target_visual_index:
@@ -1004,10 +1067,11 @@ class LayerConfigDialog(QDialog):
         self.name_field.setCurrentText("")
         self.stand_field.setCurrentText("")
 
-    def _add_operator_row(self, values=None):
+    def _add_operator_row(self, values=None, payload=None):
         if isinstance(values, bool):
             values = None
         values = values or ["", "", "", "", "", "", "", "", ""]
+        row = -1
         sorting_enabled = self.operator_table.isSortingEnabled()
         if sorting_enabled:
             self.operator_table.setSortingEnabled(False)
@@ -1019,13 +1083,19 @@ class LayerConfigDialog(QDialog):
                 if col == 8:
                     self._set_operator_path_item(row, text)
                 else:
-                    self.operator_table.setItem(row, col, QTableWidgetItem(text))
+                    item = QTableWidgetItem(text)
+                    if col == 0:
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    if col == 1 and payload is not None:
+                        item.setData(Qt.UserRole, payload)
+                    self.operator_table.setItem(row, col, item)
             self.operator_table.setCurrentCell(row, 1)
         finally:
             if sorting_enabled:
                 self.operator_table.setSortingEnabled(True)
         self._apply_table_text_filter(self.operator_table, self.operator_search_input.text())
         self._refilter_external_operator_table()
+        return row
 
     def _operator_path_alias(self, path_value: str) -> str:
         raw = str(path_value or "").strip()
@@ -1141,14 +1211,7 @@ class LayerConfigDialog(QDialog):
         self._refilter_external_operator_table()
 
     def _remove_selected_operator_row(self):
-        selected = self.operator_table.selectionModel().selectedRows()
-        if not selected:
-            return
-        row_indices = sorted({index.row() for index in selected}, reverse=True)
-        for row_index in row_indices:
-            self.operator_table.removeRow(row_index)
-        self._apply_table_text_filter(self.operator_table, self.operator_search_input.text())
-        self._refilter_external_operator_table()
+        self._remove_selected_external_operator_row()
 
     def _choose_folder_for_row(self, row_index: int):
         if row_index < 0 or row_index >= self.operator_table.rowCount():
@@ -1592,94 +1655,11 @@ class LayerConfigDialog(QDialog):
             QMessageBox.warning(self, "Export fehlgeschlagen", str(exc))
 
     def _set_operators(self, operators):
-        self.operator_table.setRowCount(0)
-        for entry in operators or []:
-            if isinstance(entry, dict):
-                values = [
-                    str(
-                        entry.get(
-                            "source_name",
-                            entry.get("_source_name", entry.get("data_source", entry.get("datenquelle", ""))),
-                        )
-                        or ""
-                    ),
-                    str(entry.get("operator_name", entry.get("betreiber", "")) or ""),
-                    str(
-                        entry.get(
-                            "validity",
-                            entry.get(
-                                "gueltigkeit",
-                                entry.get("gültigkeit", entry.get("gueltigk", entry.get("gültigk", ""))),
-                            ),
-                        )
-                        or ""
-                    ),
-                    str(entry.get("stand", entry.get("operator_stand", entry.get("stand_datum", ""))) or ""),
-                    str(
-                        entry.get("contact_name", entry.get("ansprechpartner", entry.get("kontakt", "")))
-                        or ""
-                    ),
-                    str(entry.get("phone", entry.get("telefonnummer", "")) or ""),
-                    str(entry.get("email", entry.get("mail", "")) or ""),
-                    str(entry.get("fault_number", entry.get("stoernummer", "")) or ""),
-                    str(
-                        entry.get(
-                            "folder_path",
-                            entry.get("ordnerpfad", entry.get("ordner", entry.get("path", ""))),
-                        )
-                        or ""
-                    ),
-                ]
-            elif isinstance(entry, (list, tuple)):
-                raw_values = [str(x or "") for x in list(entry)]
-                if len(raw_values) >= 9:
-                    values = raw_values[:9]
-                elif len(raw_values) >= 7:
-                    values = [
-                        raw_values[0],
-                        raw_values[1],
-                        "",
-                        "",
-                        raw_values[2],
-                        raw_values[3],
-                        raw_values[4],
-                        raw_values[5],
-                        raw_values[6],
-                    ]
-                else:
-                    values = [""] + raw_values[:8]
-                while len(values) < 9:
-                    values.append("")
-            else:
-                values = ["", str(entry or ""), "", "", "", "", "", "", ""]
-            self._add_operator_row(values)
-        self._refilter_external_operator_table()
+        self._set_local_operator_overlays(operators)
 
     def _operators(self):
-        result = []
-        for row in range(self.operator_table.rowCount()):
-            values = []
-            for col in range(9):
-                if col == 8:
-                    values.append(self._operator_path_value(row))
-                    continue
-                item = self.operator_table.item(row, col)
-                values.append(item.text().strip() if item else "")
-            if any(values[1:]):
-                result.append(
-                    {
-                        "source_name": values[0],
-                        "operator_name": values[1],
-                        "validity": values[2],
-                        "stand": values[3],
-                        "contact_name": values[4],
-                        "phone": values[5],
-                        "email": values[6],
-                        "fault_number": values[7],
-                        "folder_path": values[8],
-                    }
-                )
-        return result
+        self._store_current_local_operator_overlays_from_table()
+        return [dict(entry) for entry in self._local_operator_overlays]
 
     def _source_display_name(self, source: dict, fallback_index: int | None = None) -> str:
         normalized = _normalize_data_source_entry(source)
@@ -1693,24 +1673,25 @@ class LayerConfigDialog(QDialog):
         return name
 
     def _refresh_operator_source_selector(self):
+        self._store_current_local_operator_overlays_from_table()
         current_key = ""
         if hasattr(self, "operator_source_combo") and self.operator_source_combo is not None:
             current_key = str(self.operator_source_combo.currentData() or "")
 
         self.operator_source_combo.blockSignals(True)
         self.operator_source_combo.clear()
-        self.operator_source_combo.addItem("Projektliste (lokal)", "local")
 
         for idx, source in enumerate(self._data_sources()):
             normalized = _normalize_data_source_entry(source)
             source_name = self._source_display_name(normalized, idx)
             suffix = "" if _to_bool(normalized.get("enabled", True), True) else " (inaktiv)"
-            self.operator_source_combo.addItem(f"Datenquelle: {source_name}{suffix}", f"external:{idx}")
+            self.operator_source_combo.addItem(f"{source_name}{suffix}", f"external:{idx}")
 
         restore_index = self.operator_source_combo.findData(current_key)
         if restore_index < 0:
-            restore_index = 0
-        self.operator_source_combo.setCurrentIndex(restore_index)
+            restore_index = 0 if self.operator_source_combo.count() > 0 else -1
+        if restore_index >= 0:
+            self.operator_source_combo.setCurrentIndex(restore_index)
         self.operator_source_combo.blockSignals(False)
         self._on_operator_source_changed()
 
@@ -1733,17 +1714,6 @@ class LayerConfigDialog(QDialog):
         return normalized, source_index
 
     def _on_operator_source_changed(self):
-        key = str(self.operator_source_combo.currentData() or "")
-        if key == "local":
-            self.operator_view_stack.setCurrentIndex(0)
-            self._external_operator_context = None
-            self.external_operator_add_to_local_button.setEnabled(False)
-            self.external_operator_suggest_missing_button.setEnabled(False)
-            self.external_operator_remove_row_button.setEnabled(False)
-            return
-
-        self.operator_view_stack.setCurrentIndex(1)
-        self.external_operator_add_to_local_button.setEnabled(True)
         self._reload_selected_external_operator_source()
 
     def _external_operator_context_from_source(self, source: dict) -> tuple[dict | None, str]:
@@ -1944,58 +1914,65 @@ class LayerConfigDialog(QDialog):
         )
 
     def _reload_selected_external_operator_source(self):
-        self.external_operator_table.setRowCount(0)
+        self._store_current_local_operator_overlays_from_table()
+        self.operator_table.setRowCount(0)
         self._external_operator_context = None
 
         selected = self._selected_external_source_entry()
         if selected is None:
-            self.external_operator_hint.setText("Waehle oben eine angebundene Datenquelle aus.")
-            self.external_operator_add_to_local_button.setEnabled(False)
-            self.external_operator_suggest_missing_button.setEnabled(False)
-            self.external_operator_save_button.setEnabled(False)
-            self.external_operator_add_row_button.setEnabled(False)
-            self.external_operator_remove_row_button.setEnabled(False)
+            self.operator_status_label.setText(
+                "Bitte zuerst unter 'Datenquellen' eine Excel- oder andere Betreiberquelle verbinden."
+            )
+            self.operator_reload_button.setEnabled(False)
+            self.operator_save_button.setEnabled(False)
+            self.operator_add_button.setEnabled(False)
+            self.operator_remove_button.setEnabled(False)
             return
 
         source, source_index = selected
         context, error = self._external_operator_context_from_source(source)
         if context is None:
-            self.external_operator_hint.setText(
+            self.operator_status_label.setText(
                 f"{self._source_display_name(source, source_index)}: {error}"
             )
-            self.external_operator_add_to_local_button.setEnabled(False)
-            self.external_operator_suggest_missing_button.setEnabled(False)
-            self.external_operator_save_button.setEnabled(False)
-            self.external_operator_add_row_button.setEnabled(False)
-            self.external_operator_remove_row_button.setEnabled(False)
+            self.operator_reload_button.setEnabled(True)
+            self.operator_save_button.setEnabled(False)
+            self.operator_add_button.setEnabled(False)
+            self.operator_remove_button.setEnabled(False)
             return
 
         self._external_operator_context = context
         rows = context["rows"]
-        sorting_enabled = self.external_operator_table.isSortingEnabled()
+        sorting_enabled = self.operator_table.isSortingEnabled()
         if sorting_enabled:
-            self.external_operator_table.setSortingEnabled(False)
-        old_block = self.external_operator_table.blockSignals(True)
+            self.operator_table.setSortingEnabled(False)
+        old_block = self.operator_table.blockSignals(True)
         try:
-            self.external_operator_table.setRowCount(0)
+            self.operator_table.setRowCount(0)
             for row_data in rows:
-                row = self.external_operator_table.rowCount()
-                self.external_operator_table.insertRow(row)
                 values = row_data["values"]
-
-                select_item = QTableWidgetItem("")
-                select_item.setFlags(
-                    Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable
+                source_name = str(context.get("source_name", "") or "").strip()
+                overlay = self._best_local_overlay_for_row(
+                    source_name,
+                    values.get("operator_name", ""),
+                    values.get("validity", ""),
                 )
-                select_item.setCheckState(Qt.Unchecked)
-                self.external_operator_table.setItem(row, 0, select_item)
-
-                operator_item = QTableWidgetItem(str(values.get("operator_name", "") or ""))
-                operator_item.setData(
-                    Qt.UserRole,
-                    {
+                row = self._add_operator_row(
+                    [
+                        source_name,
+                        str(values.get("operator_name", "") or ""),
+                        str(values.get("validity", "") or ""),
+                        str((overlay or {}).get("stand", "") or ""),
+                        str(values.get("contact_name", "") or ""),
+                        str(values.get("phone", "") or ""),
+                        str(values.get("email", "") or ""),
+                        str(values.get("fault_number", "") or ""),
+                        str((overlay or {}).get("folder_path", "") or ""),
+                    ],
+                    payload={
                         "feature_id": row_data.get("feature_id"),
                         "is_new": False,
+                        "source_name": source_name,
                         "original": {
                             "operator_name": str(values.get("operator_name", "") or ""),
                             "contact_name": str(values.get("contact_name", "") or ""),
@@ -2006,43 +1983,33 @@ class LayerConfigDialog(QDialog):
                         },
                     },
                 )
-                self.external_operator_table.setItem(row, 1, operator_item)
-                self.external_operator_table.setItem(
-                    row, 2, QTableWidgetItem(str(values.get("contact_name", "") or ""))
-                )
-                self.external_operator_table.setItem(row, 3, QTableWidgetItem(str(values.get("phone", "") or "")))
-                self.external_operator_table.setItem(row, 4, QTableWidgetItem(str(values.get("email", "") or "")))
-                self.external_operator_table.setItem(
-                    row, 5, QTableWidgetItem(str(values.get("fault_number", "") or ""))
-                )
-                self.external_operator_table.setItem(
-                    row, 6, QTableWidgetItem(str(values.get("validity", "") or ""))
-                )
+                if not context.get("editable", False):
+                    for col in (1, 2, 4, 5, 6, 7):
+                        item = self.operator_table.item(row, col)
+                        if item is not None:
+                            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         finally:
-            self.external_operator_table.blockSignals(old_block)
+            self.operator_table.blockSignals(old_block)
             if sorting_enabled:
-                self.external_operator_table.setSortingEnabled(True)
+                self.operator_table.setSortingEnabled(True)
 
         provider_name = context.get("provider_name", "") or "unbekannt"
         mode = "schreibbar" if context["editable"] else "nur lesbar"
         add_mode = "neue Zeilen moeglich" if context.get("addable", False) else "keine neuen Zeilen"
-        self.external_operator_hint.setText(
-            f"{context['source_name']} ({provider_name}, {mode}, {add_mode}) - {len(rows)} Zeilen geladen."
+        self.operator_status_label.setText(
+            f"{context['source_name']} ({provider_name}, {mode}, {add_mode}) - "
+            f"{len(rows)} Zeilen geladen. 'Stand' und 'Pfad' werden nur lokal im Projekt gespeichert."
         )
-        self.external_operator_add_to_local_button.setEnabled(True)
-        self.external_operator_suggest_missing_button.setEnabled(
-            bool(context.get("editable", False) and context.get("addable", False))
+        self.operator_reload_button.setEnabled(True)
+        self.operator_save_button.setEnabled(bool(context["editable"]))
+        self.operator_add_button.setEnabled(bool(context.get("editable", False) and context.get("addable", False)))
+        self.operator_remove_button.setEnabled(
+            bool(context.get("editable", False) and (context.get("deletable", False) or context.get("addable", False)))
         )
-        self.external_operator_save_button.setEnabled(bool(context["editable"]))
-        self.external_operator_add_row_button.setEnabled(
-            bool(context.get("editable", False) and context.get("addable", False))
-        )
-        self.external_operator_remove_row_button.setEnabled(
-            bool(context.get("editable", False) and context.get("deletable", False))
-        )
+        self.operator_table.setColumnHidden(0, self.operator_source_combo.count() <= 1)
         self._apply_table_text_filter(
-            self.external_operator_table,
-            self._external_search_text(),
+            self.operator_table,
+            self.operator_search_input.text(),
         )
 
     def _add_selected_external_rows_to_local(self):
@@ -2147,11 +2114,31 @@ class LayerConfigDialog(QDialog):
             )
             return
 
-        row = self._append_external_operator_row()
-        self.external_operator_table.setCurrentCell(row, 1)
-        self._apply_table_text_filter(
-            self.external_operator_table,
-            self._external_search_text(),
+        self._add_operator_row(
+            [
+                str(context.get("source_name", "") or "").strip(),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ],
+            payload={
+                "feature_id": None,
+                "is_new": True,
+                "source_name": str(context.get("source_name", "") or "").strip(),
+                "original": {
+                    "operator_name": "",
+                    "contact_name": "",
+                    "phone": "",
+                    "email": "",
+                    "fault_number": "",
+                    "validity": "",
+                },
+            },
         )
 
     def _remove_selected_external_operator_row(self):
@@ -2164,27 +2151,27 @@ class LayerConfigDialog(QDialog):
             )
             return
 
-        selected = self.external_operator_table.selectionModel().selectedRows()
+        selected = self.operator_table.selectionModel().selectedRows()
         if not selected:
             QMessageBox.information(
                 self,
                 "Betreiberliste",
-                "Bitte zuerst eine Zeile in der externen Liste auswaehlen.",
+                "Bitte zuerst eine Zeile in der Betreiberliste auswaehlen.",
             )
             return
 
         row_index = selected[0].row()
-        operator_item = self.external_operator_table.item(row_index, 1)
+        operator_item = self.operator_table.item(row_index, 1)
         payload = operator_item.data(Qt.UserRole) if operator_item else None
         if not isinstance(payload, dict):
             payload = {}
 
         # Noch nicht gespeicherte neue Zeile: nur aus der Tabelle entfernen.
         if payload.get("feature_id") is None:
-            self.external_operator_table.removeRow(row_index)
+            self.operator_table.removeRow(row_index)
             self._apply_table_text_filter(
-                self.external_operator_table,
-                self._external_search_text(),
+                self.operator_table,
+                self.operator_search_input.text(),
             )
             return
 
@@ -2266,35 +2253,30 @@ class LayerConfigDialog(QDialog):
                 "Zeile wurde geloescht. Bitte die Quelle separat speichern.",
             )
 
-        self.external_operator_table.removeRow(row_index)
+        self.operator_table.removeRow(row_index)
         self._apply_table_text_filter(
-            self.external_operator_table,
-            self._external_search_text(),
+            self.operator_table,
+            self.operator_search_input.text(),
         )
 
-    def _save_external_operator_changes(self):
+    def _save_external_operator_changes(self, show_feedback: bool = True) -> bool:
         context = self._external_operator_context
         if not isinstance(context, dict):
-            QMessageBox.information(
-                self,
-                "Betreiberliste",
-                "Bitte zuerst eine Datenquelle auswaehlen und laden.",
-            )
-            return
+            self._store_current_local_operator_overlays_from_table()
+            return True
 
         if not context.get("editable", False):
-            QMessageBox.warning(
-                self,
-                "Betreiberliste",
-                "Diese Quelle unterstuetzt keine Attribut-Aenderungen (nur lesbar).",
-            )
-            return
+            self._store_current_local_operator_overlays_from_table()
+            return True
 
         layer = context.get("layer")
         field_indices = context.get("field_indices", {})
         if layer is None:
-            QMessageBox.information(self, "Betreiberliste", "Keine Daten zum Speichern vorhanden.")
-            return
+            if show_feedback:
+                QMessageBox.information(self, "Betreiberliste", "Keine Daten zum Speichern vorhanden.")
+            return True
+
+        self._store_current_local_operator_overlays_from_table()
 
         started_editing = False
         if not layer.isEditable():
@@ -2304,43 +2286,43 @@ class LayerConfigDialog(QDialog):
                     "Betreiberliste",
                     "Quelle konnte nicht in den Bearbeitungsmodus gesetzt werden.",
                 )
-                return
+                return False
             started_editing = True
 
         def _row_values(row_index: int) -> dict:
             return {
-                "operator_name": self.external_operator_table.item(row_index, 1).text().strip()
-                if self.external_operator_table.item(row_index, 1)
+                "operator_name": self.operator_table.item(row_index, 1).text().strip()
+                if self.operator_table.item(row_index, 1)
                 else "",
-                "contact_name": self.external_operator_table.item(row_index, 2).text().strip()
-                if self.external_operator_table.item(row_index, 2)
+                "contact_name": self.operator_table.item(row_index, 4).text().strip()
+                if self.operator_table.item(row_index, 4)
                 else "",
-                "phone": self.external_operator_table.item(row_index, 3).text().strip()
-                if self.external_operator_table.item(row_index, 3)
+                "phone": self.operator_table.item(row_index, 5).text().strip()
+                if self.operator_table.item(row_index, 5)
                 else "",
-                "email": self.external_operator_table.item(row_index, 4).text().strip()
-                if self.external_operator_table.item(row_index, 4)
+                "email": self.operator_table.item(row_index, 6).text().strip()
+                if self.operator_table.item(row_index, 6)
                 else "",
-                "fault_number": self.external_operator_table.item(row_index, 5).text().strip()
-                if self.external_operator_table.item(row_index, 5)
+                "fault_number": self.operator_table.item(row_index, 7).text().strip()
+                if self.operator_table.item(row_index, 7)
                 else "",
-                "validity": self.external_operator_table.item(row_index, 6).text().strip()
-                if self.external_operator_table.item(row_index, 6)
+                "validity": self.operator_table.item(row_index, 2).text().strip()
+                if self.operator_table.item(row_index, 2)
                 else "",
             }
 
         table_columns = [
             ("operator_name", 1),
-            ("contact_name", 2),
-            ("phone", 3),
-            ("email", 4),
-            ("fault_number", 5),
-            ("validity", 6),
+            ("contact_name", 4),
+            ("phone", 5),
+            ("email", 6),
+            ("fault_number", 7),
+            ("validity", 2),
         ]
 
         pending_new_rows = []
-        for row_index in range(self.external_operator_table.rowCount()):
-            operator_item = self.external_operator_table.item(row_index, 1)
+        for row_index in range(self.operator_table.rowCount()):
+            operator_item = self.operator_table.item(row_index, 1)
             payload = operator_item.data(Qt.UserRole) if operator_item else None
             if not isinstance(payload, dict) or payload.get("feature_id") is None:
                 values = _row_values(row_index)
@@ -2355,7 +2337,7 @@ class LayerConfigDialog(QDialog):
                 "Betreiberliste",
                 "Diese Quelle unterstuetzt keine neuen Zeilen.",
             )
-            return
+            return False
 
         missing_name_rows = [str(row_index + 1) for row_index, values in pending_new_rows if not values["operator_name"]]
         if missing_name_rows:
@@ -2366,13 +2348,13 @@ class LayerConfigDialog(QDialog):
                 "Betreiberliste",
                 "Neue Zeilen brauchen einen Betreibername. Betroffene Zeilen: " + ", ".join(missing_name_rows),
             )
-            return
+            return False
 
         changed_values = 0
         added_rows = 0
 
-        for row_index in range(self.external_operator_table.rowCount()):
-            operator_item = self.external_operator_table.item(row_index, 1)
+        for row_index in range(self.operator_table.rowCount()):
+            operator_item = self.operator_table.item(row_index, 1)
             payload = operator_item.data(Qt.UserRole) if operator_item else None
             values = _row_values(row_index)
 
@@ -2412,7 +2394,7 @@ class LayerConfigDialog(QDialog):
                 field_idx = int(field_indices.get(key, -1))
                 if field_idx < 0:
                     continue
-                item = self.external_operator_table.item(row_index, col)
+                item = self.operator_table.item(row_index, col)
                 new_value = item.text().strip() if item else ""
                 old_value = str(original.get(key, "") or "")
                 if new_value == old_value:
@@ -2423,8 +2405,13 @@ class LayerConfigDialog(QDialog):
         if changed_values == 0 and added_rows == 0:
             if started_editing:
                 layer.rollBack()
-            QMessageBox.information(self, "Betreiberliste", "Keine Aenderungen zum Speichern gefunden.")
-            return
+            if show_feedback:
+                QMessageBox.information(
+                    self,
+                    "Betreiberliste",
+                    "Keine externen Aenderungen zum Speichern gefunden. Lokale Spalten werden mit dem Dialog im Projekt gespeichert.",
+                )
+            return True
 
         if started_editing:
             if not layer.commitChanges():
@@ -2442,13 +2429,14 @@ class LayerConfigDialog(QDialog):
                     "Betreiberliste",
                     f"Speichern fehlgeschlagen: {detail}",
                 )
-                return
-            QMessageBox.information(
-                self,
-                "Betreiberliste",
-                f"{changed_values} Feldwerte aktualisiert, {added_rows} neue Zeilen in '{context['source_name']}' gespeichert.",
-            )
-        else:
+                return False
+            if show_feedback:
+                QMessageBox.information(
+                    self,
+                    "Betreiberliste",
+                    f"{changed_values} Feldwerte aktualisiert, {added_rows} neue Zeilen in '{context['source_name']}' gespeichert.",
+                )
+        elif show_feedback:
             QMessageBox.information(
                 self,
                 "Betreiberliste",
@@ -2456,6 +2444,7 @@ class LayerConfigDialog(QDialog):
             )
 
         self._reload_selected_external_operator_source()
+        return True
 
     def _source_uri_and_provider(self, source: dict) -> tuple[str, str]:
         source_type = str(source.get("source_type", "file") or "file").strip().lower()
@@ -4489,7 +4478,14 @@ class LayerConfigDialog(QDialog):
         self._set_operators(config.get("operators", []))
         self._set_data_sources(config.get("external_data_sources", []))
 
+    def accept(self):
+        self._store_current_local_operator_overlays_from_table()
+        if not self._save_external_operator_changes(show_feedback=False):
+            return
+        super().accept()
+
     def values(self) -> dict:
+        self._store_current_local_operator_overlays_from_table()
         roots = self._global_nextcloud_roots()
         return {
             "nextcloud_base_url": str(
@@ -4870,13 +4866,13 @@ def _normalized_operator_name(value) -> str:
     return str(value or "").strip().casefold()
 
 
-def _local_unique_operator_entry(config: dict, operator_name_value) -> dict | None:
+def _unique_operator_entry_from_entries(entries, operator_name_value) -> dict | None:
     needle = _normalized_operator_name(operator_name_value)
     if not needle:
         return None
 
     matches = []
-    for entry in config.get("operators", []):
+    for entry in entries or []:
         normalized = _normalize_operator_entry(entry)
         if not normalized.get("operator_name"):
             continue
@@ -4922,7 +4918,11 @@ def _local_unique_operator_entry(config: dict, operator_name_value) -> dict | No
     return None
 
 
-def _sync_layer_operator_fields(layer, config: dict) -> dict:
+def _local_unique_operator_entry(config: dict, operator_name_value) -> dict | None:
+    return _unique_operator_entry_from_entries(config.get("operators", []), operator_name_value)
+
+
+def _sync_layer_operator_fields(layer, config: dict, operator_entries=None) -> dict:
     operator_name_field = str(config.get("operator_name_field_name", "") or "").strip()
     operator_name_index = layer.fields().indexOf(operator_name_field)
     if not operator_name_field or operator_name_index < 0:
@@ -4980,7 +4980,10 @@ def _sync_layer_operator_fields(layer, config: dict) -> dict:
 
     for feature in layer.getFeatures():
         processed += 1
-        operator_entry = _local_unique_operator_entry(config, feature[operator_name_field])
+        if operator_entries is None:
+            operator_entry = _local_unique_operator_entry(config, feature[operator_name_field])
+        else:
+            operator_entry = _unique_operator_entry_from_entries(operator_entries, feature[operator_name_field])
         row_changed = False
 
         for field_name, field_idx, entry_key in targets:
@@ -5244,7 +5247,11 @@ class NextcloudFormPlugin:
             )
             if answer == QMessageBox.Yes:
                 try:
-                    sync_result = _sync_layer_operator_fields(layer, config)
+                    sync_result = _sync_layer_operator_fields(
+                        layer,
+                        config,
+                        operator_entries=dialog.merged_operator_entries(),
+                    )
                     if sync_result["updated_values"] > 0:
                         suffix = ""
                         if sync_result["pending_edits"]:

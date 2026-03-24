@@ -1067,6 +1067,57 @@ def _source_uri_and_provider(source: dict, config: dict) -> tuple[str, str]:
     return source_value, provider
 
 
+def _source_display_name(source: dict) -> str:
+    normalized = _normalize_data_source_entry(source)
+    name = str(normalized.get("name", "") or "").strip()
+    if name:
+        return name
+
+    source_value = str(normalized.get("source", "") or "").strip()
+    if source_value.startswith("file://"):
+        parsed = urllib.parse.urlparse(source_value)
+        source_value = urllib.parse.unquote(parsed.path or "")
+    source_value = source_value.split("|", 1)[0].strip().rstrip("/\\")
+    label = os.path.basename(source_value) if source_value else ""
+    return label or "Quelle"
+
+
+def _normalized_source_name(value: str) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _best_local_overlay(local_entries: list[dict], operator_name: str, source_name: str = "", validity: str = "") -> dict | None:
+    operator_token = _normalized_operator_name(operator_name)
+    if not operator_token:
+        return None
+
+    source_token = _normalized_source_name(source_name)
+    validity_token = str(validity or "").strip().casefold()
+    matches = []
+    for entry in local_entries or []:
+        normalized = _normalize_operator_entry(entry)
+        if _normalized_operator_name(normalized.get("operator_name")) != operator_token:
+            continue
+
+        entry_source_token = _normalized_source_name(normalized.get("source_name", ""))
+        if source_token and entry_source_token and entry_source_token != source_token:
+            continue
+
+        source_score = 2 if source_token and entry_source_token == source_token else 1 if not entry_source_token else 0
+        entry_validity_token = str(normalized.get("validity", "") or "").strip().casefold()
+        validity_score = 1 if validity_token and entry_validity_token == validity_token else 0
+        fill_score = sum(
+            1 for key in ("stand", "folder_path") if str(normalized.get(key, "") or "").strip()
+        )
+        matches.append((source_score, validity_score, fill_score, normalized))
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    return matches[0][3]
+
+
 def _read_operator_entries_from_external_source(source: dict, config: dict) -> list[dict]:
     if not _to_bool(source.get("enabled", True), True):
         return []
@@ -1206,6 +1257,7 @@ def _read_operator_entries_from_external_source(source: dict, config: dict) -> l
             ["stand", "stand_datum", "statusdatum"],
         )
     entries = []
+    source_name = _source_display_name(source)
     for idx, feature in enumerate(ext_layer.getFeatures()):
         if idx >= 50000:
             break
@@ -1240,20 +1292,54 @@ def _read_operator_entries_from_external_source(source: dict, config: dict) -> l
             }
         )
         if entry["operator_name"]:
+            entry["source_name"] = source_name
             entries.append(entry)
     return entries
 
 
 def _all_operator_entries(config: dict) -> list[dict]:
-    result = []
+    local_entries = []
     for entry in config.get("operators", []):
         normalized = _normalize_operator_entry(entry)
         if normalized["operator_name"]:
-            result.append(normalized)
+            local_entries.append(normalized)
 
+    external_entries = []
+    matched_local_keys = set()
     for source in config.get("external_data_sources", []):
         normalized_source = _normalize_data_source_entry(source)
-        result.extend(_read_operator_entries_from_external_source(normalized_source, config))
+        for entry in _read_operator_entries_from_external_source(normalized_source, config):
+            overlay = _best_local_overlay(
+                local_entries,
+                entry.get("operator_name", ""),
+                entry.get("source_name", ""),
+                entry.get("validity", ""),
+            )
+            merged = dict(entry)
+            if overlay:
+                if str(overlay.get("stand", "") or "").strip():
+                    merged["stand"] = str(overlay.get("stand", "") or "").strip()
+                if str(overlay.get("folder_path", "") or "").strip():
+                    merged["folder_path"] = str(overlay.get("folder_path", "") or "").strip()
+                matched_local_keys.add(
+                    (
+                        _normalized_source_name(overlay.get("source_name", "")),
+                        _normalized_operator_name(overlay.get("operator_name", "")),
+                        str(overlay.get("validity", "") or "").strip().casefold(),
+                    )
+                )
+            external_entries.append(merged)
+
+    result = list(external_entries)
+    for entry in local_entries:
+        key = (
+            _normalized_source_name(entry.get("source_name", "")),
+            _normalized_operator_name(entry.get("operator_name", "")),
+            str(entry.get("validity", "") or "").strip().casefold(),
+        )
+        if key in matched_local_keys:
+            continue
+        result.append(entry)
     return result
 
 
