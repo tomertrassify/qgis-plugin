@@ -149,14 +149,14 @@ USER_CONFIG_KEYS = (
     "nextcloud_folder_marker",
 )
 
-LOCAL_OPERATOR_COLUMN_FOLDER = 0
-LOCAL_OPERATOR_COLUMN_OPERATOR = 1
-LOCAL_OPERATOR_COLUMN_SOURCE = 2
-LOCAL_OPERATOR_COLUMN_VALIDITY = 3
-LOCAL_OPERATOR_COLUMN_STAND = 4
-LOCAL_OPERATOR_COLUMN_PATH = 5
-LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK = 6
-LOCAL_OPERATOR_COLUMN_ACTION = 7
+LOCAL_OPERATOR_COLUMN_ACTION = 0
+LOCAL_OPERATOR_COLUMN_FOLDER = 1
+LOCAL_OPERATOR_COLUMN_OPERATOR = 2
+LOCAL_OPERATOR_COLUMN_SOURCE = 3
+LOCAL_OPERATOR_COLUMN_VALIDITY = 4
+LOCAL_OPERATOR_COLUMN_STAND = 5
+LOCAL_OPERATOR_COLUMN_PATH = 6
+LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK = 7
 
 OPERATOR_COLUMN_SOURCE = 0
 OPERATOR_COLUMN_OPERATOR = 1
@@ -256,15 +256,20 @@ class LayerConfigDialog(QDialog):
         root_layout.setContentsMargins(10, 10, 10, 10)
         root_layout.setSpacing(8)
 
-        top_row = QHBoxLayout()
-        self._configure_action_row(top_row)
+        logo_row = QHBoxLayout()
+        self._configure_action_row(logo_row)
         self.header_logo_label = QLabel(self)
         self.header_logo_label.setPixmap(
-            QIcon(os.path.join(os.path.dirname(__file__), "assets", "trassify-logo.svg")).pixmap(22, 22)
+            QIcon(os.path.join(os.path.dirname(__file__), "assets", "trassify-logo.svg")).pixmap(30, 30)
         )
-        self.header_logo_label.setFixedSize(28, 28)
+        self.header_logo_label.setFixedSize(36, 36)
         self.header_logo_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        top_row.addWidget(self.header_logo_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        logo_row.addWidget(self.header_logo_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        logo_row.addStretch(1)
+        root_layout.addLayout(logo_row)
+
+        top_row = QHBoxLayout()
+        self._configure_action_row(top_row)
         top_row.addStretch(1)
         self.open_settings_button = QPushButton("Einstellungen")
         self.open_settings_button.clicked.connect(self._show_settings_page)
@@ -416,6 +421,7 @@ class LayerConfigDialog(QDialog):
         self.local_operator_table = QTableWidget(0, 8)
         self.local_operator_table.setHorizontalHeaderLabels(
             [
+                "",
                 "Ordner",
                 "Zugeordneter Betreiber",
                 "Datenquelle",
@@ -423,7 +429,6 @@ class LayerConfigDialog(QDialog):
                 "Stand",
                 "Pfad",
                 "Nextcloud Link",
-                "Aktion",
             ]
         )
         self._configure_standard_table(
@@ -434,31 +439,29 @@ class LayerConfigDialog(QDialog):
         self.local_operator_table.itemChanged.connect(self._on_local_operator_table_item_changed)
         local_header = self.local_operator_table.horizontalHeader()
         local_header.setStretchLastSection(False)
-        local_header.setMinimumSectionSize(90)
+        local_header.setMinimumSectionSize(40)
         local_header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        local_header.setSectionResizeMode(0, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(0, QHeaderView.Fixed)
         local_header.setSectionResizeMode(1, QHeaderView.Interactive)
         local_header.setSectionResizeMode(2, QHeaderView.Interactive)
         local_header.setSectionResizeMode(3, QHeaderView.Interactive)
         local_header.setSectionResizeMode(4, QHeaderView.Interactive)
         local_header.setSectionResizeMode(5, QHeaderView.Interactive)
-        local_header.setSectionResizeMode(6, QHeaderView.Stretch)
-        local_header.setSectionResizeMode(7, QHeaderView.Fixed)
-        local_header.resizeSection(0, 220)
-        local_header.resizeSection(1, 240)
-        local_header.resizeSection(2, 180)
-        local_header.resizeSection(3, 150)
-        local_header.resizeSection(4, 130)
-        local_header.resizeSection(5, 280)
-        local_header.resizeSection(6, 380)
-        local_header.resizeSection(7, 180)
+        local_header.setSectionResizeMode(6, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(7, QHeaderView.Stretch)
+        local_header.resizeSection(0, 42)
+        local_header.resizeSection(1, 220)
+        local_header.resizeSection(2, 240)
+        local_header.resizeSection(3, 180)
+        local_header.resizeSection(4, 150)
+        local_header.resizeSection(5, 130)
+        local_header.resizeSection(6, 280)
+        local_header.resizeSection(7, 380)
         local_header.setTextElideMode(Qt.ElideNone)
         self.local_operator_table.setColumnHidden(LOCAL_OPERATOR_COLUMN_SOURCE, True)
         local_layout.addWidget(self.local_operator_table, 1)
         local_buttons = QHBoxLayout()
         self._configure_action_row(local_buttons)
-        self.local_operator_assign_button = QPushButton("Aus Betreiberliste uebernehmen")
-        self.local_operator_assign_button.clicked.connect(self._assign_selected_external_operator_to_local_rows)
         self.local_operator_link_button = QPushButton("Nextcloud Links erzeugen")
         self.local_operator_link_button.setIcon(
             QIcon(os.path.join(os.path.dirname(__file__), "assets", "nextcloud-logo.svg"))
@@ -469,13 +472,11 @@ class LayerConfigDialog(QDialog):
         self.local_operator_reload_button = QPushButton("Ordner neu laden")
         self.local_operator_reload_button.clicked.connect(self._reload_local_operator_table)
         for button in (
-            self.local_operator_assign_button,
             self.local_operator_link_button,
             self.local_operator_clear_button,
             self.local_operator_reload_button,
         ):
             self._configure_action_button(button, icon_size=16)
-        local_buttons.addWidget(self.local_operator_assign_button)
         local_buttons.addWidget(self.local_operator_link_button)
         local_buttons.addWidget(self.local_operator_clear_button)
         local_buttons.addWidget(self.local_operator_reload_button)
@@ -878,6 +879,7 @@ class LayerConfigDialog(QDialog):
                 stand_value = saved_stand if saved_stand and not _date_values_match(saved_stand, auto_stand) else auto_stand
 
                 values = [
+                    "",
                     folder_name,
                     str((overlay or {}).get("operator_name", "") or "").strip(),
                     str((overlay or {}).get("source_name", "") or "").strip(),
@@ -889,6 +891,7 @@ class LayerConfigDialog(QDialog):
                 for col, text in enumerate(values):
                     item = QTableWidgetItem(text)
                     if col in (
+                        LOCAL_OPERATOR_COLUMN_ACTION,
                         LOCAL_OPERATOR_COLUMN_FOLDER,
                         LOCAL_OPERATOR_COLUMN_PATH,
                         LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK,
@@ -1112,10 +1115,16 @@ class LayerConfigDialog(QDialog):
         path_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_PATH)
         folder_path = str(path_item.data(Qt.UserRole) or "").strip() if path_item is not None else ""
 
-        button = QPushButton("Betreiber auswählen")
+        button = QPushButton("")
         button.setProperty("folder_name", folder_name)
         button.setProperty("folder_path", folder_path)
-        self._configure_action_button(button)
+        button.setToolTip("Betreiber auswählen")
+        button.setIcon(
+            QIcon(os.path.join(os.path.dirname(__file__), "assets", "IcRoundArrowCircleRight.svg"))
+        )
+        button.setIconSize(QSize(18, 18))
+        button.setFixedSize(28, 28)
+        button.setStyleSheet("padding: 0;")
         button.clicked.connect(self._start_local_operator_assignment_from_button)
         self.local_operator_table.setCellWidget(row, LOCAL_OPERATOR_COLUMN_ACTION, button)
 
