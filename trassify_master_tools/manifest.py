@@ -67,6 +67,13 @@ BUNDLED_PLUGINS = (
         "tool_type": INTERACTIVE_TOOL,
     },
     {
+        "key": "projektstarter_attribution_buttler",
+        "label": "Projektstarter Butler",
+        "package": "projektstarter_attribution_buttler",
+        "source_path": "projektstarter_attribution_buttler",
+        "tool_type": INTERACTIVE_TOOL,
+    },
+    {
         "key": "quickrule",
         "label": "Quickrule",
         "package": "quickrule",

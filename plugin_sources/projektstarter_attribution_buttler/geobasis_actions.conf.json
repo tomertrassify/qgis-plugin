@@ -1,0 +1,540 @@
+{
+  "version": 1,
+  "description": "Coordinatify -> GeoBasis_Loader mapping. Edit/remove entries as needed.",
+  "catalogs": {
+    "Katalog 1: Deutschland / Germany": {
+      "states": {
+        "Berlin": {
+          "aliases": [
+            "BE",
+            "Land Berlin"
+          ],
+          "parcel_building": {
+            "preferred_path": "be/themen/alkis_alles",
+            "options": [
+              {
+                "path": "be/themen/flustuecke_wfs",
+                "label": "BE: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "be/themen/gebaeude_wfs",
+                "label": "BE: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "be/themen/dop20",
+            "options": [
+              {
+                "path": "be/themen/dop20",
+                "label": "BE: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Baden-Württemberg": {
+          "aliases": [
+            "BW",
+            "Baden Wuerttemberg",
+            "Baden-Wuerttemberg"
+          ],
+          "parcel_building": {
+            "preferred_path": "bw/themen/alkis_layergroup",
+            "options": [
+              {
+                "path": "bw/themen/flustuecke_wfs",
+                "label": "BW: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "bw/themen/gebaeude_wfs",
+                "label": "BW: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "bw/themen/dop20",
+            "options": [
+              {
+                "path": "bw/themen/dop20",
+                "label": "BW: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Bayern": {
+          "aliases": [
+            "BY",
+            "Freistaat Bayern"
+          ],
+          "parcel_building": {
+            "preferred_path": "by/themen/alkis_parzellen_farbig",
+            "options": [
+              {
+                "path": "by/themen/TK",
+                "label": "BY: Topograf. Karte inkl. Flurstücke (WMTS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "by/themen/dop20_col",
+            "options": [
+              {
+                "path": "by/themen/dop20_col",
+                "label": "BY: Digitale Orthophotos - DOP20 Farbe (WMS)"
+              }
+            ]
+          }
+        },
+        "Brandenburg": {
+          "aliases": [
+            "BB",
+            "Land Brandenburg"
+          ],
+          "parcel_building": {
+            "preferred_path": "bb/themen/alkis_alles",
+            "options": [
+              {
+                "path": "bb/themen/flustuecke_wfs",
+                "label": "BB: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "bb/themen/gebaeude_wfs",
+                "label": "BB: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "bb/themen/dop20",
+            "options": [
+              {
+                "path": "bb/themen/dop20",
+                "label": "BB: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Bremen": {
+          "aliases": [
+            "HB",
+            "Freie Hansestadt Bremen"
+          ],
+          "parcel_building": {
+            "preferred_path": "hb/themen/flurstuecke2",
+            "options": [
+              {
+                "path": "hb/themen/flurstuecke2",
+                "label": "HB: ALKIS Flurstücke, Gebäude, Nutzung (WMS)"
+              },
+              {
+                "path": "hb/themen/flustuecke_wfs",
+                "label": "HB: ALKIS Flurstücke (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "hb/themen/dop10hb",
+            "options": [
+              {
+                "path": "hb/themen/dop10hb",
+                "label": "HB: Digitale Orthophotos - DOP10 (WMS)"
+              }
+            ]
+          }
+        },
+        "Hamburg": {
+          "aliases": [
+            "HH",
+            "Freie und Hansestadt Hamburg"
+          ],
+          "parcel_building": {
+            "preferred_path": "hh/themen/alkis_alles",
+            "options": [
+              {
+                "path": "hh/themen/flurstuecke_wfs",
+                "label": "HH: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "hh/themen/gebaeude_wfs",
+                "label": "HH: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "hh/themen/dop20_b",
+            "options": [
+              {
+                "path": "hh/themen/dop20_b",
+                "label": "HH: Digitale Orthophotos belaubt - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Hessen": {
+          "aliases": [
+            "HE",
+            "Land Hessen"
+          ],
+          "parcel_building": {
+            "preferred_path": "he/themen/flurstuecke",
+            "options": [
+              {
+                "path": "he/themen/flustuecke_wfs",
+                "label": "HE: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "he/themen/gebaeude_wfs",
+                "label": "HE: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "he/themen/dop20",
+            "options": [
+              {
+                "path": "he/themen/dop20",
+                "label": "HE: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Mecklenburg-Vorpommern": {
+          "aliases": [
+            "MV",
+            "Mecklenburg Vorpommern"
+          ],
+          "parcel_building": {
+            "preferred_path": "mv/themen/alkis_alles",
+            "options": [
+              {
+                "path": "mv/themen/flurstuecke_wfs2",
+                "label": "MV: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "mv/themen/gebaeude_wfs",
+                "label": "MV: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "mv/themen/dop20",
+            "options": [
+              {
+                "path": "mv/themen/dop20",
+                "label": "MV: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Niedersachsen": {
+          "aliases": [
+            "NI",
+            "Land Niedersachsen"
+          ],
+          "parcel_building": {
+            "preferred_path": "ni/themen/flurstuecke",
+            "options": [
+              {
+                "path": "ni/themen/flustuecke_wfs",
+                "label": "NI: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "ni/themen/gebaeude_wfs",
+                "label": "NI: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "ni/themen/dop20",
+            "options": [
+              {
+                "path": "ni/themen/dop20",
+                "label": "NI: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Nordrhein-Westfalen": {
+          "aliases": [
+            "NW",
+            "NRW",
+            "Nordrhein Westfalen"
+          ],
+          "parcel_building": {
+            "preferred_path": "nw/themen/alkis_alles",
+            "options": [
+              {
+                "path": "nw/themen/flustuecke_wfs",
+                "label": "NW: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "nw/themen/gebaeude_wfs",
+                "label": "NW: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "nw/themen/dop10",
+            "options": [
+              {
+                "path": "nw/themen/dop10",
+                "label": "NW: Digitale Orthophotos - DOP10 (WMS)"
+              }
+            ]
+          }
+        },
+        "Rheinland-Pfalz": {
+          "aliases": [
+            "RP",
+            "Rheinland Pfalz"
+          ],
+          "parcel_building": {
+            "preferred_path": "rp/themen/alkis_alles",
+            "options": [
+              {
+                "path": "rp/themen/flustuecke_wfs",
+                "label": "RP: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "rp/themen/gebaeude_wfs",
+                "label": "RP: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "rp/themen/dop20",
+            "options": [
+              {
+                "path": "rp/themen/dop20",
+                "label": "RP: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Saarland": {
+          "aliases": [
+            "SL",
+            "Land Saarland"
+          ],
+          "parcel_building": {
+            "preferred_path": "sl/themen/flurstuecke_geb_sw_wms",
+            "options": [
+              {
+                "path": "sl/themen/alkis_wfs_1",
+                "label": "SL: ALKIS Flurstück (WFS)"
+              },
+              {
+                "path": "sl/themen/alkis_wfs_2",
+                "label": "SL: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "sl/themen/dop20",
+            "options": [
+              {
+                "path": "sl/themen/dop20",
+                "label": "SL: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Sachsen": {
+          "aliases": [
+            "SN",
+            "Freistaat Sachsen"
+          ],
+          "parcel_building": {
+            "preferred_path": "sn/themen/alkis_alles",
+            "options": [
+              {
+                "path": "sn/themen/flustuecke_wfs",
+                "label": "SN: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "sn/themen/gebaeude_wfs",
+                "label": "SN: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "sn/themen/dop20",
+            "options": [
+              {
+                "path": "sn/themen/dop20",
+                "label": "SN: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Sachsen-Anhalt": {
+          "aliases": [
+            "ST",
+            "Sachsen Anhalt"
+          ],
+          "parcel_building": {
+            "preferred_path": "st/themen/alkis_alles",
+            "options": [
+              {
+                "path": "st/themen/flustuecke_wfs",
+                "label": "ST: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "st/themen/gebaeude_wfs",
+                "label": "ST: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "st/themen/dop20",
+            "options": [
+              {
+                "path": "st/themen/dop20",
+                "label": "ST: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Schleswig-Holstein": {
+          "aliases": [
+            "SH",
+            "Schleswig Holstein"
+          ],
+          "parcel_building": {
+            "preferred_path": "sh/themen/flurstuecke",
+            "options": [
+              {
+                "path": "sh/themen/flurstuecke_wfs",
+                "label": "SH: ALKIS Flurstücke (WFS)"
+              },
+              {
+                "path": "sh/themen/gebaeude_wfs",
+                "label": "SH: ALKIS Gebäude (WFS)"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "sh/themen/dop20",
+            "options": [
+              {
+                "path": "sh/themen/dop20",
+                "label": "SH: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        },
+        "Thüringen": {
+          "aliases": [
+            "TH",
+            "Thueringen",
+            "Freistaat Thüringen"
+          ],
+          "parcel_building": {
+            "preferred_path": "th/themen/alkis_alles",
+            "options": [
+              {
+                "path": "th/themen/flustuecke_wfs",
+                "label": "TH: ALKIS Flurstücke (WFS) v2"
+              },
+              {
+                "path": "th/themen/gebaeude_wfs",
+                "label": "TH: ALKIS Gebäude (WFS) v2"
+              }
+            ],
+            "prefer_types": [
+              "ogc_wfs",
+              "ogc_api_features",
+              "ogc_wms"
+            ]
+          },
+          "satellite": {
+            "preferred_path": "th/themen/dop20",
+            "options": [
+              {
+                "path": "th/themen/dop20",
+                "label": "TH: Digitale Orthophotos - DOP20 (WMS)"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_default": {
+      "states": {}
+    }
+  }
+}
