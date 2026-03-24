@@ -405,6 +405,7 @@ class LayerConfigDialog(QDialog):
         self.local_operator_status_label.setWordWrap(True)
         local_layout.addWidget(self.local_operator_status_label)
         self.local_operator_hint_label = QLabel(
+            "Wenn der Ordnername eindeutig zu einem Betreiber passt, wird die Zuordnung automatisch vorbelegt. "
             "Wenn noch kein Betreiber zugeordnet ist, kannst du ihn direkt in der Zeile auswaehlen. "
             "Der Button springt dich in die Betreiberliste, dort waehlst du einen Eintrag und klickst auf "
             "'Weiter'. 'Stand' kommt automatisch aus dem juengsten Dateidatum im Ordner, kann aber "
@@ -785,6 +786,64 @@ class LayerConfigDialog(QDialog):
     def _normalized_source_name(self, value: str) -> str:
         return str(value or "").strip().casefold()
 
+    def _auto_match_external_operator_for_folder(self, folder_name: str, entries: list[dict] | None = None) -> dict | None:
+        folder_token = self._normalize_operator_match_token(folder_name)
+        if not folder_token:
+            return None
+
+        candidates = []
+        seen = set()
+        for entry in entries if entries is not None else self._all_external_operator_entries():
+            normalized = _normalize_operator_entry(entry)
+            operator_name = str(normalized.get("operator_name", "") or "").strip()
+            source_name = str(
+                normalized.get("source_name", normalized.get("_source_name", "")) or ""
+            ).strip()
+            validity = str(normalized.get("validity", "") or "").strip()
+            operator_token = self._normalize_operator_match_token(operator_name)
+            if not operator_token:
+                continue
+
+            score = None
+            if folder_token == operator_token:
+                score = (3, -abs(len(folder_token) - len(operator_token)), -len(operator_token))
+            elif folder_token in operator_token:
+                score = (2, -abs(len(folder_token) - len(operator_token)), -len(operator_token))
+            elif operator_token in folder_token:
+                score = (1, -abs(len(folder_token) - len(operator_token)), -len(operator_token))
+
+            if score is None:
+                continue
+
+            key = (
+                self._normalized_source_name(source_name),
+                _normalized_operator_name(operator_name),
+                validity.casefold(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(
+                (
+                    score,
+                    {
+                        "source_name": source_name,
+                        "operator_name": operator_name,
+                        "validity": validity,
+                    },
+                )
+            )
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        best_score = candidates[0][0]
+        best_candidates = [entry for score, entry in candidates if score == best_score]
+        if len(best_candidates) != 1:
+            return None
+        return dict(best_candidates[0])
+
     def _project_root_from_context(self) -> Path | None:
         text = str(self.project_context_dir_value.text() or "").strip()
         if not text or text == "-":
@@ -860,6 +919,7 @@ class LayerConfigDialog(QDialog):
         try:
             overlays_by_path = {}
             orphan_overlays = []
+            external_entries_for_auto_match = self._all_external_operator_entries()
             for entry in self._local_operator_overlays:
                 normalized = self._normalize_local_overlay_entry(entry)
                 token = self._local_path_token(normalized.get("folder_path", ""))
@@ -873,6 +933,17 @@ class LayerConfigDialog(QDialog):
             def _append_row(folder_name: str, overlay: dict | None, folder_path: str):
                 row = self.local_operator_table.rowCount()
                 self.local_operator_table.insertRow(row)
+
+                if not str((overlay or {}).get("operator_name", "") or "").strip():
+                    auto_overlay = self._auto_match_external_operator_for_folder(
+                        folder_name,
+                        entries=external_entries_for_auto_match,
+                    )
+                    if auto_overlay is not None:
+                        overlay = {
+                            **self._normalize_local_overlay_entry(overlay or {}),
+                            **auto_overlay,
+                        }
 
                 auto_stand = self._latest_file_date_in_path(folder_path)
                 saved_stand = str((overlay or {}).get("stand", "") or "").strip()

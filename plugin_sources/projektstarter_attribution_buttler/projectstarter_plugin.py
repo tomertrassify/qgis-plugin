@@ -1383,7 +1383,7 @@ class ProjectStarterPlugin:
             if existing_layer is not None:
                 if sublayer_name == self.PROJECT_AREA_LAYER_NAME:
                     project_area_layer = existing_layer
-                    self._apply_project_area_style(existing_layer)
+                self._apply_project_layer_style(existing_layer)
                 continue
             layer = QgsVectorLayer(layer_source, sublayer_name, "ogr")
             if not layer.isValid():
@@ -1393,7 +1393,7 @@ class ProjectStarterPlugin:
             target_group.addLayer(layer)
             if sublayer_name == self.PROJECT_AREA_LAYER_NAME:
                 project_area_layer = layer
-                self._apply_project_area_style(layer)
+            self._apply_project_layer_style(layer)
 
         return project_area_layer
 
@@ -1450,6 +1450,35 @@ class ProjectStarterPlugin:
                 return candidate
         return None
 
+    def _refresh_layer_symbology(self, layer):
+        layer.triggerRepaint()
+        layer_tree_view = getattr(self.iface, "layerTreeView", lambda: None)()
+        if layer_tree_view:
+            layer_tree_view.refreshLayerSymbology(layer.id())
+
+    def _apply_embedded_layer_style(self, layer):
+        try:
+            result = layer.loadDefaultStyle()
+        except Exception:
+            return False
+
+        if isinstance(result, tuple):
+            if len(result) >= 2:
+                return bool(result[1])
+            if len(result) == 1:
+                return bool(result[0])
+            return True
+        if isinstance(result, bool):
+            return result
+        return True
+
+    def _apply_project_layer_style(self, layer):
+        self._apply_embedded_layer_style(layer)
+        if layer.name() == self.PROJECT_AREA_LAYER_NAME:
+            self._apply_project_area_style(layer)
+            return
+        self._refresh_layer_symbology(layer)
+
     def _apply_project_area_style(self, layer):
         style_file = self._find_project_area_style_file()
         if not style_file:
@@ -1457,10 +1486,7 @@ class ProjectStarterPlugin:
 
         _message, ok = layer.loadNamedStyle(str(style_file))
         if ok:
-            layer.triggerRepaint()
-            layer_tree_view = getattr(self.iface, "layerTreeView", lambda: None)()
-            if layer_tree_view:
-                layer_tree_view.refreshLayerSymbology(layer.id())
+            self._refresh_layer_symbology(layer)
         else:
             self._show_message(
                 "Projektstarter",

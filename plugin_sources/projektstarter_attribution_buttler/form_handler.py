@@ -1513,24 +1513,21 @@ def _unique_texts(values) -> list[str]:
     return result
 
 
+def _local_assigned_operator_name_suggestions(config: dict) -> list[str]:
+    suggestions = []
+    for entry in config.get("operators", []):
+        normalized = _normalize_operator_entry(entry)
+        operator_name = str(normalized.get("operator_name", "") or "").strip()
+        folder_path = str(normalized.get("folder_path", "") or "").strip()
+        if not operator_name or not folder_path:
+            continue
+        suggestions.append(operator_name)
+    return _unique_texts(suggestions)
+
+
 def _operator_name_suggestions(config: dict, layer, field_name: str, operator_entries: list[dict]) -> list[str]:
-    configured = []
-    for entry in operator_entries:
-        configured.append(str(_normalize_operator_entry(entry).get("operator_name", "") or "").strip())
-
-    unique_values = []
-    field_index = layer.fields().indexOf(field_name)
-    if field_index >= 0 and hasattr(layer, "uniqueValues"):
-        try:
-            unique_values = list(layer.uniqueValues(field_index, 5000))
-        except Exception:
-            try:
-                unique_values = list(layer.uniqueValues(field_index))
-            except Exception:
-                unique_values = []
-
-    # Betreiberliste zuerst, dann bereits vorhandene Layer-Werte.
-    return _unique_texts(configured + unique_values)
+    del layer, field_name, operator_entries
+    return _local_assigned_operator_name_suggestions(config)
 
 
 def _editor_widget_for_field(dialog, layer, field_name: str):
@@ -1605,12 +1602,20 @@ def _install_operator_name_completer(
         return
 
     if isinstance(editor_widget, QComboBox):
-        existing = {editor_widget.itemText(i).strip().casefold() for i in range(editor_widget.count())}
+        current_text = editor_widget.currentText().strip()
+        editor_widget.blockSignals(True)
+        editor_widget.clear()
+        editor_widget.addItem("")
         for value in suggestions:
             token = str(value or "").strip()
-            if token and token.casefold() not in existing:
+            if token:
                 editor_widget.addItem(token)
-                existing.add(token.casefold())
+        if current_text and editor_widget.isEditable():
+            editor_widget.setEditText(current_text)
+        else:
+            current_index = editor_widget.findText(current_text)
+            editor_widget.setCurrentIndex(current_index if current_index >= 0 else 0)
+        editor_widget.blockSignals(False)
 
     line_edit = _line_edit_from_widget(editor_widget)
     if line_edit is None:
