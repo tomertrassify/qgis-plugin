@@ -36,6 +36,7 @@ from qgis.PyQt.QtWidgets import (
     QStackedWidget,
     QSplitter,
     QStyle,
+    QTabWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -325,62 +326,96 @@ class LayerConfigDialog(QDialog):
         self._operators_page_index = self.page_stack.addWidget(operators_tab)
         operators_icon = self.style().standardIcon(QStyle.SP_DirIcon)
         self._local_operator_overlays = []
+        self.operator_tabs = QTabWidget(self)
+        operators_layout.addWidget(self.operator_tabs, 1)
+
+        local_tab = QWidget()
+        local_layout = QVBoxLayout(local_tab)
+        self.local_operator_status_label = QLabel(
+            "Lokale Ordner aus '002_Leitungsauskunft' koennen hier projektweit einem Eintrag aus der Betreiberliste zugeordnet werden."
+        )
+        self.local_operator_status_label.setWordWrap(True)
+        local_layout.addWidget(self.local_operator_status_label)
+        self.local_operator_hint_label = QLabel(
+            "Waehle rechts in der Betreiberliste einen Eintrag aus und uebernimm ihn dann fuer die markierten lokalen Ordner."
+        )
+        self.local_operator_hint_label.setWordWrap(True)
+        local_layout.addWidget(self.local_operator_hint_label)
+        self.local_operator_search_input = QLineEdit()
+        self.local_operator_search_input.setPlaceholderText("Lokale Ordner suchen...")
+        self.local_operator_search_input.textChanged.connect(
+            lambda text: self._apply_table_text_filter(self.local_operator_table, text)
+        )
+        local_layout.addWidget(self.local_operator_search_input)
+        self.local_operator_table = QTableWidget(0, 6)
+        self.local_operator_table.setHorizontalHeaderLabels(
+            [
+                "Ordner",
+                "Zugeordneter Betreiber",
+                "Datenquelle",
+                "Gültigkeit",
+                "Stand",
+                "Pfad",
+            ]
+        )
+        self._configure_standard_table(
+            self.local_operator_table,
+            selection_mode=QAbstractItemView.ExtendedSelection,
+        )
+        local_header = self.local_operator_table.horizontalHeader()
+        local_header.setStretchLastSection(False)
+        local_header.setMinimumSectionSize(90)
+        local_header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        local_header.setSectionResizeMode(0, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(1, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(2, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(3, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(4, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(5, QHeaderView.Stretch)
+        local_header.resizeSection(0, 220)
+        local_header.resizeSection(1, 240)
+        local_header.resizeSection(2, 180)
+        local_header.resizeSection(3, 150)
+        local_header.resizeSection(4, 130)
+        local_header.resizeSection(5, 360)
+        local_header.setTextElideMode(Qt.ElideNone)
+        local_layout.addWidget(self.local_operator_table, 1)
+        local_buttons = QHBoxLayout()
+        self.local_operator_assign_button = QPushButton("Aus Betreiberliste uebernehmen")
+        self.local_operator_assign_button.clicked.connect(self._assign_selected_external_operator_to_local_rows)
+        self.local_operator_clear_button = QPushButton("Zuordnung loeschen")
+        self.local_operator_clear_button.clicked.connect(self._clear_selected_local_operator_rows)
+        self.local_operator_reload_button = QPushButton("Ordner neu laden")
+        self.local_operator_reload_button.clicked.connect(self._refresh_local_operator_table)
+        local_buttons.addWidget(self.local_operator_assign_button)
+        local_buttons.addWidget(self.local_operator_clear_button)
+        local_buttons.addWidget(self.local_operator_reload_button)
+        local_buttons.addStretch(1)
+        local_layout.addLayout(local_buttons)
+        self.operator_tabs.addTab(local_tab, "Lokale Ordner")
+
+        external_tab = QWidget()
+        external_layout = QVBoxLayout(external_tab)
 
         source_row = QHBoxLayout()
         source_row.setContentsMargins(0, 0, 0, 0)
         self.operator_source_combo = QComboBox()
         self.operator_source_combo.currentIndexChanged.connect(self._on_operator_source_changed)
         source_row.addWidget(self.operator_source_combo, 1)
-        operators_layout.addLayout(source_row)
+        external_layout.addLayout(source_row)
 
         self.operator_status_label = QLabel(
             "Waehle oben eine Datenquelle. Die Liste zeigt dann direkt die verbundenen Betreiberdaten."
         )
         self.operator_status_label.setWordWrap(True)
-        operators_layout.addWidget(self.operator_status_label)
-
-        self.local_operator_folder_group = QGroupBox("Lokale Leitungsauskunft")
-        local_operator_folder_layout = QVBoxLayout(self.local_operator_folder_group)
-        self.local_operator_folder_status_label = QLabel(
-            "Kein verbundenes Projekt gefunden. Die lokalen Ordner aus '002_Leitungsauskunft' erscheinen hier automatisch."
-        )
-        self.local_operator_folder_status_label.setWordWrap(True)
-        local_operator_folder_layout.addWidget(self.local_operator_folder_status_label)
-        self.local_operator_folder_search_input = QLineEdit()
-        self.local_operator_folder_search_input.setPlaceholderText("Lokale Ordner suchen...")
-        self.local_operator_folder_search_input.textChanged.connect(
-            lambda text: self._apply_table_text_filter(self.local_operator_folder_table, text)
-        )
-        local_operator_folder_layout.addWidget(self.local_operator_folder_search_input)
-        self.local_operator_folder_table = QTableWidget(0, 2)
-        self.local_operator_folder_table.setHorizontalHeaderLabels(
-            [
-                "Ordner",
-                "Pfad",
-            ]
-        )
-        self._configure_standard_table(
-            self.local_operator_folder_table,
-            editable=False,
-        )
-        local_header = self.local_operator_folder_table.horizontalHeader()
-        local_header.setStretchLastSection(False)
-        local_header.setMinimumSectionSize(90)
-        local_header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        local_header.setSectionResizeMode(0, QHeaderView.Interactive)
-        local_header.setSectionResizeMode(1, QHeaderView.Stretch)
-        local_header.resizeSection(0, 240)
-        local_header.resizeSection(1, 520)
-        local_header.setTextElideMode(Qt.ElideNone)
-        local_operator_folder_layout.addWidget(self.local_operator_folder_table, 1)
-        operators_layout.addWidget(self.local_operator_folder_group)
+        external_layout.addWidget(self.operator_status_label)
 
         self.operator_search_input = QLineEdit()
         self.operator_search_input.setPlaceholderText("Betreiberliste suchen...")
         self.operator_search_input.textChanged.connect(
             lambda text: self._apply_table_text_filter(self.operator_table, text)
         )
-        operators_layout.addWidget(self.operator_search_input)
+        external_layout.addWidget(self.operator_search_input)
 
         self.operator_table = QTableWidget(0, 9)
         self.operator_table.setHorizontalHeaderLabels(
@@ -425,7 +460,7 @@ class LayerConfigDialog(QDialog):
         header.setTextElideMode(Qt.ElideNone)
         self._set_operator_table_visual_order()
         self.operator_table.itemChanged.connect(self._on_operator_table_item_changed)
-        operators_layout.addWidget(self.operator_table, 1)
+        external_layout.addWidget(self.operator_table, 1)
 
         operator_buttons = QHBoxLayout()
         self.operator_reload_button = QPushButton("Daten neu laden")
@@ -434,23 +469,16 @@ class LayerConfigDialog(QDialog):
         self.operator_save_button.clicked.connect(self._save_external_operator_changes)
         self.operator_add_button = QPushButton("Zeile hinzufuegen")
         self.operator_add_button.clicked.connect(self._add_external_operator_row)
-        self.operator_choose_folder_button = QPushButton("Ordner fuer Auswahl...")
-        self.operator_choose_folder_button.clicked.connect(self._choose_folder_for_selected_row)
-        self.operator_bulk_assign_button = QPushButton("Ueberordner zuordnen...")
-        self.operator_bulk_assign_button.setToolTip(
-            "Waehlt einen Ueberordner und uebernimmt passende Betreiberordner automatisch in 'Pfad'."
-        )
-        self.operator_bulk_assign_button.clicked.connect(self._bulk_assign_operator_paths_from_parent)
         self.operator_remove_button = QPushButton("Ausgewaehlte Zeilen loeschen")
         self.operator_remove_button.clicked.connect(self._remove_selected_external_operator_row)
         operator_buttons.addWidget(self.operator_reload_button)
         operator_buttons.addWidget(self.operator_save_button)
         operator_buttons.addWidget(self.operator_add_button)
-        operator_buttons.addWidget(self.operator_choose_folder_button)
-        operator_buttons.addWidget(self.operator_bulk_assign_button)
         operator_buttons.addWidget(self.operator_remove_button)
         operator_buttons.addStretch(1)
-        operators_layout.addLayout(operator_buttons)
+        external_layout.addLayout(operator_buttons)
+        self.operator_tabs.addTab(external_tab, "Betreiberliste")
+
         self._external_operator_context = None
         self.operator_reload_button.setEnabled(False)
         self.operator_save_button.setEnabled(False)
@@ -626,86 +654,123 @@ class LayerConfigDialog(QDialog):
             rows.append((path.name, str(path)))
         return rows
 
-    def _refresh_local_operator_folder_table(self):
+    def _local_path_token(self, path_value: str) -> str:
+        return str(path_value or "").strip().replace("\\", "/").rstrip("/").casefold()
+
+    def _refresh_local_operator_table(self):
         rows = self._local_operator_folder_rows()
-        sorting_enabled = self.local_operator_folder_table.isSortingEnabled()
+        sorting_enabled = self.local_operator_table.isSortingEnabled()
         if sorting_enabled:
-            self.local_operator_folder_table.setSortingEnabled(False)
+            self.local_operator_table.setSortingEnabled(False)
 
-        self.local_operator_folder_table.setRowCount(0)
+        overlays_by_path = {}
+        orphan_overlays = []
+        for entry in self._local_operator_overlays:
+            normalized = self._normalize_local_overlay_entry(entry)
+            token = self._local_path_token(normalized.get("folder_path", ""))
+            if token and token not in overlays_by_path:
+                overlays_by_path[token] = normalized
+            else:
+                orphan_overlays.append(normalized)
+
+        self.local_operator_table.setRowCount(0)
+
+        def _append_row(folder_name: str, overlay: dict | None, folder_path: str):
+            row = self.local_operator_table.rowCount()
+            self.local_operator_table.insertRow(row)
+
+            values = [
+                folder_name,
+                str((overlay or {}).get("operator_name", "") or "").strip(),
+                str((overlay or {}).get("source_name", "") or "").strip(),
+                str((overlay or {}).get("validity", "") or "").strip(),
+                str((overlay or {}).get("stand", "") or "").strip(),
+                self._operator_path_alias(folder_path),
+            ]
+            for col, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                if col in (0, 5):
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                if col == 5:
+                    item.setData(Qt.UserRole, folder_path)
+                    item.setToolTip(folder_path)
+                self.local_operator_table.setItem(row, col, item)
+
         for folder_name, folder_path in rows:
-            row = self.local_operator_folder_table.rowCount()
-            self.local_operator_folder_table.insertRow(row)
+            overlay = overlays_by_path.pop(self._local_path_token(folder_path), None)
+            _append_row(folder_name, overlay, folder_path)
 
-            folder_item = QTableWidgetItem(folder_name)
-            folder_item.setToolTip(folder_path)
-            self.local_operator_folder_table.setItem(row, 0, folder_item)
-
-            path_item = QTableWidgetItem(self._operator_path_alias(folder_path))
-            path_item.setData(Qt.UserRole, folder_path)
-            path_item.setToolTip(folder_path)
-            self.local_operator_folder_table.setItem(row, 1, path_item)
+        remaining_orphans = list(overlays_by_path.values()) + orphan_overlays
+        for overlay in remaining_orphans:
+            folder_path = str(overlay.get("folder_path", "") or "").strip()
+            if folder_path:
+                folder_name = f"{Path(folder_path).name} (fehlt)"
+            else:
+                folder_name = (
+                    f"{str(overlay.get('operator_name', '') or '').strip() or 'Manueller Eintrag'} (manuell)"
+                )
+            _append_row(folder_name, overlay, folder_path)
 
         if sorting_enabled:
-            self.local_operator_folder_table.setSortingEnabled(True)
+            self.local_operator_table.setSortingEnabled(True)
 
         project_root = self._project_root_from_context()
         if project_root is None:
-            self.local_operator_folder_status_label.setText(
+            self.local_operator_status_label.setText(
                 "Kein verbundenes Projekt gefunden. Die lokalen Ordner aus '002_Leitungsauskunft' erscheinen hier automatisch."
             )
         else:
             leitungsauskunft_dir = project_root / "002_Leitungsauskunft"
             if not leitungsauskunft_dir.is_dir():
-                self.local_operator_folder_status_label.setText(
+                self.local_operator_status_label.setText(
                     "Im verbundenen Projekt wurde kein Ordner '002_Leitungsauskunft' gefunden."
                 )
             elif not rows:
-                self.local_operator_folder_status_label.setText(
+                self.local_operator_status_label.setText(
                     "In '002_Leitungsauskunft' wurden noch keine Betreiberordner gefunden."
                 )
             else:
-                self.local_operator_folder_status_label.setText(
-                    f"{len(rows)} lokale Ordner aus '002_Leitungsauskunft' gefunden."
+                self.local_operator_status_label.setText(
+                    f"{len(rows)} lokale Ordner gefunden. Diese kannst du hier projektweit mit Eintraegen aus der Betreiberliste verknuepfen."
                 )
 
         self._apply_table_text_filter(
-            self.local_operator_folder_table,
-            self.local_operator_folder_search_input.text(),
+            self.local_operator_table,
+            self.local_operator_search_input.text(),
         )
 
     def _set_local_operator_overlays(self, operators):
         self._local_operator_overlays = []
         for entry in operators or []:
             normalized = self._normalize_local_overlay_entry(entry)
-            if not normalized["operator_name"]:
-                continue
-            if not any((normalized["stand"], normalized["folder_path"])):
+            if not any(
+                (
+                    normalized["operator_name"],
+                    normalized["source_name"],
+                    normalized["validity"],
+                    normalized["stand"],
+                )
+            ):
                 continue
             self._local_operator_overlays.append(normalized)
 
-    def _current_operator_source_name(self) -> str:
-        if isinstance(self._external_operator_context, dict):
-            return str(self._external_operator_context.get("source_name", "") or "").strip()
-        return ""
-
     def _collect_local_operator_overlays_from_table(self) -> list[dict]:
         result = []
-        for row in range(self.operator_table.rowCount()):
-            source_name = ""
-            source_item = self.operator_table.item(row, 0)
-            if source_item is not None:
-                source_name = source_item.text().strip()
+        for row in range(self.local_operator_table.rowCount()):
+            folder_item = self.local_operator_table.item(row, 5)
+            folder_path = ""
+            if folder_item is not None:
+                folder_path = str(folder_item.data(Qt.UserRole) or "").strip()
 
-            operator_item = self.operator_table.item(row, 1)
+            source_item = self.local_operator_table.item(row, 2)
+            source_name = source_item.text().strip() if source_item else ""
+            operator_item = self.local_operator_table.item(row, 1)
             operator_name = operator_item.text().strip() if operator_item else ""
-            validity_item = self.operator_table.item(row, 2)
+            validity_item = self.local_operator_table.item(row, 3)
             validity = validity_item.text().strip() if validity_item else ""
-            stand_item = self.operator_table.item(row, 3)
+            stand_item = self.local_operator_table.item(row, 4)
             stand = stand_item.text().strip() if stand_item else ""
-            folder_path = self._operator_path_value(row)
-
-            if not operator_name or not any((stand, folder_path)):
+            if not any((operator_name, source_name, validity, stand)):
                 continue
 
             result.append(
@@ -720,22 +785,83 @@ class LayerConfigDialog(QDialog):
         return result
 
     def _store_current_local_operator_overlays_from_table(self):
-        current_source_name = self._current_operator_source_name()
-        current_source_token = self._normalized_source_name(current_source_name)
-        current_rows = self._collect_local_operator_overlays_from_table()
+        self._local_operator_overlays = self._collect_local_operator_overlays_from_table()
 
-        if not current_source_token and not current_rows:
+    def _assign_selected_external_operator_to_local_rows(self):
+        selected_local_rows = self.local_operator_table.selectionModel().selectedRows()
+        if not selected_local_rows:
+            QMessageBox.information(
+                self,
+                "Lokale Zuordnung",
+                "Bitte zuerst mindestens einen lokalen Ordner auswaehlen.",
+            )
             return
 
-        if current_source_token:
-            kept = [
-                entry
-                for entry in self._local_operator_overlays
-                if self._normalized_source_name(entry.get("source_name", "")) != current_source_token
-            ]
-        else:
-            kept = []
-        self._local_operator_overlays = kept + current_rows
+        selected_external_rows = self.operator_table.selectionModel().selectedRows()
+        if not selected_external_rows:
+            QMessageBox.information(
+                self,
+                "Lokale Zuordnung",
+                "Bitte zuerst im Tab 'Betreiberliste' einen Betreiber-Eintrag markieren.",
+            )
+            return
+
+        external_row = selected_external_rows[0].row()
+        operator_name = self.operator_table.item(external_row, 1).text().strip() if self.operator_table.item(external_row, 1) else ""
+        source_name = self.operator_table.item(external_row, 0).text().strip() if self.operator_table.item(external_row, 0) else ""
+        validity = self.operator_table.item(external_row, 2).text().strip() if self.operator_table.item(external_row, 2) else ""
+
+        if not operator_name:
+            QMessageBox.information(
+                self,
+                "Lokale Zuordnung",
+                "Der ausgewaehlte Betreiber-Eintrag enthaelt keinen Betreibername.",
+            )
+            return
+
+        for model_index in selected_local_rows:
+            row = model_index.row()
+            for col, value in ((1, operator_name), (2, source_name), (3, validity)):
+                item = self.local_operator_table.item(row, col)
+                if item is None:
+                    item = QTableWidgetItem()
+                    self.local_operator_table.setItem(row, col, item)
+                item.setText(value)
+
+        self._store_current_local_operator_overlays_from_table()
+        if self._external_operator_context is not None:
+            self._reload_selected_external_operator_source()
+        self._apply_table_text_filter(
+            self.local_operator_table,
+            self.local_operator_search_input.text(),
+        )
+
+    def _clear_selected_local_operator_rows(self):
+        selected_rows = self.local_operator_table.selectionModel().selectedRows()
+        if not selected_rows:
+            QMessageBox.information(
+                self,
+                "Lokale Zuordnung",
+                "Bitte zuerst mindestens einen lokalen Ordner auswaehlen.",
+            )
+            return
+
+        for model_index in selected_rows:
+            row = model_index.row()
+            for col in (1, 2, 3, 4):
+                item = self.local_operator_table.item(row, col)
+                if item is None:
+                    item = QTableWidgetItem()
+                    self.local_operator_table.setItem(row, col, item)
+                item.setText("")
+
+        self._store_current_local_operator_overlays_from_table()
+        if self._external_operator_context is not None:
+            self._reload_selected_external_operator_source()
+        self._apply_table_text_filter(
+            self.local_operator_table,
+            self.local_operator_search_input.text(),
+        )
 
     def _best_local_overlay_for_row(self, source_name: str, operator_name: str, validity: str = "") -> dict | None:
         operator_token = _normalized_operator_name(operator_name)
@@ -1119,6 +1245,10 @@ class LayerConfigDialog(QDialog):
                         hidden_path = str(item.data(Qt.UserRole) or "").strip()
                         if hidden_path and hidden_path != item.text():
                             row_values.append(hidden_path)
+                    if table is self.local_operator_table and col == 5:
+                        hidden_path = str(item.data(Qt.UserRole) or "").strip()
+                        if hidden_path and hidden_path != item.text():
+                            row_values.append(hidden_path)
                     continue
                 widget = table.cellWidget(row, col)
                 if isinstance(widget, QLineEdit):
@@ -1235,7 +1365,7 @@ class LayerConfigDialog(QDialog):
                     self._set_operator_path_item(row, text)
                 else:
                     item = QTableWidgetItem(text)
-                    if col == 0:
+                    if col in (0, 3):
                         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     if col == 1 and payload is not None:
                         item.setData(Qt.UserRole, payload)
@@ -1284,6 +1414,7 @@ class LayerConfigDialog(QDialog):
         if item is None:
             item = QTableWidgetItem()
             self.operator_table.setItem(row_index, 8, item)
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         item.setData(Qt.UserRole, full_path)
         item.setToolTip(full_path)
         item.setText(alias if full_path else "")
@@ -1807,6 +1938,7 @@ class LayerConfigDialog(QDialog):
 
     def _set_operators(self, operators):
         self._set_local_operator_overlays(operators)
+        self._refresh_local_operator_table()
 
     def _operators(self):
         self._store_current_local_operator_overlays_from_table()
@@ -4673,7 +4805,7 @@ class LayerConfigDialog(QDialog):
     def set_project_context_info(self, info: dict | None):
         if not isinstance(info, dict):
             self.project_context_group.setVisible(False)
-            self._refresh_local_operator_folder_table()
+            self._refresh_local_operator_table()
             return
 
         self.project_context_status_value.setText(str(info.get("status", "") or "-"))
@@ -4682,7 +4814,7 @@ class LayerConfigDialog(QDialog):
         self.project_context_layer_value.setText(str(info.get("layer_name", "") or "-"))
         self.project_context_note.setText(str(info.get("note", "") or "").strip())
         self.project_context_group.setVisible(True)
-        self._refresh_local_operator_folder_table()
+        self._refresh_local_operator_table()
 
 
 def _property_key(name: str) -> str:
