@@ -34,7 +34,7 @@ class ProjectStarterButlerDialog(QDialog):
         self.plugin = plugin
         self.layer_config_dialog = None
         self.current_layer = None
-        self.placeholder_label = None
+        self.placeholder_widget = None
         self._current_layer_signal_connected = False
 
         self.setWindowTitle("Projektstarter Butler")
@@ -45,8 +45,12 @@ class ProjectStarterButlerDialog(QDialog):
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
 
-        button_row = QHBoxLayout()
-        self.choose_project_button = QPushButton("Projektordner waehlen...")
+        self.button_row_widget = QWidget(self)
+        button_row = QHBoxLayout(self.button_row_widget)
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(8)
+
+        self.choose_project_button = QPushButton("Projektordner auswählen")
         self.choose_project_button.clicked.connect(self._choose_project)
         self.sync_plans_button = QPushButton("Leitungsauskunft aktualisieren")
         self.sync_plans_button.clicked.connect(self._sync_plans)
@@ -60,7 +64,7 @@ class ProjectStarterButlerDialog(QDialog):
         ):
             button_row.addWidget(button)
         button_row.addStretch(1)
-        root_layout.addLayout(button_row)
+        root_layout.addWidget(self.button_row_widget)
 
         self.layer_host = QWidget(self)
         self.layer_host_layout = QVBoxLayout(self.layer_host)
@@ -98,10 +102,64 @@ class ProjectStarterButlerDialog(QDialog):
             self.layer_host_layout.removeWidget(self.layer_config_dialog)
             self.layer_config_dialog.deleteLater()
             self.layer_config_dialog = None
-        if self.placeholder_label is not None:
-            self.layer_host_layout.removeWidget(self.placeholder_label)
-            self.placeholder_label.deleteLater()
-            self.placeholder_label = None
+        if self.placeholder_widget is not None:
+            self.layer_host_layout.removeWidget(self.placeholder_widget)
+            self.placeholder_widget.deleteLater()
+            self.placeholder_widget = None
+
+    def _build_placeholder_card(self, title, description, button_text=None, button_slot=None):
+        host = QWidget(self.layer_host)
+        host_layout = QVBoxLayout(host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.addStretch(1)
+
+        card = QWidget(host)
+        card.setObjectName("psbPlaceholderCard")
+        card.setMaximumWidth(660)
+        card.setStyleSheet(
+            "QWidget#psbPlaceholderCard {"
+            "background: #f7f3ea;"
+            "border: 1px solid #d7cfbf;"
+            "border-radius: 22px;"
+            "}"
+        )
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(40, 36, 40, 36)
+        card_layout.setSpacing(14)
+
+        title_label = QLabel(title, card)
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("font-size: 26px; font-weight: 700; color: #2f281f;")
+        card_layout.addWidget(title_label)
+
+        description_label = QLabel(description, card)
+        description_label.setWordWrap(True)
+        description_label.setAlignment(Qt.AlignCenter)
+        description_label.setStyleSheet("font-size: 14px; color: #5b5345;")
+        card_layout.addWidget(description_label)
+
+        if button_text and button_slot is not None:
+            action_button = QPushButton(button_text, card)
+            action_button.clicked.connect(button_slot)
+            action_button.setMinimumHeight(42)
+            action_button.setMinimumWidth(240)
+            action_button.setStyleSheet("padding: 8px 18px; font-weight: 600;")
+            button_row = QHBoxLayout()
+            button_row.setContentsMargins(0, 8, 0, 0)
+            button_row.addStretch(1)
+            button_row.addWidget(action_button)
+            button_row.addStretch(1)
+            card_layout.addLayout(button_row)
+
+        card_row = QHBoxLayout()
+        card_row.setContentsMargins(0, 0, 0, 0)
+        card_row.addStretch(1)
+        card_row.addWidget(card)
+        card_row.addStretch(1)
+        host_layout.addLayout(card_row)
+        host_layout.addStretch(1)
+        return host
 
     def closeEvent(self, event):
         if self._current_layer_signal_connected:
@@ -120,15 +178,28 @@ class ProjectStarterButlerDialog(QDialog):
         self._clear_layer_host()
         self.current_layer = layer
 
-        if layer is None:
-            self.placeholder_label = QLabel(
-                "Aktiviere in QGIS einen Vektor-Layer. Falls keiner aktiv ist, zeigt der Dialog "
-                "den Standardlayer 'Fremdleitungen' aus dem Projekt an."
+        if self.plugin._current_project_dir is None:
+            self.placeholder_widget = self._build_placeholder_card(
+                "Step 1: Projekt auswählen",
+                (
+                    "Wähle zuerst den Projektordner aus. Danach verbindet der Projektstarter Butler "
+                    "das Projekt und lädt die Betreiber- und Layer-Konfiguration direkt im Dialog."
+                ),
+                button_text="Projektordner auswählen",
+                button_slot=self._choose_project,
             )
-            self.placeholder_label.setWordWrap(True)
-            self.placeholder_label.setAlignment(Qt.AlignCenter)
-            self.placeholder_label.setMinimumHeight(220)
-            self.layer_host_layout.addWidget(self.placeholder_label)
+            self.layer_host_layout.addWidget(self.placeholder_widget, 1)
+            return
+
+        if layer is None:
+            self.placeholder_widget = self._build_placeholder_card(
+                "Aktiven Layer auswählen",
+                (
+                    "Aktiviere in QGIS einen Vektor-Layer. Falls keiner aktiv ist, zeigt der Dialog "
+                    "den Standardlayer 'Fremdleitungen' aus dem Projekt an."
+                ),
+            )
+            self.layer_host_layout.addWidget(self.placeholder_widget, 1)
             return
 
         dialog = LayerConfigDialog(layer, self)
@@ -160,7 +231,8 @@ class ProjectStarterButlerDialog(QDialog):
         project_dir = self.plugin._current_project_dir
         panel_layer = self._panel_layer()
 
-        self.choose_project_button.setVisible(project_dir is None)
+        self.button_row_widget.setVisible(project_dir is not None)
+        self.choose_project_button.setVisible(False)
         self.sync_plans_button.setEnabled(project_dir is not None)
         self.disconnect_button.setEnabled(project_dir is not None)
         self.disconnect_button.setVisible(project_dir is not None)
@@ -170,6 +242,10 @@ class ProjectStarterButlerDialog(QDialog):
             self._rebuild_layer_panel(panel_layer)
         elif self.layer_config_dialog is not None:
             self.layer_config_dialog.set_project_context_info(self._project_context_info(panel_layer))
+
+        save_button = self.button_box.button(QDialogButtonBox.Save)
+        if save_button is not None:
+            save_button.setVisible(self.layer_config_dialog is not None)
 
     def _choose_project(self):
         self.plugin._select_and_connect_project()
