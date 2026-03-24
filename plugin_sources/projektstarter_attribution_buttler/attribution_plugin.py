@@ -48,6 +48,15 @@ from qgis.core import (
     QgsVectorLayer,
 )
 
+from .project_profile import (
+    expand_config_from_storage,
+    load_layer_profile_config,
+    load_shared_settings,
+    normalize_config_for_storage,
+    save_layer_profile_config,
+    save_shared_settings_from_config,
+)
+
 
 PLUGIN_MENU = "&AttributionButler"
 PROPERTY_PREFIX = "nextcloud_form/"
@@ -449,6 +458,7 @@ class LayerConfigDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        self.button_box = buttons
         root_layout.addWidget(buttons)
 
         # Navigation order on the left: Betreiberliste, Datenquellen, Konfiguration.
@@ -4574,7 +4584,14 @@ def _parse_roots(value) -> list[str]:
 
 
 def _load_user_config() -> dict:
-    return _load_nextcloud_settings_for_prefix(_master_setting_key)
+    cfg = dict(load_shared_settings())
+    local_settings = _load_nextcloud_settings_for_prefix(_master_setting_key)
+    for key, value in local_settings.items():
+        if key == "nextcloud_app_password":
+            cfg[key] = value
+        elif key not in cfg or not cfg[key]:
+            cfg[key] = value
+    return cfg
 
 
 def _normalize_operator_entry(entry) -> dict:
@@ -4796,6 +4813,9 @@ def _parse_data_sources(value) -> list[dict]:
 
 def _load_layer_config(layer) -> dict:
     cfg = dict(DEFAULT_CONFIG)
+    profile_cfg = load_layer_profile_config(layer)
+    if isinstance(profile_cfg, dict):
+        cfg.update(profile_cfg)
     for key, default in DEFAULT_CONFIG.items():
         raw = layer.customProperty(_property_key(key), default)
         if key in ("overwrite_existing_values", "fill_on_form_open"):
@@ -4808,7 +4828,7 @@ def _load_layer_config(layer) -> dict:
             cfg[key] = _parse_data_sources(raw)
         else:
             cfg[key] = str(raw or "").strip()
-    return cfg
+    return expand_config_from_storage(cfg)
 
 
 def _merged_with_user_config(config: dict, user_config: dict | None = None) -> dict:
@@ -4825,8 +4845,9 @@ def _effective_layer_config(layer) -> dict:
 
 
 def _save_layer_config(layer, config: dict):
+    portable_config = normalize_config_for_storage(config)
     for key in DEFAULT_CONFIG.keys():
-        value = config.get(key, DEFAULT_CONFIG[key])
+        value = portable_config.get(key, DEFAULT_CONFIG[key])
         if key in ("local_nextcloud_roots", "operators", "external_data_sources"):
             layer.setCustomProperty(_property_key(key), json.dumps(value))
         elif key in ("overwrite_existing_values", "fill_on_form_open"):
@@ -5082,6 +5103,135 @@ def _remove_form_init_code_if_managed(layer):
         layer.setEditFormConfig(config)
 
 
+def _store_project_profile(layer, config: dict):
+    try:
+        save_shared_settings_from_config(config)
+    except Exception:
+        pass
+
+    try:
+        save_layer_profile_config(layer, config)
+    except Exception:
+        pass
+
+
+def _apply_configuration_to_layer(iface, layer, config: dict, merged_operator_entries=None, parent=None):
+    if not config["nextcloud_base_url"] or not config["nextcloud_user"] or not config["nextcloud_app_password"]:
+        QMessageBox.warning(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            "Nextcloud URL, Benutzer und App-Passwort fehlen. "
+            "Bitte im Projektprofil oder in Trassify Master Tools > Einstellungen > Nextcloud setzen.",
+        )
+        return False
+    if not config["path_field_name"]:
+        QMessageBox.warning(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            "Pfadfeld ist erforderlich.",
+        )
+        return False
+
+    target_fields = [
+        config.get("file_link_field_name", ""),
+        config.get("folder_link_field_name", ""),
+        config.get("name_field_name", ""),
+        config.get("stand_field_name", ""),
+        config.get("operator_contact_field_name", ""),
+        config.get("operator_phone_field_name", ""),
+        config.get("operator_email_field_name", ""),
+        config.get("operator_fault_field_name", ""),
+        config.get("operator_validity_field_name", ""),
+        config.get("operator_stand_field_name", ""),
+    ]
+    if not any(str(name or "").strip() for name in target_fields):
+        QMessageBox.warning(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            "Mindestens ein Zielfeld muss gesetzt sein.",
+        )
+        return False
+
+    missing = _missing_fields(layer, config)
+    if missing:
+        QMessageBox.warning(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            "Diese Felder fehlen im Layer:\n- " + "\n- ".join(missing),
+        )
+        return False
+
+    layer_config = dict(config)
+    for key in USER_CONFIG_KEYS:
+        if key == "local_nextcloud_roots":
+            layer_config[key] = []
+        else:
+            layer_config[key] = ""
+    _save_layer_config(layer, layer_config)
+    _apply_form_init_code(layer)
+    _store_project_profile(layer, config)
+
+    operator_name_field = str(config.get("operator_name_field_name", "") or "").strip()
+    has_operator_targets = any(
+        str(config.get(key, "") or "").strip()
+        for key in (
+            "operator_contact_field_name",
+            "operator_phone_field_name",
+            "operator_email_field_name",
+            "operator_fault_field_name",
+            "operator_validity_field_name",
+            "operator_stand_field_name",
+        )
+    )
+    can_sync_existing = bool(operator_name_field and has_operator_targets)
+    if can_sync_existing:
+        answer = QMessageBox.question(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            "Sollen bestehende Datensaetze im Layer jetzt mit der Betreiberliste synchronisiert werden?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if answer == QMessageBox.Yes:
+            try:
+                sync_result = _sync_layer_operator_fields(
+                    layer,
+                    config,
+                    operator_entries=merged_operator_entries,
+                )
+                if sync_result["updated_values"] > 0:
+                    suffix = ""
+                    if sync_result["pending_edits"]:
+                        suffix = " (Aenderungen sind noch nicht gespeichert.)"
+                    iface.messageBar().pushMessage(
+                        "AttributionButler",
+                        f"Synchronisiert: {sync_result['updated_rows']} Datensaetze, {sync_result['updated_values']} Feldwerte{suffix}",
+                        level=Qgis.Info,
+                        duration=6,
+                    )
+                else:
+                    iface.messageBar().pushMessage(
+                        "AttributionButler",
+                        "Keine Aenderungen noetig: Betreiberdaten sind bereits aktuell.",
+                        level=Qgis.Info,
+                        duration=5,
+                    )
+            except Exception as exc:
+                QMessageBox.warning(
+                    parent or iface.mainWindow(),
+                    "AttributionButler",
+                    f"Synchronisierung fehlgeschlagen: {exc}",
+                )
+
+    iface.messageBar().pushMessage(
+        "AttributionButler",
+        f"Layer '{layer.name()}' ist verbunden.",
+        level=Qgis.Success,
+        duration=5,
+    )
+    return True
+
+
 class NextcloudFormPlugin:
     def __init__(self, iface):
         self.iface = iface
@@ -5174,117 +5324,12 @@ class NextcloudFormPlugin:
         if dialog.exec_() != QDialog.Accepted:
             return
 
-        config = dialog.values()
-        if not config["nextcloud_base_url"] or not config["nextcloud_user"] or not config["nextcloud_app_password"]:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "AttributionButler",
-                "Nextcloud URL, Benutzer und App-Passwort fehlen. "
-                "Bitte in Trassify Master Tools > Einstellungen > Nextcloud setzen.",
-            )
-            return
-        if not config["path_field_name"]:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "AttributionButler",
-                "Pfadfeld ist erforderlich.",
-            )
-            return
-        target_fields = [
-            config.get("file_link_field_name", ""),
-            config.get("folder_link_field_name", ""),
-            config.get("name_field_name", ""),
-            config.get("stand_field_name", ""),
-            config.get("operator_contact_field_name", ""),
-            config.get("operator_phone_field_name", ""),
-            config.get("operator_email_field_name", ""),
-            config.get("operator_fault_field_name", ""),
-            config.get("operator_validity_field_name", ""),
-            config.get("operator_stand_field_name", ""),
-        ]
-        if not any(str(name or "").strip() for name in target_fields):
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "AttributionButler",
-                "Mindestens ein Zielfeld muss gesetzt sein.",
-            )
-            return
-
-        missing = _missing_fields(layer, config)
-        if missing:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "AttributionButler",
-                "Diese Felder fehlen im Layer:\n- " + "\n- ".join(missing),
-            )
-            return
-
-        layer_config = dict(config)
-        for key in USER_CONFIG_KEYS:
-            if key == "local_nextcloud_roots":
-                layer_config[key] = []
-            else:
-                layer_config[key] = ""
-        _save_layer_config(layer, layer_config)
-        _apply_form_init_code(layer)
-
-        operator_name_field = str(config.get("operator_name_field_name", "") or "").strip()
-        has_operator_targets = any(
-            str(config.get(key, "") or "").strip()
-            for key in (
-                "operator_contact_field_name",
-                "operator_phone_field_name",
-                "operator_email_field_name",
-                "operator_fault_field_name",
-                "operator_validity_field_name",
-                "operator_stand_field_name",
-            )
-        )
-        can_sync_existing = bool(operator_name_field and has_operator_targets)
-        if can_sync_existing:
-            answer = QMessageBox.question(
-                self.iface.mainWindow(),
-                "AttributionButler",
-                "Sollen bestehende Datensaetze im Layer jetzt mit der Betreiberliste synchronisiert werden?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if answer == QMessageBox.Yes:
-                try:
-                    sync_result = _sync_layer_operator_fields(
-                        layer,
-                        config,
-                        operator_entries=dialog.merged_operator_entries(),
-                    )
-                    if sync_result["updated_values"] > 0:
-                        suffix = ""
-                        if sync_result["pending_edits"]:
-                            suffix = " (Aenderungen sind noch nicht gespeichert.)"
-                        self.iface.messageBar().pushMessage(
-                            "AttributionButler",
-                            f"Synchronisiert: {sync_result['updated_rows']} Datensaetze, {sync_result['updated_values']} Feldwerte{suffix}",
-                            level=Qgis.Info,
-                            duration=6,
-                        )
-                    else:
-                        self.iface.messageBar().pushMessage(
-                            "AttributionButler",
-                            "Keine Aenderungen noetig: Betreiberdaten sind bereits aktuell.",
-                            level=Qgis.Info,
-                            duration=5,
-                        )
-                except Exception as exc:
-                    QMessageBox.warning(
-                        self.iface.mainWindow(),
-                        "AttributionButler",
-                        f"Synchronisierung fehlgeschlagen: {exc}",
-                    )
-
-        self.iface.messageBar().pushMessage(
-            "AttributionButler",
-            f"Layer '{layer.name()}' ist verbunden.",
-            level=Qgis.Success,
-            duration=5,
+        _apply_configuration_to_layer(
+            self.iface,
+            layer,
+            dialog.values(),
+            merged_operator_entries=dialog.merged_operator_entries(),
+            parent=self.iface.mainWindow(),
         )
 
     def unbind_active_layer(self):

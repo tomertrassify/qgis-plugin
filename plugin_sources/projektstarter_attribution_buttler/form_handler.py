@@ -15,6 +15,8 @@ from qgis.PyQt.QtCore import Qt, QStringListModel, QSettings
 from qgis.PyQt.QtWidgets import QComboBox, QCompleter, QLineEdit, QMessageBox, QWidget
 from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsVectorLayer
 
+from .project_profile import expand_config_from_storage, load_layer_profile_config, load_shared_settings
+
 
 PROPERTY_PREFIX = "nextcloud_form/"
 LOCAL_ROOT_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*lokale\s*sync-roots\s*\}\}", flags=re.IGNORECASE)
@@ -139,7 +141,14 @@ def _parse_roots(value) -> list[str]:
 
 
 def _load_user_config() -> dict:
-    return _load_nextcloud_settings_for_prefix(_master_setting_key)
+    cfg = dict(load_shared_settings())
+    local_settings = _load_nextcloud_settings_for_prefix(_master_setting_key)
+    for key, value in local_settings.items():
+        if key == "nextcloud_app_password":
+            cfg[key] = value
+        elif key not in cfg or not cfg[key]:
+            cfg[key] = value
+    return cfg
 
 
 def _normalize_operator_entry(entry) -> dict:
@@ -361,6 +370,9 @@ def _parse_data_sources(value) -> list[dict]:
 
 def _layer_config(layer) -> dict:
     cfg = dict(DEFAULT_CONFIG)
+    profile_cfg = load_layer_profile_config(layer)
+    if isinstance(profile_cfg, dict):
+        cfg.update(profile_cfg)
     for key, default in DEFAULT_CONFIG.items():
         raw = layer.customProperty(_property_key(key), default)
         if key in ("overwrite_existing_values", "fill_on_form_open"):
@@ -377,7 +389,7 @@ def _layer_config(layer) -> dict:
     for key in USER_CONFIG_KEYS:
         if key in user_cfg:
             cfg[key] = user_cfg[key]
-    return cfg
+    return expand_config_from_storage(cfg)
 
 
 def _normalize_path(path: str) -> str:
