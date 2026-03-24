@@ -33,8 +33,8 @@ from qgis.PyQt.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QStackedWidget,
+    QSplitter,
     QStyle,
-    QToolButton,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -178,64 +178,27 @@ class LayerConfigDialog(QDialog):
         self._last_external_load_debug = []
 
         self.setWindowTitle("AttributionButler konfigurieren")
-        self.resize(920, 640)
+        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "icon.svg")))
+        self.resize(980, 700)
 
         root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+        root_layout.setSpacing(8)
 
-        logo_row = QHBoxLayout()
-        logo_row.setContentsMargins(0, 0, 0, 0)
-        root_layout.addLayout(logo_row)
+        content_splitter = QSplitter(Qt.Horizontal, self)
+        content_splitter.setChildrenCollapsible(False)
+        root_layout.addWidget(content_splitter, 1)
 
-        logo_label = QLabel()
-        logo_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        logo_icon = QIcon(os.path.join(os.path.dirname(__file__), "trassify-logo.svg"))
-        logo_pixmap = logo_icon.pixmap(150, 40)
-        if not logo_pixmap.isNull():
-            logo_label.setPixmap(logo_pixmap)
-            logo_label.setMinimumHeight(42)
-        logo_row.addWidget(logo_label, 0, Qt.AlignLeft)
-        logo_row.addStretch(1)
-
-        pages_layout = QHBoxLayout()
-        pages_layout.setContentsMargins(0, 0, 0, 0)
-        root_layout.addLayout(pages_layout, 1)
-
-        self.nav_list = QListWidget()
-        self.nav_list.setMinimumWidth(210)
-        self.nav_list.setMaximumWidth(260)
+        self.nav_list = QListWidget(self)
+        self.nav_list.setFixedWidth(190)
         self.nav_list.setIconSize(QSize(18, 18))
         self.nav_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.nav_list.setStyleSheet(
-            """
-            QListWidget {
-                border: 1px solid #b5bcc3;
-                border-radius: 8px;
-                background: #d9dde1;
-                color: #1f2328;
-                outline: none;
-            }
-            QListWidget::item {
-                padding: 10px 8px;
-                margin: 2px 3px;
-                border-radius: 6px;
-                color: #1f2328;
-            }
-            QListWidget::item:hover {
-                background: #c8ced5;
-            }
-            QListWidget::item:selected {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            QListWidget::item:!enabled {
-                color: #7d858d;
-            }
-            """
-        )
-        pages_layout.addWidget(self.nav_list)
+        content_splitter.addWidget(self.nav_list)
 
-        self.page_stack = QStackedWidget()
-        pages_layout.addWidget(self.page_stack, 1)
+        self.page_stack = QStackedWidget(self)
+        content_splitter.addWidget(self.page_stack)
+        content_splitter.setStretchFactor(0, 0)
+        content_splitter.setStretchFactor(1, 1)
         self.nav_list.currentItemChanged.connect(self._on_nav_item_changed)
 
         config_tab = QWidget()
@@ -348,7 +311,7 @@ class LayerConfigDialog(QDialog):
         )
         local_operators_layout.addWidget(self.operator_search_input)
 
-        self.operator_table = QTableWidget(0, 10)
+        self.operator_table = QTableWidget(0, 9)
         self.operator_table.setHorizontalHeaderLabels(
             [
                 "Datenquelle",
@@ -360,43 +323,15 @@ class LayerConfigDialog(QDialog):
                 "E-Mail",
                 "Störnummer",
                 "Pfad",
-                "",
             ]
         )
-        self.operator_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.operator_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.operator_table.verticalHeader().setVisible(False)
-        self.operator_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.operator_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.operator_table.setWordWrap(False)
-        self.operator_table.setAlternatingRowColors(True)
-        self.operator_table.setSortingEnabled(True)
-        self.operator_table.setStyleSheet(
-            """
-            QTableWidget {
-                border: 1px solid palette(mid);
-                border-radius: 6px;
-                gridline-color: palette(midlight);
-                selection-background-color: #a6c4a1;
-                selection-color: #1f2b1f;
-            }
-            QTableWidget::item:selected {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            QTableWidget::item:selected:active {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            QTableWidget::item:selected:!active {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            """
+        self._configure_standard_table(
+            self.operator_table,
+            selection_mode=QAbstractItemView.ExtendedSelection,
         )
         header = self.operator_table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setMinimumSectionSize(28)
+        header.setMinimumSectionSize(90)
         header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         header.setSectionResizeMode(0, QHeaderView.Interactive)
         header.setSectionResizeMode(1, QHeaderView.Interactive)
@@ -407,7 +342,6 @@ class LayerConfigDialog(QDialog):
         header.setSectionResizeMode(6, QHeaderView.Interactive)
         header.setSectionResizeMode(7, QHeaderView.Interactive)
         header.setSectionResizeMode(8, QHeaderView.Interactive)
-        header.setSectionResizeMode(9, QHeaderView.Fixed)
         header.resizeSection(0, 190)
         header.resizeSection(1, 220)
         header.resizeSection(2, 150)
@@ -416,8 +350,7 @@ class LayerConfigDialog(QDialog):
         header.resizeSection(5, 170)
         header.resizeSection(6, 220)
         header.resizeSection(7, 170)
-        header.resizeSection(8, 340)
-        header.resizeSection(9, 34)
+        header.resizeSection(8, 360)
         header.setTextElideMode(Qt.ElideNone)
         # Kompakte Projektansicht: Betreibername + Stand + Quelle + Pfad.
         self.operator_table.setColumnHidden(2, True)
@@ -431,19 +364,25 @@ class LayerConfigDialog(QDialog):
         local_operators_layout.addWidget(self.operator_table, 1)
 
         operator_buttons = QHBoxLayout()
+        add_operator_button = QPushButton("Zeile hinzufuegen")
+        add_operator_button.clicked.connect(self._add_operator_row)
+        import_operator_button = QPushButton("Importieren...")
+        import_operator_button.clicked.connect(self._import_operators)
+        export_operator_button = QPushButton("Exportieren...")
+        export_operator_button.clicked.connect(self._export_operators)
+        choose_folder_button = QPushButton("Ordner fuer Auswahl...")
+        choose_folder_button.clicked.connect(self._choose_folder_for_selected_row)
         bulk_assign_button = QPushButton("Ueberordner zuordnen...")
         bulk_assign_button.setToolTip(
             "Waehlt einen Ueberordner und uebernimmt passende Betreiberordner automatisch in 'Pfad'."
         )
         bulk_assign_button.clicked.connect(self._bulk_assign_operator_paths_from_parent)
-        trash_icon_flag = getattr(QStyle, "SP_TrashIcon", QStyle.SP_DialogCloseButton)
-        remove_operator_button = QToolButton()
-        remove_operator_button.setIcon(self.style().standardIcon(trash_icon_flag))
-        remove_operator_button.setToolTip("Ausgewaehlte Zeilen loeschen")
-        remove_operator_button.setAutoRaise(True)
-        remove_operator_button.setIconSize(QSize(18, 18))
-        remove_operator_button.setFixedSize(QSize(30, 26))
+        remove_operator_button = QPushButton("Ausgewaehlte Zeilen loeschen")
         remove_operator_button.clicked.connect(self._remove_selected_operator_row)
+        operator_buttons.addWidget(add_operator_button)
+        operator_buttons.addWidget(import_operator_button)
+        operator_buttons.addWidget(export_operator_button)
+        operator_buttons.addWidget(choose_folder_button)
         operator_buttons.addWidget(bulk_assign_button)
         operator_buttons.addWidget(remove_operator_button)
         operator_buttons.addStretch(1)
@@ -455,7 +394,7 @@ class LayerConfigDialog(QDialog):
         external_operators_layout.setContentsMargins(0, 0, 0, 0)
 
         self.external_operator_hint = QLabel(
-            "Waehle oben eine Data-Quelle. Dann kannst du die angebundenen Betreiberdaten laden und bearbeiten."
+            "Waehle oben eine Datenquelle. Dann kannst du die angebundenen Betreiberdaten laden und bearbeiten."
         )
         self.external_operator_hint.setWordWrap(True)
         external_operators_layout.addWidget(self.external_operator_hint)
@@ -495,48 +434,7 @@ class LayerConfigDialog(QDialog):
                 "Gültigk.",
             ]
         )
-        self.external_operator_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.external_operator_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.external_operator_table.verticalHeader().setVisible(False)
-        self.external_operator_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.external_operator_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.external_operator_table.setWordWrap(False)
-        self.external_operator_table.setAlternatingRowColors(True)
-        self.external_operator_table.setSortingEnabled(True)
-        self.external_operator_table.setStyleSheet(
-            """
-            QTableWidget {
-                border: 1px solid palette(mid);
-                border-radius: 6px;
-                gridline-color: palette(midlight);
-                selection-background-color: #a6c4a1;
-                selection-color: #1f2b1f;
-            }
-            QTableWidget::item:selected {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            QTableWidget::item:selected:active {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            QTableWidget::item:selected:!active {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            QTableWidget::indicator {
-                width: 16px;
-                height: 16px;
-                border: 1px solid #9aa4ad;
-                border-radius: 4px;
-                background: #eef1f4;
-            }
-            QTableWidget::indicator:checked {
-                border: 1px solid #7f9f7c;
-                background: #a6c4a1;
-            }
-            """
-        )
+        self._configure_standard_table(self.external_operator_table)
         ext_header = self.external_operator_table.horizontalHeader()
         ext_header.setStretchLastSection(False)
         ext_header.setMinimumSectionSize(90)
@@ -570,33 +468,11 @@ class LayerConfigDialog(QDialog):
         self.external_operator_suggest_missing_button.clicked.connect(
             self._suggest_missing_external_search_entries
         )
-        add_icon = QIcon.fromTheme("list-add")
-        if add_icon.isNull():
-            add_icon = self.style().standardIcon(
-                getattr(QStyle, "SP_FileDialogNewFolder", QStyle.SP_FileIcon)
-            )
-        self.external_operator_add_row_button = QToolButton()
-        self.external_operator_add_row_button.setIcon(add_icon)
-        self.external_operator_add_row_button.setToolTip("Neue Zeile in Quelle")
-        self.external_operator_add_row_button.setAutoRaise(True)
-        self.external_operator_add_row_button.setIconSize(QSize(18, 18))
-        self.external_operator_add_row_button.setFixedSize(QSize(30, 26))
+        self.external_operator_add_row_button = QPushButton("Zeile hinzufuegen")
         self.external_operator_add_row_button.clicked.connect(self._add_external_operator_row)
-        ext_trash_icon_flag = getattr(QStyle, "SP_TrashIcon", QStyle.SP_DialogCloseButton)
-        self.external_operator_remove_row_button = QToolButton()
-        self.external_operator_remove_row_button.setIcon(self.style().standardIcon(ext_trash_icon_flag))
-        self.external_operator_remove_row_button.setToolTip("Ausgewaehlte Zeile in Quelle loeschen")
-        self.external_operator_remove_row_button.setAutoRaise(True)
-        self.external_operator_remove_row_button.setIconSize(QSize(18, 18))
-        self.external_operator_remove_row_button.setFixedSize(QSize(30, 26))
+        self.external_operator_remove_row_button = QPushButton("Zeile loeschen")
         self.external_operator_remove_row_button.clicked.connect(self._remove_selected_external_operator_row)
-        reload_icon_flag = getattr(QStyle, "SP_BrowserReload", QStyle.SP_BrowserStop)
-        self.external_operator_save_button = QToolButton()
-        self.external_operator_save_button.setIcon(self.style().standardIcon(reload_icon_flag))
-        self.external_operator_save_button.setToolTip("Aenderungen in Quelle speichern")
-        self.external_operator_save_button.setAutoRaise(True)
-        self.external_operator_save_button.setIconSize(QSize(18, 18))
-        self.external_operator_save_button.setFixedSize(QSize(30, 26))
+        self.external_operator_save_button = QPushButton("Aenderungen speichern")
         self.external_operator_save_button.clicked.connect(self._save_external_operator_changes)
         external_buttons.addWidget(self.external_operator_reload_button)
         external_buttons.addWidget(self.external_operator_add_to_local_button)
@@ -673,9 +549,9 @@ class LayerConfigDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root_layout.addWidget(buttons)
 
-        # Navigation order on the left: Betreiberliste, Data, Konfiguration.
+        # Navigation order on the left: Betreiberliste, Datenquellen, Konfiguration.
         self._add_nav_item("Betreiberliste", operators_icon, self._operators_page_index)
-        self._add_nav_item("Data", data_icon, self._data_page_index)
+        self._add_nav_item("Datenquellen", data_icon, self._data_page_index)
         self._add_nav_item("Konfiguration", config_icon, self._config_page_index)
         self._refresh_operator_source_selector()
         self.nav_list.setCurrentRow(0)
@@ -717,6 +593,24 @@ class LayerConfigDialog(QDialog):
             for path in DEFAULT_CONFIG.get("local_nextcloud_roots", [])
             if str(path or "").strip()
         ]
+
+    def _configure_standard_table(
+        self,
+        table: QTableWidget,
+        selection_mode: QAbstractItemView.SelectionMode = QAbstractItemView.SingleSelection,
+        editable: bool = True,
+        sortable: bool = True,
+    ):
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(selection_mode)
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().setVisible(False)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        table.setWordWrap(False)
+        table.setSortingEnabled(sortable)
+        if not editable:
+            table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
     def _make_field_combo(self) -> QComboBox:
         combo = QComboBox()
@@ -1020,8 +914,8 @@ class LayerConfigDialog(QDialog):
 
     def _set_operator_table_visual_order(self):
         header = self.operator_table.horizontalHeader()
-        # Sichtbare Reihenfolge: Betreibername | Stand | Datenquelle | Pfad | Ordnerbutton
-        desired = [1, 3, 0, 8, 9, 2, 4, 5, 6, 7]
+        # Sichtbare Reihenfolge: Betreibername | Stand | Datenquelle | Pfad
+        desired = [1, 3, 0, 8, 2, 4, 5, 6, 7]
         for target_visual_index, logical_index in enumerate(desired):
             current_visual_index = header.visualIndex(logical_index)
             if current_visual_index < 0 or current_visual_index == target_visual_index:
@@ -1126,7 +1020,6 @@ class LayerConfigDialog(QDialog):
                     self._set_operator_path_item(row, text)
                 else:
                     self.operator_table.setItem(row, col, QTableWidgetItem(text))
-            self._install_operator_folder_button(row)
             self.operator_table.setCurrentCell(row, 1)
         finally:
             if sorting_enabled:
@@ -1246,26 +1139,6 @@ class LayerConfigDialog(QDialog):
                 self.operator_table.blockSignals(old_block)
 
         self._refilter_external_operator_table()
-
-    def _install_operator_folder_button(self, row_index: int):
-        button = QToolButton(self.operator_table)
-        button.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        button.setToolTip("Ordner fuer diese Zeile waehlen")
-        button.setAutoRaise(True)
-        button.setFixedSize(QSize(24, 20))
-        button.setIconSize(QSize(14, 14))
-        button.clicked.connect(self._choose_folder_from_row_button)
-        self.operator_table.setCellWidget(row_index, 9, button)
-
-    def _choose_folder_from_row_button(self):
-        sender = self.sender()
-        if sender is None:
-            return
-        for row_index in range(self.operator_table.rowCount()):
-            if self.operator_table.cellWidget(row_index, 9) is sender:
-                self.operator_table.setCurrentCell(row_index, 8)
-                self._choose_folder_for_row(row_index)
-                return
 
     def _remove_selected_operator_row(self):
         selected = self.operator_table.selectionModel().selectedRows()
@@ -1832,7 +1705,7 @@ class LayerConfigDialog(QDialog):
             normalized = _normalize_data_source_entry(source)
             source_name = self._source_display_name(normalized, idx)
             suffix = "" if _to_bool(normalized.get("enabled", True), True) else " (inaktiv)"
-            self.operator_source_combo.addItem(f"Data: {source_name}{suffix}", f"external:{idx}")
+            self.operator_source_combo.addItem(f"Datenquelle: {source_name}{suffix}", f"external:{idx}")
 
         restore_index = self.operator_source_combo.findData(current_key)
         if restore_index < 0:
@@ -2076,7 +1949,7 @@ class LayerConfigDialog(QDialog):
 
         selected = self._selected_external_source_entry()
         if selected is None:
-            self.external_operator_hint.setText("Waehle oben eine angebundene Data-Quelle aus.")
+            self.external_operator_hint.setText("Waehle oben eine angebundene Datenquelle aus.")
             self.external_operator_add_to_local_button.setEnabled(False)
             self.external_operator_suggest_missing_button.setEnabled(False)
             self.external_operator_save_button.setEnabled(False)
@@ -2255,7 +2128,7 @@ class LayerConfigDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Betreiberliste",
-                "Bitte zuerst eine Data-Quelle auswaehlen und laden.",
+                "Bitte zuerst eine Datenquelle auswaehlen und laden.",
             )
             return
 
@@ -2287,7 +2160,7 @@ class LayerConfigDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Betreiberliste",
-                "Bitte zuerst eine Data-Quelle auswaehlen und laden.",
+                "Bitte zuerst eine Datenquelle auswaehlen und laden.",
             )
             return
 
@@ -2405,7 +2278,7 @@ class LayerConfigDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Betreiberliste",
-                "Bitte zuerst eine Data-Quelle auswaehlen und laden.",
+                "Bitte zuerst eine Datenquelle auswaehlen und laden.",
             )
             return
 
@@ -3366,7 +3239,7 @@ class LayerConfigDialog(QDialog):
 
     def _prompt_pick_external_operator(self, entries: list[dict]):
         dialog = QDialog(self)
-        dialog.setWindowTitle("Betreiber aus Data uebernehmen")
+        dialog.setWindowTitle("Betreiber aus Datenquelle uebernehmen")
         dialog.resize(760, 460)
 
         layout = QVBoxLayout(dialog)
@@ -3385,11 +3258,7 @@ class LayerConfigDialog(QDialog):
                 "Quelle",
             ]
         )
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
-        table.setAlternatingRowColors(True)
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.verticalHeader().setVisible(False)
+        self._configure_standard_table(table, editable=False, sortable=False)
         header = table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.Interactive)
@@ -3449,7 +3318,7 @@ class LayerConfigDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Betreiber",
-                "Keine Betreiberdaten aus verbundenen Data-Quellen gefunden.",
+                "Keine Betreiberdaten aus verbundenen Datenquellen gefunden.",
             )
             return
 
@@ -3539,37 +3408,7 @@ class LayerConfigDialog(QDialog):
                     "Spalte Stoernummer",
                 ]
             )
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
-        table.verticalHeader().setVisible(False)
-        table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        table.setWordWrap(False)
-        table.setAlternatingRowColors(True)
-        table.setSortingEnabled(True)
-        table.setStyleSheet(
-            """
-            QTableWidget {
-                border: 1px solid palette(mid);
-                border-radius: 6px;
-                gridline-color: palette(midlight);
-                selection-background-color: #a6c4a1;
-                selection-color: #1f2b1f;
-            }
-            QTableWidget::item:selected {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            QTableWidget::item:selected:active {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            QTableWidget::item:selected:!active {
-                background: #a6c4a1;
-                color: #1f2b1f;
-            }
-            """
-        )
+        self._configure_standard_table(table)
         header = table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(100 if is_db else 120)
@@ -3960,7 +3799,7 @@ class LayerConfigDialog(QDialog):
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Data-Quelle waehlen",
+            "Datenquelle waehlen",
             start_dir,
             "Unterstuetzte Dateien (*.xlsx *.xls *.csv *.ods *.sqlite *.gpkg *.db);;Alle Dateien (*)",
         )
@@ -4106,7 +3945,7 @@ class LayerConfigDialog(QDialog):
 
             operator_name_field = op_name.text().strip()
             if not operator_name_field:
-                QMessageBox.warning(dialog, "Data-Quelle", "Bitte 'Spalte Betreibername' ausfuellen.")
+                QMessageBox.warning(dialog, "Datenquelle", "Bitte 'Spalte Betreibername' ausfuellen.")
                 continue
 
             host_value = ""
@@ -4121,7 +3960,7 @@ class LayerConfigDialog(QDialog):
             if is_file:
                 source_value = source.text().strip() if source is not None else ""
                 if not source_value:
-                    QMessageBox.warning(dialog, "Data-Quelle", "Bitte 'Quelle / URI' ausfuellen.")
+                    QMessageBox.warning(dialog, "Datenquelle", "Bitte 'Quelle / URI' ausfuellen.")
                     continue
             else:
                 source_name = name.text().strip()
@@ -4134,19 +3973,19 @@ class LayerConfigDialog(QDialog):
                 ssl_value = ssl_mode.currentData() if ssl_mode is not None else "prefer"
 
                 if not source_name:
-                    QMessageBox.warning(dialog, "Data-Quelle", "Bitte 'Name' ausfuellen.")
+                    QMessageBox.warning(dialog, "Datenquelle", "Bitte 'Name' ausfuellen.")
                     continue
                 if not host_value:
-                    QMessageBox.warning(dialog, "Data-Quelle", "Bitte 'Host' ausfuellen.")
+                    QMessageBox.warning(dialog, "Datenquelle", "Bitte 'Host' ausfuellen.")
                     continue
                 if not port_value:
-                    QMessageBox.warning(dialog, "Data-Quelle", "Bitte 'Port' ausfuellen.")
+                    QMessageBox.warning(dialog, "Datenquelle", "Bitte 'Port' ausfuellen.")
                     continue
                 if not database_value:
-                    QMessageBox.warning(dialog, "Data-Quelle", "Bitte 'Datenbank' ausfuellen.")
+                    QMessageBox.warning(dialog, "Datenquelle", "Bitte 'Datenbank' ausfuellen.")
                     continue
                 if not schema_value:
-                    QMessageBox.warning(dialog, "Data-Quelle", "Bitte 'Schema' ausfuellen.")
+                    QMessageBox.warning(dialog, "Datenquelle", "Bitte 'Schema' ausfuellen.")
                     continue
 
                 source_value = self._build_postgres_ogr_source_uri(
@@ -4183,7 +4022,7 @@ class LayerConfigDialog(QDialog):
                 if test_layer is None:
                     QMessageBox.warning(
                         dialog,
-                        "Data-Quelle",
+                        "Datenquelle",
                         "Quelle konnte nicht geladen werden. Bitte Verbindung pruefen.",
                     )
                     continue
@@ -4264,7 +4103,7 @@ class LayerConfigDialog(QDialog):
                 if not resolved_name_field:
                     QMessageBox.warning(
                         dialog,
-                        "Data-Quelle",
+                        "Datenquelle",
                         "Spalte Betreibername wurde in der Quelle nicht gefunden.\n"
                         f"Verfuegbare Spalten: {available}",
                     )
@@ -4412,7 +4251,7 @@ class LayerConfigDialog(QDialog):
     def _preview_selected_source(self, table: QTableWidget, source_type: str, title: str):
         row_index = self._selected_row_index(table)
         if row_index < 0:
-            QMessageBox.information(self, "Data-Vorschau", "Bitte zuerst eine Quelle auswaehlen.")
+            QMessageBox.information(self, "Datenvorschau", "Bitte zuerst eine Quelle auswaehlen.")
             return
 
         source_entry = self._entry_from_table_row(table, row_index, source_type)
@@ -4427,7 +4266,7 @@ class LayerConfigDialog(QDialog):
                 detail = f"\n\nGetestete Verbindungsversuche:\n{debug_block}"
             QMessageBox.warning(
                 self,
-                "Data-Vorschau",
+                "Datenvorschau",
                 "Quelle konnte nicht geladen werden. Bitte Verbindung und Mapping pruefen."
                 + detail,
             )
@@ -4435,7 +4274,7 @@ class LayerConfigDialog(QDialog):
 
         field_names = [field.name() for field in layer.fields()]
         if not field_names:
-            QMessageBox.information(self, "Data-Vorschau", "Quelle hat keine Felder.")
+            QMessageBox.information(self, "Datenvorschau", "Quelle hat keine Felder.")
             return
 
         rows = []
