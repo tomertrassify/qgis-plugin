@@ -74,6 +74,12 @@ class ProjectStarterPlugin:
     LEGACY_PROJECT_ENTRY_SCOPES = ("max_wild_project_starter",)
     CONNECTION_ENABLED_KEY = "connection_enabled"
     CONNECTION_PROJECT_DIR_KEY = "project_dir"
+    MASTER_SHARED_SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
+    LOCAL_NEXTCLOUD_ROOTS_KEY = f"{MASTER_SHARED_SETTINGS_PREFIX}/local_nextcloud_roots"
+    LOCAL_ROOT_PLACEHOLDER_PATTERN = re.compile(
+        r"\{\{\s*lokale\s*sync-roots\s*\}\}",
+        flags=re.IGNORECASE,
+    )
     GEOREF_LAYER_KEY_PROPERTY = "projektstarter/georef_key"
     GEOREF_OPERATOR_PROPERTY = "projektstarter/georef_operator"
     LEGACY_GEOREF_LAYER_KEY_PROPERTIES = ("max_wild_project_starter/georef_key",)
@@ -495,7 +501,7 @@ class ProjectStarterPlugin:
     def _configure_project(self, project_dir):
         project = QgsProject.instance()
         project_file = self._project_file_path(project_dir)
-        project.setPresetHomePath(str(project_dir))
+        project.setPresetHomePath(self._portable_project_dir_value(project_dir, project_file=project_file))
         project.setTitle(project_dir.name)
         project.setFileName(str(project_file))
         self._set_relative_project_paths(project)
@@ -518,32 +524,113 @@ class ProjectStarterPlugin:
             return None
         return Path(project_file)
 
-    def _portable_project_dir_value(self, project_dir):
-        project_file = self._current_project_file_path()
-        if project_file is not None:
+    def _parse_string_list(self, value):
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+
+        if value is None:
+            return []
+
+        text = str(value).strip()
+        if not text:
+            return []
+
+        if text.startswith("["):
             try:
-                return relpath(str(project_dir), start=str(project_file.parent))
-            except (OSError, ValueError):
-                pass
+                parsed = json.loads(text)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+
+        return [line.strip() for line in text.splitlines() if line.strip()]
+
+    def _local_nextcloud_roots(self):
+        settings = QSettings()
+        return self._parse_string_list(settings.value(self.LOCAL_NEXTCLOUD_ROOTS_KEY, None))
+
+    def _relative_project_dir_value(self, project_dir, project_file=None):
+        target_project_file = project_file or self._current_project_file_path() or self._project_file_path(project_dir)
+        if target_project_file is None:
+            return ""
+
+        try:
+            return relpath(str(project_dir), start=str(target_project_file.parent))
+        except (OSError, ValueError):
+            return ""
+
+    def _local_root_project_dir_value(self, project_dir):
+        try:
+            resolved_project_dir = Path(project_dir).expanduser().resolve()
+        except (OSError, TypeError):
+            return ""
+
+        for root in self._local_nextcloud_roots():
+            try:
+                resolved_root = Path(root).expanduser().resolve()
+                relative = resolved_project_dir.relative_to(resolved_root)
+            except (OSError, TypeError, ValueError):
+                continue
+
+            relative_posix = relative.as_posix()
+            if not relative_posix or relative_posix == ".":
+                return "{{Lokale Sync-Roots}}"
+            return f"{{{{Lokale Sync-Roots}}}}/{relative_posix}"
+
+        return ""
+
+    def _portable_project_dir_value(self, project_dir, project_file=None):
+        relative_value = self._relative_project_dir_value(project_dir, project_file=project_file)
+        if relative_value:
+            return relative_value
+
+        local_root_value = self._local_root_project_dir_value(project_dir)
+        if local_root_value:
+            return local_root_value
+
         return str(project_dir)
 
-    def _resolve_project_dir_value(self, stored_value):
+    def _expand_local_root_placeholder(self, stored_value):
+        text = str(stored_value or "").strip()
+        if not text or not self.LOCAL_ROOT_PLACEHOLDER_PATTERN.search(text):
+            return None
+
+        for root in self._local_nextcloud_roots():
+            root_text = str(root or "").strip().rstrip("/\\")
+            if not root_text:
+                continue
+
+            expanded = self.LOCAL_ROOT_PLACEHOLDER_PATTERN.sub(lambda _match: root_text, text)
+            try:
+                candidate = Path(expanded).expanduser()
+            except TypeError:
+                continue
+            if candidate.is_absolute():
+                return candidate
+
+        return None
+
+    def _resolve_project_dir_value(self, stored_value, project_file=None):
         stored_value = str(stored_value or "").strip()
         if not stored_value:
             return None
+
+        local_root_path = self._expand_local_root_placeholder(stored_value)
+        if local_root_path is not None:
+            return local_root_path
 
         stored_path = Path(stored_value).expanduser()
         if stored_path.is_absolute():
             return stored_path
 
-        project_file = self._current_project_file_path()
-        if project_file is None:
+        target_project_file = project_file or self._current_project_file_path()
+        if target_project_file is None:
             return None
 
         try:
-            return (project_file.parent / stored_path).resolve()
+            return (target_project_file.parent / stored_path).resolve()
         except OSError:
-            return project_file.parent / stored_path
+            return target_project_file.parent / stored_path
 
     def _set_relative_project_paths(self, project):
         if not hasattr(project, "setFilePathStorage"):
@@ -1473,12 +1560,12 @@ class ProjectStarterPlugin:
 
         preset_home = str(project.presetHomePath() or "").strip()
         if preset_home:
-            project_dir = Path(preset_home)
+            project_dir = self._resolve_project_dir_value(preset_home, project_file=project_file)
             if self._is_connected_project_dir(project_dir):
                 return project_dir
 
         stored_dir = self._read_project_entry(self.CONNECTION_PROJECT_DIR_KEY, "")
-        project_dir = self._resolve_project_dir_value(stored_dir)
+        project_dir = self._resolve_project_dir_value(stored_dir, project_file=project_file)
         if project_dir is not None and self._is_connected_project_dir(project_dir, project_file):
             return project_dir
 

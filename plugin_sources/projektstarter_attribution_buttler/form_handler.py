@@ -144,7 +144,7 @@ def _load_user_config() -> dict:
     cfg = dict(load_shared_settings())
     local_settings = _load_nextcloud_settings_for_prefix(_master_setting_key)
     for key, value in local_settings.items():
-        if key == "nextcloud_app_password":
+        if key in ("nextcloud_app_password", "local_nextcloud_roots"):
             cfg[key] = value
         elif key not in cfg or not cfg[key]:
             cfg[key] = value

@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 
+from qgis.PyQt.QtCore import QSettings
 from qgis.core import QgsProject
 
 
 PROFILE_FILENAME = "projektstarter-butler.json"
 PROJECT_ROOT_PLACEHOLDER = "{{PROJECT_ROOT}}"
+LOCAL_ROOTS_SETTINGS_KEY = "TrassifyMasterTools/shared_settings/local_nextcloud_roots"
+LOCAL_ROOT_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*lokale\s*sync-roots\s*\}\}", flags=re.IGNORECASE)
 PROJECT_INFO_DIRNAME = "001_Projektinfos"
 PROFILE_VERSION = 1
 
@@ -31,17 +35,90 @@ def current_project_file() -> Path | None:
         return None
 
 
+def _parse_string_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    if value is None:
+        return []
+
+    text = str(value).strip()
+    if not text:
+        return []
+
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _local_nextcloud_roots() -> list[str]:
+    settings = QSettings()
+    return _parse_string_list(settings.value(LOCAL_ROOTS_SETTINGS_KEY, None))
+
+
+def _expand_local_root_placeholder(value: str) -> Path | None:
+    text = str(value or "").strip()
+    if not text or not LOCAL_ROOT_PLACEHOLDER_PATTERN.search(text):
+        return None
+
+    for root in _local_nextcloud_roots():
+        root_text = str(root or "").strip().rstrip("/\\")
+        if not root_text:
+            continue
+        expanded = LOCAL_ROOT_PLACEHOLDER_PATTERN.sub(lambda _match: root_text, text)
+        try:
+            candidate = Path(expanded).expanduser()
+        except TypeError:
+            continue
+        if candidate.is_absolute():
+            return candidate
+
+    return None
+
+
+def _resolve_path_reference(value: str, project_file: Path | None = None) -> Path | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    local_root_path = _expand_local_root_placeholder(text)
+    if local_root_path is not None:
+        return local_root_path
+
+    try:
+        candidate = Path(text).expanduser()
+    except TypeError:
+        return None
+
+    if candidate.is_absolute():
+        return candidate
+
+    target_project_file = project_file or current_project_file()
+    if target_project_file is None:
+        return None
+
+    try:
+        return (target_project_file.parent / candidate).resolve()
+    except OSError:
+        return target_project_file.parent / candidate
+
+
 def detect_project_root() -> Path | None:
     project = QgsProject.instance()
+    project_file = current_project_file()
 
     preset_home = str(project.presetHomePath() or "").strip()
     if preset_home:
-        try:
-            return Path(preset_home).expanduser()
-        except TypeError:
-            return None
+        resolved_preset_home = _resolve_path_reference(preset_home, project_file)
+        if resolved_preset_home is not None:
+            return resolved_preset_home
 
-    project_file = current_project_file()
     if project_file is None:
         return None
 
@@ -280,7 +357,6 @@ def save_shared_settings_from_config(config: dict, project_root: Path | None = N
         "nextcloud_base_url": str(config.get("nextcloud_base_url", "") or "").strip(),
         "nextcloud_user": str(config.get("nextcloud_user", "") or "").strip(),
         "nextcloud_folder_marker": str(config.get("nextcloud_folder_marker", "") or "").strip(),
-        "local_nextcloud_roots": list(config.get("local_nextcloud_roots", []) or []),
     }
     profile["shared_settings"] = _normalize_config_paths(shared_settings, root)
     return save_project_profile(profile, root)
