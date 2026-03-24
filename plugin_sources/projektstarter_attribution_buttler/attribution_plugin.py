@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from qgis.PyQt import sip
-from qgis.PyQt.QtCore import Qt, QSettings
+from qgis.PyQt.QtCore import Qt, QSettings, QSize
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
@@ -156,6 +156,7 @@ LOCAL_OPERATOR_COLUMN_VALIDITY = 3
 LOCAL_OPERATOR_COLUMN_STAND = 4
 LOCAL_OPERATOR_COLUMN_PATH = 5
 LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK = 6
+LOCAL_OPERATOR_COLUMN_ACTION = 7
 
 OPERATOR_COLUMN_SOURCE = 0
 OPERATOR_COLUMN_OPERATOR = 1
@@ -241,7 +242,11 @@ class LayerConfigDialog(QDialog):
         self._auto_pg_table_cache = {}
         self._operators_page_index = -1
         self._settings_page_index = -1
+        self._local_operator_tab_index = -1
+        self._external_operator_tab_index = -1
         self._last_external_load_debug = []
+        self._pending_local_assignment_path_token = ""
+        self._pending_local_assignment_folder_name = ""
 
         self.setWindowTitle("AttributionButler konfigurieren")
         self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "icon.svg")))
@@ -252,12 +257,21 @@ class LayerConfigDialog(QDialog):
         root_layout.setSpacing(8)
 
         top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
+        self._configure_action_row(top_row)
+        self.header_logo_label = QLabel(self)
+        self.header_logo_label.setPixmap(
+            QIcon(os.path.join(os.path.dirname(__file__), "assets", "trassify-logo.svg")).pixmap(22, 22)
+        )
+        self.header_logo_label.setFixedSize(28, 28)
+        self.header_logo_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        top_row.addWidget(self.header_logo_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         top_row.addStretch(1)
         self.open_settings_button = QPushButton("Einstellungen")
         self.open_settings_button.clicked.connect(self._show_settings_page)
         self.back_to_operators_button = QPushButton("Zur Betreiberliste")
         self.back_to_operators_button.clicked.connect(self._show_operators_page)
+        self._configure_action_button(self.open_settings_button, minimum_width=148)
+        self._configure_action_button(self.back_to_operators_button, minimum_width=148)
         top_row.addWidget(self.open_settings_button)
         top_row.addWidget(self.back_to_operators_button)
         root_layout.addLayout(top_row)
@@ -342,10 +356,13 @@ class LayerConfigDialog(QDialog):
         config_layout.addWidget(operator_fields_group)
 
         suggestion_row = QHBoxLayout()
+        self._configure_action_row(suggestion_row)
         suggest_button = QPushButton("Felder automatisch vorschlagen")
         suggest_button.clicked.connect(self._suggest_fields)
         clear_optional_button = QPushButton("Optionale Felder leeren")
         clear_optional_button.clicked.connect(self._clear_optional_fields)
+        self._configure_action_button(suggest_button)
+        self._configure_action_button(clear_optional_button)
         suggestion_row.addWidget(suggest_button)
         suggestion_row.addWidget(clear_optional_button)
         suggestion_row.addStretch(1)
@@ -383,7 +400,10 @@ class LayerConfigDialog(QDialog):
         self.local_operator_status_label.setWordWrap(True)
         local_layout.addWidget(self.local_operator_status_label)
         self.local_operator_hint_label = QLabel(
-            "Waehle rechts einen Betreiber aus, uebernimm ihn fuer die markierten lokalen Ordner und erzeuge danach bei Bedarf die Nextcloud Links direkt hier im Tab. 'Stand' kommt automatisch aus dem juengsten Dateidatum im Ordner, kann aber ueberschrieben werden."
+            "Wenn noch kein Betreiber zugeordnet ist, kannst du ihn direkt in der Zeile auswaehlen. "
+            "Der Button springt dich in die Betreiberliste, dort waehlst du einen Eintrag und klickst auf "
+            "'Weiter'. 'Stand' kommt automatisch aus dem juengsten Dateidatum im Ordner, kann aber "
+            "ueberschrieben werden."
         )
         self.local_operator_hint_label.setWordWrap(True)
         local_layout.addWidget(self.local_operator_hint_label)
@@ -393,7 +413,7 @@ class LayerConfigDialog(QDialog):
             lambda text: self._apply_table_text_filter(self.local_operator_table, text)
         )
         local_layout.addWidget(self.local_operator_search_input)
-        self.local_operator_table = QTableWidget(0, 7)
+        self.local_operator_table = QTableWidget(0, 8)
         self.local_operator_table.setHorizontalHeaderLabels(
             [
                 "Ordner",
@@ -403,11 +423,13 @@ class LayerConfigDialog(QDialog):
                 "Stand",
                 "Pfad",
                 "Nextcloud Link",
+                "Aktion",
             ]
         )
         self._configure_standard_table(
             self.local_operator_table,
             selection_mode=QAbstractItemView.ExtendedSelection,
+            sortable=False,
         )
         self.local_operator_table.itemChanged.connect(self._on_local_operator_table_item_changed)
         local_header = self.local_operator_table.horizontalHeader()
@@ -421,6 +443,7 @@ class LayerConfigDialog(QDialog):
         local_header.setSectionResizeMode(4, QHeaderView.Interactive)
         local_header.setSectionResizeMode(5, QHeaderView.Interactive)
         local_header.setSectionResizeMode(6, QHeaderView.Stretch)
+        local_header.setSectionResizeMode(7, QHeaderView.Fixed)
         local_header.resizeSection(0, 220)
         local_header.resizeSection(1, 240)
         local_header.resizeSection(2, 180)
@@ -428,32 +451,66 @@ class LayerConfigDialog(QDialog):
         local_header.resizeSection(4, 130)
         local_header.resizeSection(5, 280)
         local_header.resizeSection(6, 380)
+        local_header.resizeSection(7, 180)
         local_header.setTextElideMode(Qt.ElideNone)
         self.local_operator_table.setColumnHidden(LOCAL_OPERATOR_COLUMN_SOURCE, True)
         local_layout.addWidget(self.local_operator_table, 1)
         local_buttons = QHBoxLayout()
+        self._configure_action_row(local_buttons)
         self.local_operator_assign_button = QPushButton("Aus Betreiberliste uebernehmen")
         self.local_operator_assign_button.clicked.connect(self._assign_selected_external_operator_to_local_rows)
         self.local_operator_link_button = QPushButton("Nextcloud Links erzeugen")
+        self.local_operator_link_button.setIcon(
+            QIcon(os.path.join(os.path.dirname(__file__), "assets", "nextcloud-logo.svg"))
+        )
         self.local_operator_link_button.clicked.connect(self._generate_local_operator_nextcloud_links)
         self.local_operator_clear_button = QPushButton("Zuordnung loeschen")
         self.local_operator_clear_button.clicked.connect(self._clear_selected_local_operator_rows)
         self.local_operator_reload_button = QPushButton("Ordner neu laden")
         self.local_operator_reload_button.clicked.connect(self._reload_local_operator_table)
+        for button in (
+            self.local_operator_assign_button,
+            self.local_operator_link_button,
+            self.local_operator_clear_button,
+            self.local_operator_reload_button,
+        ):
+            self._configure_action_button(button, icon_size=16)
         local_buttons.addWidget(self.local_operator_assign_button)
         local_buttons.addWidget(self.local_operator_link_button)
         local_buttons.addWidget(self.local_operator_clear_button)
         local_buttons.addWidget(self.local_operator_reload_button)
         local_buttons.addStretch(1)
         local_layout.addLayout(local_buttons)
-        self.operator_tabs.addTab(local_tab, "Lokale Ordner")
+        self._local_operator_tab_index = self.operator_tabs.addTab(local_tab, "Lokale Ordner")
 
         external_tab = QWidget()
         external_layout = QVBoxLayout(external_tab)
 
+        self.pending_local_assignment_row = QWidget()
+        pending_assignment_layout = QHBoxLayout(self.pending_local_assignment_row)
+        self._configure_action_row(pending_assignment_layout)
+        self.pending_local_assignment_label = QLabel("")
+        self.pending_local_assignment_label.setWordWrap(True)
+        self.pending_local_assignment_continue_button = QPushButton("Weiter")
+        self.pending_local_assignment_continue_button.clicked.connect(
+            self._complete_pending_local_operator_assignment
+        )
+        self.pending_local_assignment_cancel_button = QPushButton("Abbrechen")
+        self.pending_local_assignment_cancel_button.clicked.connect(
+            self._cancel_pending_local_operator_assignment
+        )
+        self._configure_action_button(self.pending_local_assignment_continue_button)
+        self._configure_action_button(self.pending_local_assignment_cancel_button)
+        pending_assignment_layout.addWidget(self.pending_local_assignment_label, 1)
+        pending_assignment_layout.addWidget(self.pending_local_assignment_continue_button)
+        pending_assignment_layout.addWidget(self.pending_local_assignment_cancel_button)
+        self.pending_local_assignment_row.setVisible(False)
+        external_layout.addWidget(self.pending_local_assignment_row)
+
         source_row = QHBoxLayout()
-        source_row.setContentsMargins(0, 0, 0, 0)
+        self._configure_action_row(source_row)
         self.operator_source_combo = QComboBox()
+        self.operator_source_combo.setMinimumHeight(34)
         self.operator_source_combo.currentIndexChanged.connect(self._on_operator_source_changed)
         source_row.addWidget(self.operator_source_combo, 1)
         external_layout.addLayout(source_row)
@@ -490,6 +547,7 @@ class LayerConfigDialog(QDialog):
             self.operator_table,
             selection_mode=QAbstractItemView.ExtendedSelection,
         )
+        self.operator_table.itemSelectionChanged.connect(self._refresh_pending_local_assignment_controls)
         header = self.operator_table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(90)
@@ -520,6 +578,7 @@ class LayerConfigDialog(QDialog):
         external_layout.addWidget(self.operator_table, 1)
 
         operator_buttons = QHBoxLayout()
+        self._configure_action_row(operator_buttons)
         self.operator_reload_button = QPushButton("Daten neu laden")
         self.operator_reload_button.clicked.connect(self._reload_selected_external_operator_source)
         self.operator_save_button = QPushButton("Aenderungen speichern")
@@ -528,13 +587,20 @@ class LayerConfigDialog(QDialog):
         self.operator_add_button.clicked.connect(self._add_external_operator_row)
         self.operator_remove_button = QPushButton("Ausgewaehlte Zeilen loeschen")
         self.operator_remove_button.clicked.connect(self._remove_selected_external_operator_row)
+        for button in (
+            self.operator_reload_button,
+            self.operator_save_button,
+            self.operator_add_button,
+            self.operator_remove_button,
+        ):
+            self._configure_action_button(button)
         operator_buttons.addWidget(self.operator_reload_button)
         operator_buttons.addWidget(self.operator_save_button)
         operator_buttons.addWidget(self.operator_add_button)
         operator_buttons.addWidget(self.operator_remove_button)
         operator_buttons.addStretch(1)
         external_layout.addLayout(operator_buttons)
-        self.operator_tabs.addTab(external_tab, "Betreiberliste")
+        self._external_operator_tab_index = self.operator_tabs.addTab(external_tab, "Betreiberliste")
 
         self._external_operator_context = None
         self.operator_reload_button.setEnabled(False)
@@ -557,12 +623,19 @@ class LayerConfigDialog(QDialog):
         )
         file_sources_layout.addWidget(self.file_data_source_table)
         file_source_buttons = QHBoxLayout()
+        self._configure_action_row(file_source_buttons)
         connect_file_source_button = QPushButton("Verbindung herstellen...")
         connect_file_source_button.clicked.connect(self._add_file_source_via_dialog)
         preview_file_source_button = QPushButton("Daten anzeigen...")
         preview_file_source_button.clicked.connect(self._preview_selected_file_source)
         remove_file_source_button = QPushButton("Ausgewaehlte Dateiquelle loeschen")
         remove_file_source_button.clicked.connect(self._remove_selected_file_source_row)
+        for button in (
+            connect_file_source_button,
+            preview_file_source_button,
+            remove_file_source_button,
+        ):
+            self._configure_action_button(button)
         file_source_buttons.addWidget(connect_file_source_button)
         file_source_buttons.addWidget(preview_file_source_button)
         file_source_buttons.addWidget(remove_file_source_button)
@@ -582,12 +655,19 @@ class LayerConfigDialog(QDialog):
         )
         db_sources_layout.addWidget(self.db_data_source_table)
         db_source_buttons = QHBoxLayout()
+        self._configure_action_row(db_source_buttons)
         connect_db_source_button = QPushButton("Verbindung herstellen...")
         connect_db_source_button.clicked.connect(self._add_db_source_via_dialog)
         preview_db_source_button = QPushButton("Daten anzeigen...")
         preview_db_source_button.clicked.connect(self._preview_selected_db_source)
         remove_db_source_button = QPushButton("Ausgewaehlte Datenbankquelle loeschen")
         remove_db_source_button.clicked.connect(self._remove_selected_db_source_row)
+        for button in (
+            connect_db_source_button,
+            preview_db_source_button,
+            remove_db_source_button,
+        ):
+            self._configure_action_button(button)
         db_source_buttons.addWidget(connect_db_source_button)
         db_source_buttons.addWidget(preview_db_source_button)
         db_source_buttons.addWidget(remove_db_source_button)
@@ -627,6 +707,24 @@ class LayerConfigDialog(QDialog):
 
     def _show_operators_page(self):
         self._set_main_page(self._operators_page_index)
+
+    def _configure_action_row(self, layout: QHBoxLayout):
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+    def _configure_action_button(
+        self,
+        button: QPushButton,
+        *,
+        minimum_width: int = 0,
+        icon_size: int = 0,
+    ):
+        button.setMinimumHeight(34)
+        if minimum_width > 0:
+            button.setMinimumWidth(minimum_width)
+        if icon_size > 0:
+            button.setIconSize(QSize(icon_size, icon_size))
+        button.setStyleSheet("padding: 0 12px;")
 
     def _set_global_nextcloud_config(self, config: dict):
         self._global_nextcloud_config = {
@@ -805,6 +903,7 @@ class LayerConfigDialog(QDialog):
                     elif col == LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK:
                         item.setToolTip(text)
                     self.local_operator_table.setItem(row, col, item)
+                self._update_local_operator_action_button(row)
 
             for folder_name, folder_path in rows:
                 overlay = overlays_by_path.pop(self._local_path_token(folder_path), None)
@@ -850,6 +949,7 @@ class LayerConfigDialog(QDialog):
             self.local_operator_table,
             self.local_operator_search_input.text(),
         )
+        self._refresh_pending_local_assignment_controls()
 
     def _set_local_operator_overlays(self, operators):
         self._local_operator_overlays = []
@@ -913,7 +1013,206 @@ class LayerConfigDialog(QDialog):
     def _on_local_operator_table_item_changed(self, item: QTableWidgetItem):
         if item is None or self._refreshing_local_operator_table:
             return
+        if item.column() == LOCAL_OPERATOR_COLUMN_OPERATOR:
+            self._update_local_operator_action_button(item.row())
         self._store_current_local_operator_overlays_from_table()
+
+    def _selected_external_operator_values(self) -> dict | None:
+        selected_external_rows = self.operator_table.selectionModel().selectedRows()
+        if not selected_external_rows:
+            QMessageBox.information(
+                self,
+                "Lokale Zuordnung",
+                "Bitte zuerst im Tab 'Betreiberliste' einen Betreiber-Eintrag markieren.",
+            )
+            return None
+
+        external_row = selected_external_rows[0].row()
+        operator_name = (
+            self.operator_table.item(external_row, OPERATOR_COLUMN_OPERATOR).text().strip()
+            if self.operator_table.item(external_row, OPERATOR_COLUMN_OPERATOR)
+            else ""
+        )
+        source_name = (
+            self.operator_table.item(external_row, OPERATOR_COLUMN_SOURCE).text().strip()
+            if self.operator_table.item(external_row, OPERATOR_COLUMN_SOURCE)
+            else ""
+        )
+        validity = (
+            self.operator_table.item(external_row, OPERATOR_COLUMN_VALIDITY).text().strip()
+            if self.operator_table.item(external_row, OPERATOR_COLUMN_VALIDITY)
+            else ""
+        )
+
+        if not operator_name:
+            QMessageBox.information(
+                self,
+                "Lokale Zuordnung",
+                "Der ausgewaehlte Betreiber-Eintrag enthaelt keinen Betreibername.",
+            )
+            return None
+
+        return {
+            "operator_name": operator_name,
+            "source_name": source_name,
+            "validity": validity,
+        }
+
+    def _apply_external_operator_values_to_local_rows(self, row_indices: list[int], values: dict) -> bool:
+        operator_name = str(values.get("operator_name", "") or "").strip()
+        if not operator_name:
+            return False
+
+        source_name = str(values.get("source_name", "") or "").strip()
+        validity = str(values.get("validity", "") or "").strip()
+
+        for row in sorted(set(row_indices)):
+            for col, value in (
+                (LOCAL_OPERATOR_COLUMN_OPERATOR, operator_name),
+                (LOCAL_OPERATOR_COLUMN_SOURCE, source_name),
+                (LOCAL_OPERATOR_COLUMN_VALIDITY, validity),
+            ):
+                item = self.local_operator_table.item(row, col)
+                if item is None:
+                    item = QTableWidgetItem()
+                    self.local_operator_table.setItem(row, col, item)
+                item.setText(value)
+            self._update_local_operator_action_button(row)
+
+        self._store_current_local_operator_overlays_from_table()
+        if self._external_operator_context is not None:
+            self._reload_selected_external_operator_source()
+        self._apply_table_text_filter(
+            self.local_operator_table,
+            self.local_operator_search_input.text(),
+        )
+        return True
+
+    def _find_local_operator_row_by_path_token(self, path_token: str) -> int:
+        token = self._local_path_token(path_token)
+        if not token:
+            return -1
+
+        for row in range(self.local_operator_table.rowCount()):
+            path_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_PATH)
+            row_path = str(path_item.data(Qt.UserRole) or "").strip() if path_item is not None else ""
+            if self._local_path_token(row_path) == token:
+                return row
+        return -1
+
+    def _update_local_operator_action_button(self, row: int):
+        operator_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_OPERATOR)
+        operator_name = operator_item.text().strip() if operator_item is not None else ""
+        if operator_name:
+            self.local_operator_table.removeCellWidget(row, LOCAL_OPERATOR_COLUMN_ACTION)
+            return
+
+        folder_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_FOLDER)
+        folder_name = folder_item.text().strip() if folder_item is not None else "Lokaler Ordner"
+        path_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_PATH)
+        folder_path = str(path_item.data(Qt.UserRole) or "").strip() if path_item is not None else ""
+
+        button = QPushButton("Betreiber auswählen")
+        button.setProperty("folder_name", folder_name)
+        button.setProperty("folder_path", folder_path)
+        self._configure_action_button(button)
+        button.clicked.connect(self._start_local_operator_assignment_from_button)
+        self.local_operator_table.setCellWidget(row, LOCAL_OPERATOR_COLUMN_ACTION, button)
+
+    def _start_local_operator_assignment_from_button(self):
+        button = self.sender()
+        if not isinstance(button, QPushButton):
+            return
+
+        folder_path = str(button.property("folder_path") or "").strip()
+        folder_name = str(button.property("folder_name") or "").strip() or "Lokaler Ordner"
+        row = self._find_local_operator_row_by_path_token(folder_path)
+        if row < 0:
+            QMessageBox.information(
+                self,
+                "Lokale Zuordnung",
+                "Der ausgewaehlte Ordner konnte nicht mehr gefunden werden. Bitte die Liste neu laden.",
+            )
+            return
+
+        self.local_operator_table.clearSelection()
+        self.local_operator_table.selectRow(row)
+        self.local_operator_table.setCurrentCell(row, LOCAL_OPERATOR_COLUMN_OPERATOR)
+        self._pending_local_assignment_path_token = self._local_path_token(folder_path)
+        self._pending_local_assignment_folder_name = folder_name
+        self._refresh_pending_local_assignment_controls()
+        if self._external_operator_tab_index >= 0:
+            self.operator_tabs.setCurrentIndex(self._external_operator_tab_index)
+        self.operator_search_input.setFocus()
+
+    def _refresh_pending_local_assignment_controls(self):
+        pending = bool(self._pending_local_assignment_path_token)
+        if pending:
+            row = self._find_local_operator_row_by_path_token(self._pending_local_assignment_path_token)
+            operator_item = (
+                self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_OPERATOR)
+                if row >= 0
+                else None
+            )
+            operator_name = operator_item.text().strip() if operator_item is not None else ""
+            if row < 0 or operator_name:
+                self._pending_local_assignment_path_token = ""
+                self._pending_local_assignment_folder_name = ""
+                pending = False
+
+        self.pending_local_assignment_row.setVisible(pending)
+        if not pending:
+            self.pending_local_assignment_label.setText("")
+            self.pending_local_assignment_continue_button.setEnabled(False)
+            return
+
+        self.pending_local_assignment_label.setText(
+            f"Ordner '{self._pending_local_assignment_folder_name}' ist noch nicht zugeordnet. "
+            "Bitte in der Betreiberliste einen Eintrag waehlen und dann auf 'Weiter' klicken."
+        )
+        has_selected_external_row = bool(self.operator_table.selectionModel().selectedRows())
+        self.pending_local_assignment_continue_button.setEnabled(has_selected_external_row)
+
+    def _clear_pending_local_operator_assignment(self):
+        self._pending_local_assignment_path_token = ""
+        self._pending_local_assignment_folder_name = ""
+        self._refresh_pending_local_assignment_controls()
+
+    def _cancel_pending_local_operator_assignment(self):
+        self._clear_pending_local_operator_assignment()
+        if self._local_operator_tab_index >= 0:
+            self.operator_tabs.setCurrentIndex(self._local_operator_tab_index)
+
+    def _complete_pending_local_operator_assignment(self):
+        row = self._find_local_operator_row_by_path_token(self._pending_local_assignment_path_token)
+        if row < 0:
+            QMessageBox.information(
+                self,
+                "Lokale Zuordnung",
+                "Der vorgemerkte Ordner ist nicht mehr verfuegbar. Bitte die Liste neu laden.",
+            )
+            self._clear_pending_local_operator_assignment()
+            return
+
+        values = self._selected_external_operator_values()
+        if values is None:
+            self._refresh_pending_local_assignment_controls()
+            return
+
+        if not self._apply_external_operator_values_to_local_rows([row], values):
+            return
+
+        self._clear_pending_local_operator_assignment()
+        if self._local_operator_tab_index >= 0:
+            self.operator_tabs.setCurrentIndex(self._local_operator_tab_index)
+        refreshed_row = self._find_local_operator_row_by_path_token(
+            self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_PATH).data(Qt.UserRole)
+            if self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_PATH) is not None
+            else ""
+        )
+        if refreshed_row >= 0:
+            self.local_operator_table.clearSelection()
+            self.local_operator_table.selectRow(refreshed_row)
 
     def _assign_selected_external_operator_to_local_rows(self):
         selected_local_rows = self.local_operator_table.selectionModel().selectedRows()
@@ -925,47 +1224,13 @@ class LayerConfigDialog(QDialog):
             )
             return
 
-        selected_external_rows = self.operator_table.selectionModel().selectedRows()
-        if not selected_external_rows:
-            QMessageBox.information(
-                self,
-                "Lokale Zuordnung",
-                "Bitte zuerst im Tab 'Betreiberliste' einen Betreiber-Eintrag markieren.",
-            )
+        values = self._selected_external_operator_values()
+        if values is None:
             return
 
-        external_row = selected_external_rows[0].row()
-        operator_name = self.operator_table.item(external_row, OPERATOR_COLUMN_OPERATOR).text().strip() if self.operator_table.item(external_row, OPERATOR_COLUMN_OPERATOR) else ""
-        source_name = self.operator_table.item(external_row, OPERATOR_COLUMN_SOURCE).text().strip() if self.operator_table.item(external_row, OPERATOR_COLUMN_SOURCE) else ""
-        validity = self.operator_table.item(external_row, OPERATOR_COLUMN_VALIDITY).text().strip() if self.operator_table.item(external_row, OPERATOR_COLUMN_VALIDITY) else ""
-
-        if not operator_name:
-            QMessageBox.information(
-                self,
-                "Lokale Zuordnung",
-                "Der ausgewaehlte Betreiber-Eintrag enthaelt keinen Betreibername.",
-            )
-            return
-
-        for model_index in selected_local_rows:
-            row = model_index.row()
-            for col, value in (
-                (LOCAL_OPERATOR_COLUMN_OPERATOR, operator_name),
-                (LOCAL_OPERATOR_COLUMN_SOURCE, source_name),
-                (LOCAL_OPERATOR_COLUMN_VALIDITY, validity),
-            ):
-                item = self.local_operator_table.item(row, col)
-                if item is None:
-                    item = QTableWidgetItem()
-                    self.local_operator_table.setItem(row, col, item)
-                item.setText(value)
-
-        self._store_current_local_operator_overlays_from_table()
-        if self._external_operator_context is not None:
-            self._reload_selected_external_operator_source()
-        self._apply_table_text_filter(
-            self.local_operator_table,
-            self.local_operator_search_input.text(),
+        self._apply_external_operator_values_to_local_rows(
+            [model_index.row() for model_index in selected_local_rows],
+            values,
         )
 
     def _clear_selected_local_operator_rows(self):

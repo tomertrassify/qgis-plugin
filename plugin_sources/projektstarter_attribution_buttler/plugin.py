@@ -93,9 +93,17 @@ class ProjectStarterButlerDialog(QDialog):
 
     def _panel_layer(self):
         layer = self._active_vector_layer()
+        default_layer = self.plugin._default_butler_layer()
+        project_area_layer = self.plugin._project_area_layer()
         if layer is not None:
+            if (
+                default_layer is not None
+                and project_area_layer is not None
+                and layer.id() == project_area_layer.id()
+            ):
+                return default_layer
             return layer
-        return self.plugin._default_butler_layer()
+        return default_layer
 
     def _clear_layer_host(self):
         if self.layer_config_dialog is not None:

@@ -127,11 +127,35 @@ def detect_project_root() -> Path | None:
     return project_file.parent
 
 
+def _preferred_profile_path(project_root: Path) -> Path:
+    return project_root / PROJECT_INFO_DIRNAME / PROFILE_FILENAME
+
+
+def _legacy_profile_path(project_root: Path) -> Path:
+    return project_root / PROFILE_FILENAME
+
+
 def profile_path(project_root: Path | None = None) -> Path | None:
     root = project_root or detect_project_root()
     if root is None:
         return None
-    return root / PROFILE_FILENAME
+    return _preferred_profile_path(root)
+
+
+def _existing_profile_path(project_root: Path | None = None) -> Path | None:
+    root = project_root or detect_project_root()
+    if root is None:
+        return None
+
+    preferred = _preferred_profile_path(root)
+    if preferred.is_file():
+        return preferred
+
+    legacy = _legacy_profile_path(root)
+    if legacy.is_file():
+        return legacy
+
+    return preferred
 
 
 def current_profile_path_string() -> str:
@@ -291,7 +315,7 @@ def _find_layer_index(profile: dict, layer, project_root: Path | None = None) ->
 
 
 def load_project_profile(project_root: Path | None = None) -> dict:
-    path = profile_path(project_root)
+    path = _existing_profile_path(project_root)
     if path is None or not path.is_file():
         return _default_profile()
 
