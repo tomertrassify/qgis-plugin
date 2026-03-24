@@ -6,6 +6,7 @@ import os
 import re
 import urllib.parse
 from datetime import datetime
+from pathlib import Path
 
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QSize, Qt, QSettings
@@ -338,6 +339,42 @@ class LayerConfigDialog(QDialog):
         self.operator_status_label.setWordWrap(True)
         operators_layout.addWidget(self.operator_status_label)
 
+        self.local_operator_folder_group = QGroupBox("Lokale Leitungsauskunft")
+        local_operator_folder_layout = QVBoxLayout(self.local_operator_folder_group)
+        self.local_operator_folder_status_label = QLabel(
+            "Kein verbundenes Projekt gefunden. Die lokalen Ordner aus '002_Leitungsauskunft' erscheinen hier automatisch."
+        )
+        self.local_operator_folder_status_label.setWordWrap(True)
+        local_operator_folder_layout.addWidget(self.local_operator_folder_status_label)
+        self.local_operator_folder_search_input = QLineEdit()
+        self.local_operator_folder_search_input.setPlaceholderText("Lokale Ordner suchen...")
+        self.local_operator_folder_search_input.textChanged.connect(
+            lambda text: self._apply_table_text_filter(self.local_operator_folder_table, text)
+        )
+        local_operator_folder_layout.addWidget(self.local_operator_folder_search_input)
+        self.local_operator_folder_table = QTableWidget(0, 2)
+        self.local_operator_folder_table.setHorizontalHeaderLabels(
+            [
+                "Ordner",
+                "Pfad",
+            ]
+        )
+        self._configure_standard_table(
+            self.local_operator_folder_table,
+            editable=False,
+        )
+        local_header = self.local_operator_folder_table.horizontalHeader()
+        local_header.setStretchLastSection(False)
+        local_header.setMinimumSectionSize(90)
+        local_header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        local_header.setSectionResizeMode(0, QHeaderView.Interactive)
+        local_header.setSectionResizeMode(1, QHeaderView.Stretch)
+        local_header.resizeSection(0, 240)
+        local_header.resizeSection(1, 520)
+        local_header.setTextElideMode(Qt.ElideNone)
+        local_operator_folder_layout.addWidget(self.local_operator_folder_table, 1)
+        operators_layout.addWidget(self.local_operator_folder_group)
+
         self.operator_search_input = QLineEdit()
         self.operator_search_input.setPlaceholderText("Betreiberliste suchen...")
         self.operator_search_input.textChanged.connect(
@@ -557,6 +594,85 @@ class LayerConfigDialog(QDialog):
 
     def _normalized_source_name(self, value: str) -> str:
         return str(value or "").strip().casefold()
+
+    def _project_root_from_context(self) -> Path | None:
+        text = str(self.project_context_dir_value.text() or "").strip()
+        if not text or text == "-":
+            return None
+
+        try:
+            project_root = Path(text).expanduser()
+        except TypeError:
+            return None
+
+        if not project_root.exists() or not project_root.is_dir():
+            return None
+        return project_root
+
+    def _local_operator_folder_rows(self) -> list[tuple[str, str]]:
+        project_root = self._project_root_from_context()
+        if project_root is None:
+            return []
+
+        leitungsauskunft_dir = project_root / "002_Leitungsauskunft"
+        if not leitungsauskunft_dir.is_dir():
+            return []
+
+        rows = []
+        for path in sorted(
+            (entry for entry in leitungsauskunft_dir.iterdir() if entry.is_dir()),
+            key=lambda entry: entry.name.casefold(),
+        ):
+            rows.append((path.name, str(path)))
+        return rows
+
+    def _refresh_local_operator_folder_table(self):
+        rows = self._local_operator_folder_rows()
+        sorting_enabled = self.local_operator_folder_table.isSortingEnabled()
+        if sorting_enabled:
+            self.local_operator_folder_table.setSortingEnabled(False)
+
+        self.local_operator_folder_table.setRowCount(0)
+        for folder_name, folder_path in rows:
+            row = self.local_operator_folder_table.rowCount()
+            self.local_operator_folder_table.insertRow(row)
+
+            folder_item = QTableWidgetItem(folder_name)
+            folder_item.setToolTip(folder_path)
+            self.local_operator_folder_table.setItem(row, 0, folder_item)
+
+            path_item = QTableWidgetItem(self._operator_path_alias(folder_path))
+            path_item.setData(Qt.UserRole, folder_path)
+            path_item.setToolTip(folder_path)
+            self.local_operator_folder_table.setItem(row, 1, path_item)
+
+        if sorting_enabled:
+            self.local_operator_folder_table.setSortingEnabled(True)
+
+        project_root = self._project_root_from_context()
+        if project_root is None:
+            self.local_operator_folder_status_label.setText(
+                "Kein verbundenes Projekt gefunden. Die lokalen Ordner aus '002_Leitungsauskunft' erscheinen hier automatisch."
+            )
+        else:
+            leitungsauskunft_dir = project_root / "002_Leitungsauskunft"
+            if not leitungsauskunft_dir.is_dir():
+                self.local_operator_folder_status_label.setText(
+                    "Im verbundenen Projekt wurde kein Ordner '002_Leitungsauskunft' gefunden."
+                )
+            elif not rows:
+                self.local_operator_folder_status_label.setText(
+                    "In '002_Leitungsauskunft' wurden noch keine Betreiberordner gefunden."
+                )
+            else:
+                self.local_operator_folder_status_label.setText(
+                    f"{len(rows)} lokale Ordner aus '002_Leitungsauskunft' gefunden."
+                )
+
+        self._apply_table_text_filter(
+            self.local_operator_folder_table,
+            self.local_operator_folder_search_input.text(),
+        )
 
     def _set_local_operator_overlays(self, operators):
         self._local_operator_overlays = []
@@ -4557,6 +4673,7 @@ class LayerConfigDialog(QDialog):
     def set_project_context_info(self, info: dict | None):
         if not isinstance(info, dict):
             self.project_context_group.setVisible(False)
+            self._refresh_local_operator_folder_table()
             return
 
         self.project_context_status_value.setText(str(info.get("status", "") or "-"))
@@ -4565,6 +4682,7 @@ class LayerConfigDialog(QDialog):
         self.project_context_layer_value.setText(str(info.get("layer_name", "") or "-"))
         self.project_context_note.setText(str(info.get("note", "") or "").strip())
         self.project_context_group.setVisible(True)
+        self._refresh_local_operator_folder_table()
 
 
 def _property_key(name: str) -> str:
