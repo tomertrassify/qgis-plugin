@@ -18,9 +18,13 @@ from qgis.PyQt.QtWidgets import (
 from qgis.core import Qgis, QgsMapLayerType, QgsProject
 
 from .attribution_plugin import (
+    BOOTSTRAP_CODE_MARKERS,
+    DEFAULT_CONFIG,
+    INIT_FUNCTION_NAME,
     LayerConfigDialog,
     _apply_configuration_to_layer,
     _effective_layer_config,
+    _first_field_match,
 )
 from .project_profile import current_profile_path_string
 from .projectstarter_plugin import ProjectStarterPlugin
@@ -33,6 +37,7 @@ class ProjectStarterButlerDialog(QDialog):
         self.layer_config_dialog = None
         self.current_layer = None
         self.placeholder_label = None
+        self._current_layer_signal_connected = False
 
         self.setWindowTitle("Projektstarter Butler")
         self.setWindowIcon(QIcon(str(plugin._icon_path(plugin._has_active_connection()))))
@@ -68,7 +73,7 @@ class ProjectStarterButlerDialog(QDialog):
         project_layout.addWidget(self.project_dir_value, 1, 1)
         project_layout.addWidget(QLabel("Projektprofil"), 2, 0)
         project_layout.addWidget(self.profile_path_value, 2, 1)
-        project_layout.addWidget(QLabel("Aktiver Layer"), 3, 0)
+        project_layout.addWidget(QLabel("Layer im Overlay"), 3, 0)
         project_layout.addWidget(self.active_layer_value, 3, 1)
 
         note_label = QLabel(
@@ -81,27 +86,15 @@ class ProjectStarterButlerDialog(QDialog):
         button_row = QHBoxLayout()
         self.choose_project_button = QPushButton("Projektordner waehlen...")
         self.choose_project_button.clicked.connect(self._choose_project)
-        self.refresh_project_button = QPushButton("Projekt aktualisieren")
-        self.refresh_project_button.clicked.connect(self._refresh_project)
-        self.sync_plans_button = QPushButton("Leitungsauskunft")
+        self.sync_plans_button = QPushButton("Leitungsauskunft aktualisieren")
         self.sync_plans_button.clicked.connect(self._sync_plans)
-        self.zoom_button = QPushButton("Zum Projektgebiet")
-        self.zoom_button.clicked.connect(self._zoom_to_project)
-        self.save_project_button = QPushButton("Projekt speichern")
-        self.save_project_button.clicked.connect(self._save_project)
         self.disconnect_button = QPushButton("Verbindung trennen")
         self.disconnect_button.clicked.connect(self._disconnect_project)
-        self.refresh_layer_button = QPushButton("Aktiven Layer uebernehmen")
-        self.refresh_layer_button.clicked.connect(self._reload_active_layer)
 
         for button in (
             self.choose_project_button,
-            self.refresh_project_button,
             self.sync_plans_button,
-            self.zoom_button,
-            self.save_project_button,
             self.disconnect_button,
-            self.refresh_layer_button,
         ):
             button_row.addWidget(button)
         button_row.addStretch(1)
@@ -120,6 +113,12 @@ class ProjectStarterButlerDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         root_layout.addWidget(self.button_box)
 
+        try:
+            self.plugin.iface.currentLayerChanged.connect(self._on_current_layer_changed)
+            self._current_layer_signal_connected = True
+        except Exception:
+            self._current_layer_signal_connected = False
+
         self.refresh_state(rebuild_layer=True)
 
     def _active_vector_layer(self):
@@ -127,6 +126,12 @@ class ProjectStarterButlerDialog(QDialog):
         if layer is None or layer.type() != QgsMapLayerType.VectorLayer:
             return None
         return layer
+
+    def _panel_layer(self):
+        layer = self._active_vector_layer()
+        if layer is not None:
+            return layer
+        return self.plugin._default_butler_layer()
 
     def _clear_layer_host(self):
         if self.layer_config_dialog is not None:
@@ -138,14 +143,27 @@ class ProjectStarterButlerDialog(QDialog):
             self.placeholder_label.deleteLater()
             self.placeholder_label = None
 
+    def closeEvent(self, event):
+        if self._current_layer_signal_connected:
+            try:
+                self.plugin.iface.currentLayerChanged.disconnect(self._on_current_layer_changed)
+            except Exception:
+                pass
+            self._current_layer_signal_connected = False
+        super().closeEvent(event)
+
+    def _on_current_layer_changed(self, layer):
+        del layer
+        self.refresh_state(rebuild_layer=True)
+
     def _rebuild_layer_panel(self, layer):
         self._clear_layer_host()
         self.current_layer = layer
 
         if layer is None:
             self.placeholder_label = QLabel(
-                "Aktiviere in QGIS einen Vektor-Layer und klicke dann auf "
-                "'Aktiven Layer uebernehmen', damit hier die komplette Butler-Konfiguration erscheint."
+                "Aktiviere in QGIS einen Vektor-Layer. Falls keiner aktiv ist, zeigt der Dialog "
+                "den Standardlayer 'Fremdleitungen' aus dem Projekt an."
             )
             self.placeholder_label.setWordWrap(True)
             self.placeholder_label.setAlignment(Qt.AlignCenter)
@@ -171,60 +189,29 @@ class ProjectStarterButlerDialog(QDialog):
         profile_path = current_profile_path_string().strip()
         self.profile_path_value.setText(profile_path or "Wird nach dem ersten Projektspeichern angelegt.")
 
-        active_layer = self._active_vector_layer()
-        self.active_layer_value.setText(active_layer.name() if active_layer is not None else "-")
+        panel_layer = self._panel_layer()
+        self.active_layer_value.setText(panel_layer.name() if panel_layer is not None else "-")
 
-        self.refresh_project_button.setEnabled(project_dir is not None)
+        self.choose_project_button.setVisible(project_dir is None)
         self.sync_plans_button.setEnabled(project_dir is not None)
-        self.zoom_button.setEnabled(project_dir is not None)
-        self.save_project_button.setEnabled(project_dir is not None or bool(QgsProject.instance().fileName()))
         self.disconnect_button.setEnabled(project_dir is not None)
+        self.disconnect_button.setVisible(project_dir is not None)
+        self.sync_plans_button.setVisible(project_dir is not None)
 
-        if rebuild_layer or active_layer is not self.current_layer:
-            self._rebuild_layer_panel(active_layer)
+        if rebuild_layer or panel_layer is not self.current_layer:
+            self._rebuild_layer_panel(panel_layer)
 
     def _choose_project(self):
         self.plugin._select_and_connect_project()
-        self.refresh_state(rebuild_layer=True)
-
-    def _refresh_project(self):
-        self.plugin._refresh_current_connection()
         self.refresh_state(rebuild_layer=True)
 
     def _sync_plans(self):
         self.plugin._refresh_leitungsauskunft()
         self.refresh_state(rebuild_layer=False)
 
-    def _zoom_to_project(self):
-        self.plugin._zoom_to_project_area_now()
-        self.refresh_state(rebuild_layer=False)
-
     def _disconnect_project(self):
         self.plugin._disconnect_current_connection()
         self.refresh_state(rebuild_layer=True)
-
-    def _reload_active_layer(self):
-        self.refresh_state(rebuild_layer=True)
-
-    def _save_project(self):
-        if self.plugin._current_project_dir is not None:
-            self.plugin._save_project_file(self.plugin._current_project_dir, notify=True)
-        elif str(QgsProject.instance().fileName() or "").strip():
-            if not QgsProject.instance().write():
-                QMessageBox.warning(
-                    self,
-                    "Projektstarter Butler",
-                    "Das QGIS-Projekt konnte nicht gespeichert werden.",
-                )
-                return
-        else:
-            QMessageBox.information(
-                self,
-                "Projektstarter Butler",
-                "Es ist noch kein Projektordner verbunden und kein QGIS-Projekt gespeichert.",
-            )
-            return
-        self.refresh_state(rebuild_layer=False)
 
     def accept(self):
         if self.layer_config_dialog is None or self.current_layer is None:
@@ -262,6 +249,7 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
     TOOLBAR_OBJECT_NAME = "ProjektstarterButlerToolbar"
     DEFAULT_ICON_FILENAME = "projektstarter-butler.svg"
     CONNECTED_ICON_FILENAME = "projektstarter-butler-connected.svg"
+    DEFAULT_BUTLER_LAYER_NAME = "Fremdleitungen"
 
     def __init__(self, iface):
         super().__init__(iface)
@@ -314,6 +302,105 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
         if layer is None or layer.type() != QgsMapLayerType.VectorLayer:
             return None
         return layer
+
+    def _layer_has_butler_binding(self, layer) -> bool:
+        if layer is None:
+            return False
+
+        try:
+            config = layer.editFormConfig()
+        except Exception:
+            return False
+
+        current_func = ""
+        current_code = ""
+        if hasattr(config, "initFunction"):
+            current_func = str(config.initFunction() or "")
+        if hasattr(config, "initCode"):
+            current_code = str(config.initCode() or "")
+
+        return current_func == INIT_FUNCTION_NAME and any(
+            marker in current_code for marker in BOOTSTRAP_CODE_MARKERS
+        )
+
+    def _default_butler_layer(self):
+        project_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
+        if project_group is not None:
+            layer = self._find_vector_layer_by_name(project_group, self.DEFAULT_BUTLER_LAYER_NAME)
+            if layer is not None:
+                return layer
+
+        for layer in self._managed_layers:
+            if layer is not None and layer.name() == self.DEFAULT_BUTLER_LAYER_NAME:
+                return layer
+        return None
+
+    def _default_butler_config(self, layer) -> dict:
+        layer_fields = [field.name() for field in layer.fields()]
+        config = dict(_effective_layer_config(layer))
+        config.update(
+            {
+                "path_field_name": _first_field_match(layer_fields, ["quelle_pfad", "Quelle_Pfad"]),
+                "file_link_field_name": _first_field_match(layer_fields, ["quelle_1", "Quelle_1"]),
+                "folder_link_field_name": _first_field_match(layer_fields, ["quelle_2", "Quelle_2"]),
+                "name_field_name": "",
+                "stand_field_name": _first_field_match(layer_fields, ["Stand"]),
+                "operator_name_field_name": _first_field_match(layer_fields, ["Betreiber"]),
+                "operator_contact_field_name": _first_field_match(layer_fields, ["betr_anspr"]),
+                "operator_phone_field_name": _first_field_match(layer_fields, ["betr_tel"]),
+                "operator_email_field_name": _first_field_match(layer_fields, ["betr_email"]),
+                "operator_fault_field_name": _first_field_match(
+                    layer_fields,
+                    ["Stör-Nr.", "Stör-Nr", "Stoer-Nr.", "Stoer-Nr", "stoer-nr", "stör-nr"],
+                ),
+                "operator_validity_field_name": _first_field_match(
+                    layer_fields,
+                    ["Gültigk.", "Gültigk", "Gueltigk.", "Gueltigk", "gueltigk", "gültigk"],
+                ),
+                "operator_stand_field_name": _first_field_match(layer_fields, ["Stand"]),
+                "fill_on_form_open": True,
+                "overwrite_existing_values": True,
+            }
+        )
+        return config
+
+    def _ensure_default_butler_binding(self):
+        layer = self._default_butler_layer()
+        if layer is None or self._layer_has_butler_binding(layer):
+            return
+
+        config = self._default_butler_config(layer)
+        if not config.get("nextcloud_base_url") or not config.get("nextcloud_user") or not config.get("nextcloud_app_password"):
+            return
+        if not config.get("path_field_name") or not config.get("operator_name_field_name"):
+            return
+
+        if not _apply_configuration_to_layer(
+            self.iface,
+            layer,
+            config,
+            merged_operator_entries=None,
+            parent=self.iface.mainWindow(),
+            prompt_sync_existing=False,
+            show_success_message=False,
+        ):
+            return
+
+        if self._current_project_dir is not None:
+            self._save_project_file(self._current_project_dir, notify=False)
+
+        self.iface.messageBar().pushMessage(
+            "Projektstarter Butler",
+            "Der Standardlayer 'Fremdleitungen' wurde automatisch mit der Betreiberliste verbunden.",
+            level=Qgis.Success,
+            duration=5,
+        )
+
+    def _connect_project(self, project_dir, notify=True):
+        super()._connect_project(project_dir, notify=notify)
+        if self._current_project_dir is None:
+            return
+        self._ensure_default_butler_binding()
 
     def run(self):
         self._refresh_connection_state()

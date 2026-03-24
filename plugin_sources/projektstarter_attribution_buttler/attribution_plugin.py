@@ -5115,7 +5115,15 @@ def _store_project_profile(layer, config: dict):
         pass
 
 
-def _apply_configuration_to_layer(iface, layer, config: dict, merged_operator_entries=None, parent=None):
+def _apply_configuration_to_layer(
+    iface,
+    layer,
+    config: dict,
+    merged_operator_entries=None,
+    parent=None,
+    prompt_sync_existing: bool = True,
+    show_success_message: bool = True,
+):
     if not config["nextcloud_base_url"] or not config["nextcloud_user"] or not config["nextcloud_app_password"]:
         QMessageBox.warning(
             parent or iface.mainWindow(),
@@ -5184,7 +5192,7 @@ def _apply_configuration_to_layer(iface, layer, config: dict, merged_operator_en
         )
     )
     can_sync_existing = bool(operator_name_field and has_operator_targets)
-    if can_sync_existing:
+    if can_sync_existing and prompt_sync_existing:
         answer = QMessageBox.question(
             parent or iface.mainWindow(),
             "AttributionButler",
@@ -5223,12 +5231,13 @@ def _apply_configuration_to_layer(iface, layer, config: dict, merged_operator_en
                     f"Synchronisierung fehlgeschlagen: {exc}",
                 )
 
-    iface.messageBar().pushMessage(
-        "AttributionButler",
-        f"Layer '{layer.name()}' ist verbunden.",
-        level=Qgis.Success,
-        duration=5,
-    )
+    if show_success_message:
+        iface.messageBar().pushMessage(
+            "AttributionButler",
+            f"Layer '{layer.name()}' ist verbunden.",
+            level=Qgis.Success,
+            duration=5,
+        )
     return True
 
 
