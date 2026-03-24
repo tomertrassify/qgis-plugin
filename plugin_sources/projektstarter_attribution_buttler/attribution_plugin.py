@@ -352,6 +352,7 @@ class LayerConfigDialog(QDialog):
         self._operators_page_index = self.page_stack.addWidget(operators_tab)
         operators_icon = self.style().standardIcon(QStyle.SP_DirIcon)
         self._local_operator_overlays = []
+        self._refreshing_local_operator_table = False
         self.operator_tabs = QTabWidget(self)
         operators_layout.addWidget(self.operator_tabs, 1)
 
@@ -363,7 +364,7 @@ class LayerConfigDialog(QDialog):
         self.local_operator_status_label.setWordWrap(True)
         local_layout.addWidget(self.local_operator_status_label)
         self.local_operator_hint_label = QLabel(
-            "Waehle rechts einen Betreiber aus, uebernimm ihn fuer die markierten lokalen Ordner und erzeuge danach bei Bedarf die Nextcloud Links direkt hier im Tab."
+            "Waehle rechts einen Betreiber aus, uebernimm ihn fuer die markierten lokalen Ordner und erzeuge danach bei Bedarf die Nextcloud Links direkt hier im Tab. 'Stand' kommt automatisch aus dem juengsten Dateidatum im Ordner, kann aber ueberschrieben werden."
         )
         self.local_operator_hint_label.setWordWrap(True)
         local_layout.addWidget(self.local_operator_hint_label)
@@ -389,6 +390,7 @@ class LayerConfigDialog(QDialog):
             self.local_operator_table,
             selection_mode=QAbstractItemView.ExtendedSelection,
         )
+        self.local_operator_table.itemChanged.connect(self._on_local_operator_table_item_changed)
         local_header = self.local_operator_table.horizontalHeader()
         local_header.setStretchLastSection(False)
         local_header.setMinimumSectionSize(90)
@@ -408,6 +410,7 @@ class LayerConfigDialog(QDialog):
         local_header.resizeSection(5, 280)
         local_header.resizeSection(6, 380)
         local_header.setTextElideMode(Qt.ElideNone)
+        self.local_operator_table.setColumnHidden(LOCAL_OPERATOR_COLUMN_SOURCE, True)
         local_layout.addWidget(self.local_operator_table, 1)
         local_buttons = QHBoxLayout()
         self.local_operator_assign_button = QPushButton("Aus Betreiberliste uebernehmen")
@@ -417,7 +420,7 @@ class LayerConfigDialog(QDialog):
         self.local_operator_clear_button = QPushButton("Zuordnung loeschen")
         self.local_operator_clear_button.clicked.connect(self._clear_selected_local_operator_rows)
         self.local_operator_reload_button = QPushButton("Ordner neu laden")
-        self.local_operator_reload_button.clicked.connect(self._refresh_local_operator_table)
+        self.local_operator_reload_button.clicked.connect(self._reload_local_operator_table)
         local_buttons.addWidget(self.local_operator_assign_button)
         local_buttons.addWidget(self.local_operator_link_button)
         local_buttons.addWidget(self.local_operator_clear_button)
@@ -693,69 +696,111 @@ class LayerConfigDialog(QDialog):
     def _local_path_token(self, path_value: str) -> str:
         return str(path_value or "").strip().replace("\\", "/").rstrip("/").casefold()
 
+    def _latest_file_date_in_path(self, path_value: str) -> str:
+        target = str(path_value or "").strip()
+        if not target or not os.path.exists(target):
+            return ""
+
+        try:
+            if os.path.isfile(target):
+                ts = os.path.getmtime(target)
+                return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+
+            if not os.path.isdir(target):
+                return ""
+
+            newest_ts = None
+            for root, _dirnames, filenames in os.walk(target):
+                for filename in filenames:
+                    file_path = os.path.join(root, filename)
+                    try:
+                        ts = os.path.getmtime(file_path)
+                    except Exception:
+                        continue
+                    if newest_ts is None or ts > newest_ts:
+                        newest_ts = ts
+
+            if newest_ts is None:
+                return ""
+            return datetime.fromtimestamp(newest_ts).strftime("%Y-%m-%d")
+        except Exception:
+            return ""
+
     def _refresh_local_operator_table(self):
         rows = self._local_operator_folder_rows()
         sorting_enabled = self.local_operator_table.isSortingEnabled()
         if sorting_enabled:
             self.local_operator_table.setSortingEnabled(False)
+        old_block = self.local_operator_table.blockSignals(True)
+        self._refreshing_local_operator_table = True
 
-        overlays_by_path = {}
-        orphan_overlays = []
-        for entry in self._local_operator_overlays:
-            normalized = self._normalize_local_overlay_entry(entry)
-            token = self._local_path_token(normalized.get("folder_path", ""))
-            if token and token not in overlays_by_path:
-                overlays_by_path[token] = normalized
-            else:
-                orphan_overlays.append(normalized)
+        try:
+            overlays_by_path = {}
+            orphan_overlays = []
+            for entry in self._local_operator_overlays:
+                normalized = self._normalize_local_overlay_entry(entry)
+                token = self._local_path_token(normalized.get("folder_path", ""))
+                if token and token not in overlays_by_path:
+                    overlays_by_path[token] = normalized
+                else:
+                    orphan_overlays.append(normalized)
 
-        self.local_operator_table.setRowCount(0)
+            self.local_operator_table.setRowCount(0)
 
-        def _append_row(folder_name: str, overlay: dict | None, folder_path: str):
-            row = self.local_operator_table.rowCount()
-            self.local_operator_table.insertRow(row)
+            def _append_row(folder_name: str, overlay: dict | None, folder_path: str):
+                row = self.local_operator_table.rowCount()
+                self.local_operator_table.insertRow(row)
 
-            values = [
-                folder_name,
-                str((overlay or {}).get("operator_name", "") or "").strip(),
-                str((overlay or {}).get("source_name", "") or "").strip(),
-                str((overlay or {}).get("validity", "") or "").strip(),
-                str((overlay or {}).get("stand", "") or "").strip(),
-                self._operator_path_alias(folder_path),
-                str((overlay or {}).get("nextcloud_link", "") or "").strip(),
-            ]
-            for col, text in enumerate(values):
-                item = QTableWidgetItem(text)
-                if col in (
-                    LOCAL_OPERATOR_COLUMN_FOLDER,
-                    LOCAL_OPERATOR_COLUMN_PATH,
-                    LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK,
-                ):
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                if col == LOCAL_OPERATOR_COLUMN_PATH:
-                    item.setData(Qt.UserRole, folder_path)
-                    item.setToolTip(folder_path)
-                elif col == LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK:
-                    item.setToolTip(text)
-                self.local_operator_table.setItem(row, col, item)
+                auto_stand = self._latest_file_date_in_path(folder_path)
+                saved_stand = str((overlay or {}).get("stand", "") or "").strip()
+                stand_value = saved_stand if saved_stand and saved_stand != auto_stand else auto_stand
 
-        for folder_name, folder_path in rows:
-            overlay = overlays_by_path.pop(self._local_path_token(folder_path), None)
-            _append_row(folder_name, overlay, folder_path)
+                values = [
+                    folder_name,
+                    str((overlay or {}).get("operator_name", "") or "").strip(),
+                    str((overlay or {}).get("source_name", "") or "").strip(),
+                    str((overlay or {}).get("validity", "") or "").strip(),
+                    stand_value,
+                    self._operator_path_alias(folder_path),
+                    str((overlay or {}).get("nextcloud_link", "") or "").strip(),
+                ]
+                for col, text in enumerate(values):
+                    item = QTableWidgetItem(text)
+                    if col in (
+                        LOCAL_OPERATOR_COLUMN_FOLDER,
+                        LOCAL_OPERATOR_COLUMN_PATH,
+                        LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK,
+                    ):
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    if col == LOCAL_OPERATOR_COLUMN_PATH:
+                        item.setData(Qt.UserRole, folder_path)
+                        item.setToolTip(folder_path)
+                    elif col == LOCAL_OPERATOR_COLUMN_STAND:
+                        item.setData(Qt.UserRole, auto_stand)
+                        item.setToolTip(auto_stand or text)
+                    elif col == LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK:
+                        item.setToolTip(text)
+                    self.local_operator_table.setItem(row, col, item)
 
-        remaining_orphans = list(overlays_by_path.values()) + orphan_overlays
-        for overlay in remaining_orphans:
-            folder_path = str(overlay.get("folder_path", "") or "").strip()
-            if folder_path:
-                folder_name = f"{Path(folder_path).name} (fehlt)"
-            else:
-                folder_name = (
-                    f"{str(overlay.get('operator_name', '') or '').strip() or 'Manueller Eintrag'} (manuell)"
-                )
-            _append_row(folder_name, overlay, folder_path)
+            for folder_name, folder_path in rows:
+                overlay = overlays_by_path.pop(self._local_path_token(folder_path), None)
+                _append_row(folder_name, overlay, folder_path)
 
-        if sorting_enabled:
-            self.local_operator_table.setSortingEnabled(True)
+            remaining_orphans = list(overlays_by_path.values()) + orphan_overlays
+            for overlay in remaining_orphans:
+                folder_path = str(overlay.get("folder_path", "") or "").strip()
+                if folder_path:
+                    folder_name = f"{Path(folder_path).name} (fehlt)"
+                else:
+                    folder_name = (
+                        f"{str(overlay.get('operator_name', '') or '').strip() or 'Manueller Eintrag'} (manuell)"
+                    )
+                _append_row(folder_name, overlay, folder_path)
+        finally:
+            self._refreshing_local_operator_table = False
+            self.local_operator_table.blockSignals(old_block)
+            if sorting_enabled:
+                self.local_operator_table.setSortingEnabled(True)
 
         project_root = self._project_root_from_context()
         if project_root is None:
@@ -814,6 +859,9 @@ class LayerConfigDialog(QDialog):
             validity = validity_item.text().strip() if validity_item else ""
             stand_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_STAND)
             stand = stand_item.text().strip() if stand_item else ""
+            auto_stand = str(stand_item.data(Qt.UserRole) or "").strip() if stand_item else ""
+            if stand == auto_stand:
+                stand = ""
             link_item = self.local_operator_table.item(row, LOCAL_OPERATOR_COLUMN_NEXTCLOUD_LINK)
             nextcloud_link = link_item.text().strip() if link_item else ""
             if not any((operator_name, source_name, validity, stand, nextcloud_link)):
@@ -833,6 +881,15 @@ class LayerConfigDialog(QDialog):
 
     def _store_current_local_operator_overlays_from_table(self):
         self._local_operator_overlays = self._collect_local_operator_overlays_from_table()
+
+    def _reload_local_operator_table(self):
+        self._store_current_local_operator_overlays_from_table()
+        self._refresh_local_operator_table()
+
+    def _on_local_operator_table_item_changed(self, item: QTableWidgetItem):
+        if item is None or self._refreshing_local_operator_table:
+            return
+        self._store_current_local_operator_overlays_from_table()
 
     def _assign_selected_external_operator_to_local_rows(self):
         selected_local_rows = self.local_operator_table.selectionModel().selectedRows()
