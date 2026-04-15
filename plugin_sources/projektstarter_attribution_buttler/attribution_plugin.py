@@ -286,9 +286,9 @@ class LayerConfigDialog(QDialog):
         self._configure_action_row(logo_row)
         self.header_logo_label = QLabel(self)
         self.header_logo_label.setPixmap(
-            QIcon(os.path.join(os.path.dirname(__file__), "assets", "trassify-logo.svg")).pixmap(42, 42)
+            QIcon(os.path.join(os.path.dirname(__file__), "assets", "trassify-logo.svg")).pixmap(64, 64)
         )
-        self.header_logo_label.setFixedSize(50, 50)
+        self.header_logo_label.setFixedSize(76, 76)
         self.header_logo_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         logo_row.addWidget(self.header_logo_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         logo_row.addStretch(1)
@@ -458,6 +458,7 @@ class LayerConfigDialog(QDialog):
             "Lokale Ordner aus 'Leitungspläne' koennen hier projektweit einem Eintrag aus der Betreiberliste zugeordnet werden."
         )
         self.local_operator_status_label.setWordWrap(True)
+        self.local_operator_status_label.setVisible(False)
         local_layout.addWidget(self.local_operator_status_label)
         self.local_operator_hint_label = QLabel(
             "Wenn der Ordnername eindeutig zu einem Betreiber passt, wird die Zuordnung automatisch vorbelegt. "
@@ -467,6 +468,7 @@ class LayerConfigDialog(QDialog):
             "ueberschrieben werden."
         )
         self.local_operator_hint_label.setWordWrap(True)
+        self.local_operator_hint_label.setVisible(False)
         local_layout.addWidget(self.local_operator_hint_label)
         self.local_operator_search_input = QLineEdit()
         self.local_operator_search_input.setPlaceholderText("Lokale Ordner suchen...")
@@ -580,6 +582,7 @@ class LayerConfigDialog(QDialog):
             "Waehle oben eine Datenquelle. Die Liste zeigt dann direkt die verbundenen Betreiberdaten."
         )
         self.operator_status_label.setWordWrap(True)
+        self.operator_status_label.setVisible(False)
         external_layout.addWidget(self.operator_status_label)
 
         self.operator_search_input = QLineEdit()
@@ -645,6 +648,7 @@ class LayerConfigDialog(QDialog):
         self.operator_reload_button.clicked.connect(self._reload_selected_external_operator_source)
         self.operator_save_button = QPushButton("Aenderungen speichern")
         self.operator_save_button.clicked.connect(self._save_external_operator_changes)
+        self.operator_save_button.setVisible(False)
         self.operator_add_button = QPushButton("Zeile hinzufuegen")
         self.operator_add_button.clicked.connect(self._add_external_operator_row)
         self.operator_edit_button = QPushButton("Bearbeiten")
@@ -652,16 +656,15 @@ class LayerConfigDialog(QDialog):
         self.operator_edit_button.setVisible(False)
         self.operator_remove_button = QPushButton("Ausgewaehlte Zeilen loeschen")
         self.operator_remove_button.clicked.connect(self._remove_selected_external_operator_row)
+        self.operator_remove_button.setVisible(False)
         for button in (
             self.operator_reload_button,
-            self.operator_save_button,
             self.operator_add_button,
             self.operator_edit_button,
             self.operator_remove_button,
         ):
             self._configure_action_button(button)
         operator_buttons.addWidget(self.operator_reload_button)
-        operator_buttons.addWidget(self.operator_save_button)
         operator_buttons.addWidget(self.operator_add_button)
         operator_buttons.addWidget(self.operator_edit_button)
         operator_buttons.addWidget(self.operator_remove_button)
@@ -1198,20 +1201,24 @@ class LayerConfigDialog(QDialog):
             self.local_operator_status_label.setText(
                 "Kein verbundenes Projekt gefunden. Die lokalen Ordner aus 'Leitungspläne' erscheinen hier automatisch."
             )
+            self.local_operator_status_label.setVisible(True)
         else:
             leitungsauskunft_dir = _plans_directory(project_root)
             if not leitungsauskunft_dir.is_dir():
                 self.local_operator_status_label.setText(
                     "Im verbundenen Projekt wurde kein Ordner 'Leitungspläne' gefunden."
                 )
+                self.local_operator_status_label.setVisible(True)
             elif not rows:
                 self.local_operator_status_label.setText(
                     "In 'Leitungspläne' wurden noch keine Betreiberordner gefunden."
                 )
+                self.local_operator_status_label.setVisible(True)
             else:
                 self.local_operator_status_label.setText(
                     f"{len(rows)} lokale Ordner gefunden. Diese kannst du hier projektweit mit Eintraegen aus der Betreiberliste verknuepfen."
                 )
+                self.local_operator_status_label.setVisible(False)
 
         self._apply_table_text_filter(
             self.local_operator_table,
@@ -2182,10 +2189,18 @@ class LayerConfigDialog(QDialog):
         context = self._external_operator_context if isinstance(self._external_operator_context, dict) else {}
         selection_model = self.operator_table.selectionModel()
         selected_rows = list(selection_model.selectedRows()) if selection_model is not None else []
+        has_selection = len(selected_rows) >= 1
         has_single_selection = len(selected_rows) == 1
         can_edit = bool(context.get("editable", False) and has_single_selection)
+        can_remove = bool(
+            context.get("editable", False)
+            and has_selection
+            and (context.get("deletable", False) or context.get("addable", False))
+        )
         self.operator_edit_button.setVisible(can_edit)
         self.operator_edit_button.setEnabled(can_edit)
+        self.operator_remove_button.setVisible(can_remove)
+        self.operator_remove_button.setEnabled(can_remove)
 
     def _operator_path_alias(self, path_value: str) -> str:
         raw = str(path_value or "").strip()
@@ -3047,12 +3062,14 @@ class LayerConfigDialog(QDialog):
             self.operator_status_label.setText(
                 "Bitte zuerst unter 'Datenquellen' eine Excel- oder andere Betreiberquelle verbinden."
             )
+            self.operator_status_label.setVisible(True)
             self.operator_reload_button.setEnabled(False)
             self.operator_save_button.setEnabled(False)
             self.operator_add_button.setEnabled(False)
             self.operator_edit_button.setEnabled(False)
             self.operator_edit_button.setVisible(False)
             self.operator_remove_button.setEnabled(False)
+            self.operator_remove_button.setVisible(False)
             return
 
         source, source_index = selected
@@ -3061,12 +3078,14 @@ class LayerConfigDialog(QDialog):
             self.operator_status_label.setText(
                 f"{self._source_display_name(source, source_index)}: {error}"
             )
+            self.operator_status_label.setVisible(True)
             self.operator_reload_button.setEnabled(True)
             self.operator_save_button.setEnabled(False)
             self.operator_add_button.setEnabled(False)
             self.operator_edit_button.setEnabled(False)
             self.operator_edit_button.setVisible(False)
             self.operator_remove_button.setEnabled(False)
+            self.operator_remove_button.setVisible(False)
             return
 
         self._external_operator_context = context
@@ -3129,6 +3148,8 @@ class LayerConfigDialog(QDialog):
             if sorting_enabled:
                 self.operator_table.setSortingEnabled(True)
 
+        self.operator_table.clearSelection()
+
         provider_name = context.get("provider_name", "") or "unbekannt"
         mode = "schreibbar" if context["editable"] else "nur lesbar"
         add_mode = "neue Zeilen moeglich" if context.get("addable", False) else "keine neuen Zeilen"
@@ -3136,6 +3157,7 @@ class LayerConfigDialog(QDialog):
             f"{context['source_name']} ({provider_name}, {mode}, {add_mode}) - "
             f"{len(rows)} Zeilen geladen. 'Stand', 'Pfad' und 'Nextcloud Link' werden nur lokal im Projekt gespeichert."
         )
+        self.operator_status_label.setVisible(False)
         self.operator_reload_button.setEnabled(True)
         self.operator_save_button.setEnabled(bool(context["editable"]))
         self.operator_add_button.setEnabled(bool(context.get("editable", False) and context.get("addable", False)))
@@ -3369,25 +3391,29 @@ class LayerConfigDialog(QDialog):
         initial_values = dict(initial_values or {})
         dialog = apply_butler_window_icon(QDialog(self), self)
         dialog.setWindowTitle(dialog_title)
-        dialog.resize(560, 0)
+        dialog.resize(720, 0)
+        dialog.setMinimumWidth(680)
 
         layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(16)
 
-        intro = QLabel(
-            intro_text
-            or (
-                "Pflege hier die Werte fuer den Betreiber-Eintrag. "
-                "Beim Speichern schreibt Butler die Aenderungen direkt in die Datenquelle."
-            )
-        )
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
+        heading = QLabel(dialog_title, dialog)
+        heading.setStyleSheet("font-size: 18px; font-weight: 600;")
+        layout.addWidget(heading)
 
-        form_group = QGroupBox("Betreiberdaten", dialog)
+        form_group = QGroupBox("Attribute", dialog)
         form = QFormLayout(form_group)
+        form.setContentsMargins(18, 18, 18, 18)
+        form.setHorizontalSpacing(18)
+        form.setVerticalSpacing(14)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form.setFormAlignment(Qt.AlignTop)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        source_value = QLabel(source_name or "-")
-        source_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        source_value = QLineEdit(dialog)
+        source_value.setReadOnly(True)
+        source_value.setText(source_name or "-")
         operator_name_input = QLineEdit(dialog)
         operator_name_input.setPlaceholderText("Pflichtfeld")
         operator_name_input.setText(str(initial_values.get("operator_name", "") or "").strip())
@@ -3407,6 +3433,18 @@ class LayerConfigDialog(QDialog):
         fault_number_input.setPlaceholderText("Stoer- oder Rufnummer")
         fault_number_input.setText(str(initial_values.get("fault_number", "") or "").strip())
 
+        for field in (
+            source_value,
+            operator_name_input,
+            validity_input,
+            contact_input,
+            phone_input,
+            email_input,
+            fault_number_input,
+        ):
+            field.setMinimumHeight(34)
+            field.setClearButtonEnabled(not field.isReadOnly())
+
         form.addRow("Datenquelle", source_value)
         form.addRow("Betreibername", operator_name_input)
         form.addRow("Gueltigkeit", validity_input)
@@ -3415,13 +3453,6 @@ class LayerConfigDialog(QDialog):
         form.addRow("E-Mail", email_input)
         form.addRow("Stoernummer", fault_number_input)
         layout.addWidget(form_group)
-
-        note = QLabel(
-            "Stand, Pfad und Nextcloud Link pflegst du anschliessend wie gewohnt in der Tabelle "
-            "oder lokal im Projekt."
-        )
-        note.setWordWrap(True)
-        layout.addWidget(note)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
         ok_button = buttons.button(QDialogButtonBox.Ok)
