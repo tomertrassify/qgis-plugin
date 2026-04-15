@@ -25,6 +25,8 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -43,6 +45,7 @@ from qgis.core import (
     QgsEditFormConfig,
     QgsFeature,
     QgsMapLayerType,
+    QgsProject,
     QgsVectorDataProvider,
     QgsVectorLayer,
 )
@@ -150,6 +153,11 @@ USER_CONFIG_KEYS = (
     "local_nextcloud_roots",
     "nextcloud_folder_marker",
 )
+PROJECT_WIDE_CONFIG_KEYS = (
+    "operators",
+    "external_data_sources",
+)
+_LAYER_PROPERTY_MISSING = "__psb_missing__"
 
 LOCAL_OPERATOR_COLUMN_ACTION = 0
 LOCAL_OPERATOR_COLUMN_FOLDER = 1
@@ -396,6 +404,34 @@ class LayerConfigDialog(QDialog):
         behavior_form.addRow("", self.fill_on_open)
 
         config_layout.addWidget(behavior_group)
+
+        target_layers_group = QGroupBox("4) Auf Layer anwenden")
+        target_layers_layout = QVBoxLayout(target_layers_group)
+        target_layers_hint = QLabel(
+            "Die Betreiberliste und Datenquellen gelten projektweit. "
+            "Hier waehlst du, auf welche Layer die aktuelle Butler-Konfiguration angewendet wird."
+        )
+        target_layers_hint.setWordWrap(True)
+        target_layers_layout.addWidget(target_layers_hint)
+
+        self.target_layer_list = QListWidget(self)
+        self.target_layer_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.target_layer_list.setMinimumHeight(140)
+        target_layers_layout.addWidget(self.target_layer_list, 1)
+
+        target_layer_button_row = QHBoxLayout()
+        self._configure_action_row(target_layer_button_row)
+        self.target_layers_select_all_button = QPushButton("Alle Layer")
+        self.target_layers_select_all_button.clicked.connect(self._select_all_target_layers)
+        self.target_layers_clear_button = QPushButton("Nur aktueller Layer")
+        self.target_layers_clear_button.clicked.connect(self._clear_additional_target_layers)
+        self._configure_action_button(self.target_layers_select_all_button)
+        self._configure_action_button(self.target_layers_clear_button)
+        target_layer_button_row.addWidget(self.target_layers_select_all_button)
+        target_layer_button_row.addWidget(self.target_layers_clear_button)
+        target_layer_button_row.addStretch(1)
+        target_layers_layout.addLayout(target_layer_button_row)
+        config_layout.addWidget(target_layers_group)
 
         footer = QLabel(
             "Hinweis: Leere Ziel-Felder werden ignoriert. So kannst du nur die Felder befuellen, die du brauchst."
@@ -710,6 +746,7 @@ class LayerConfigDialog(QDialog):
         root_layout.addWidget(buttons)
 
         self._refresh_operator_source_selector()
+        self._refresh_target_layer_list()
         self._set_main_page(self._operators_page_index)
 
     def _set_main_page(self, page_index: int):
@@ -741,6 +778,90 @@ class LayerConfigDialog(QDialog):
         if icon_size > 0:
             button.setIconSize(QSize(icon_size, icon_size))
         button.setStyleSheet("padding: 0 12px;")
+
+    def _project_vector_layers(self) -> list[QgsVectorLayer]:
+        layers = []
+        seen_layer_ids = set()
+        for node in QgsProject.instance().layerTreeRoot().findLayers():
+            layer = node.layer()
+            if not isinstance(layer, QgsVectorLayer):
+                continue
+            if layer.type() != QgsMapLayerType.VectorLayer:
+                continue
+            if layer.id() in seen_layer_ids:
+                continue
+            seen_layer_ids.add(layer.id())
+            layers.append(layer)
+
+        if self.layer is not None and self.layer.id() not in seen_layer_ids:
+            layers.insert(0, self.layer)
+        return layers
+
+    def _refresh_target_layer_list(self):
+        checked_layer_ids = set()
+        for row in range(self.target_layer_list.count()):
+            item = self.target_layer_list.item(row)
+            if item is not None and item.checkState() == Qt.Checked:
+                checked_layer_ids.add(str(item.data(Qt.UserRole) or ""))
+
+        self.target_layer_list.clear()
+        current_layer_id = self.layer.id() if self.layer is not None else ""
+        for layer in self._project_vector_layers():
+            layer_id = layer.id()
+            label = str(layer.name() or "").strip() or "(ohne Namen)"
+            if layer_id == current_layer_id:
+                label = f"{label} (aktueller Layer)"
+
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, layer_id)
+            item.setFlags((item.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsSelectable)
+            if layer_id == current_layer_id or layer_id in checked_layer_ids:
+                item.setCheckState(Qt.Checked)
+            else:
+                item.setCheckState(Qt.Unchecked)
+            self.target_layer_list.addItem(item)
+
+    def _select_all_target_layers(self):
+        for row in range(self.target_layer_list.count()):
+            item = self.target_layer_list.item(row)
+            if item is not None:
+                item.setCheckState(Qt.Checked)
+
+    def _clear_additional_target_layers(self):
+        current_layer_id = self.layer.id() if self.layer is not None else ""
+        for row in range(self.target_layer_list.count()):
+            item = self.target_layer_list.item(row)
+            if item is None:
+                continue
+            item.setCheckState(
+                Qt.Checked if str(item.data(Qt.UserRole) or "") == current_layer_id else Qt.Unchecked
+            )
+
+    def selected_target_layers(self) -> list[QgsVectorLayer]:
+        selected_layers = []
+        seen_layer_ids = set()
+        current_layer_id = self.layer.id() if self.layer is not None else ""
+
+        for row in range(self.target_layer_list.count()):
+            item = self.target_layer_list.item(row)
+            if item is None:
+                continue
+            layer_id = str(item.data(Qt.UserRole) or "")
+            if not layer_id:
+                continue
+            if item.checkState() != Qt.Checked and layer_id != current_layer_id:
+                continue
+            layer = QgsProject.instance().mapLayer(layer_id)
+            if not isinstance(layer, QgsVectorLayer):
+                continue
+            if layer.id() in seen_layer_ids:
+                continue
+            seen_layer_ids.add(layer.id())
+            selected_layers.append(layer)
+
+        if self.layer is not None and self.layer.id() not in seen_layer_ids:
+            selected_layers.insert(0, self.layer)
+        return selected_layers
 
     def _set_global_nextcloud_config(self, config: dict):
         self._global_nextcloud_config = {
@@ -5489,6 +5610,7 @@ class LayerConfigDialog(QDialog):
         self.fill_on_open.setChecked(bool(config.get("fill_on_form_open", False)))
         self._set_operators(config.get("operators", []))
         self._set_data_sources(config.get("external_data_sources", []))
+        self._refresh_target_layer_list()
 
     def accept(self):
         self._store_current_local_operator_overlays_from_table()
@@ -5544,6 +5666,7 @@ class LayerConfigDialog(QDialog):
         self.project_context_note.setText(str(info.get("note", "") or "").strip())
         self.project_context_group.setVisible(True)
         self._refresh_local_operator_table()
+        self._refresh_target_layer_list()
 
 
 def _property_key(name: str) -> str:
@@ -5844,19 +5967,31 @@ def _parse_data_sources(value) -> list[dict]:
 
 def _load_layer_config(layer) -> dict:
     cfg = dict(DEFAULT_CONFIG)
+    shared_cfg = load_shared_settings()
+    if isinstance(shared_cfg, dict):
+        cfg.update(shared_cfg)
     profile_cfg = load_layer_profile_config(layer)
     if isinstance(profile_cfg, dict):
-        cfg.update(profile_cfg)
+        for key, value in profile_cfg.items():
+            if key in PROJECT_WIDE_CONFIG_KEYS and not value and key in shared_cfg:
+                continue
+            cfg[key] = value
     for key, default in DEFAULT_CONFIG.items():
-        raw = layer.customProperty(_property_key(key), default)
+        raw = layer.customProperty(_property_key(key), _LAYER_PROPERTY_MISSING)
+        if raw == _LAYER_PROPERTY_MISSING:
+            continue
         if key in ("overwrite_existing_values", "fill_on_form_open"):
             cfg[key] = _to_bool(raw, bool(default))
         elif key == "local_nextcloud_roots":
             cfg[key] = _parse_roots(raw)
         elif key == "operators":
-            cfg[key] = _parse_operators(raw)
+            parsed = _parse_operators(raw)
+            if parsed:
+                cfg[key] = parsed
         elif key == "external_data_sources":
-            cfg[key] = _parse_data_sources(raw)
+            parsed = _parse_data_sources(raw)
+            if parsed:
+                cfg[key] = parsed
         else:
             cfg[key] = str(raw or "").strip()
     return expand_config_from_storage(cfg)
@@ -5878,6 +6013,13 @@ def _effective_layer_config(layer) -> dict:
 def _save_layer_config(layer, config: dict):
     portable_config = normalize_config_for_storage(config)
     for key in DEFAULT_CONFIG.keys():
+        if key in PROJECT_WIDE_CONFIG_KEYS:
+            prop = _property_key(key)
+            if hasattr(layer, "removeCustomProperty"):
+                layer.removeCustomProperty(prop)
+            else:
+                layer.setCustomProperty(prop, "")
+            continue
         value = portable_config.get(key, DEFAULT_CONFIG[key])
         if key in ("local_nextcloud_roots", "operators", "external_data_sources"):
             layer.setCustomProperty(_property_key(key), json.dumps(value))
@@ -5916,6 +6058,57 @@ def _field_names_to_validate(config: dict) -> list[str]:
 
 def _missing_fields(layer, config: dict) -> list[str]:
     return [name for name in _field_names_to_validate(config) if layer.fields().indexOf(name) < 0]
+
+
+def _configuration_validation_error(layer, config: dict) -> str:
+    if not config["nextcloud_base_url"] or not config["nextcloud_user"] or not config["nextcloud_app_password"]:
+        return (
+            "Nextcloud URL, Benutzer und App-Passwort fehlen. "
+            "Bitte im Projektprofil oder in Trassify Master Tools > Einstellungen > Nextcloud setzen."
+        )
+    if not config["path_field_name"]:
+        return "Pfadfeld ist erforderlich."
+
+    target_fields = [
+        config.get("file_link_field_name", ""),
+        config.get("folder_link_field_name", ""),
+        config.get("name_field_name", ""),
+        config.get("stand_field_name", ""),
+        config.get("operator_contact_field_name", ""),
+        config.get("operator_phone_field_name", ""),
+        config.get("operator_email_field_name", ""),
+        config.get("operator_fault_field_name", ""),
+        config.get("operator_validity_field_name", ""),
+        config.get("operator_stand_field_name", ""),
+    ]
+    if not any(str(name or "").strip() for name in target_fields):
+        return "Mindestens ein Zielfeld muss gesetzt sein."
+
+    missing = _missing_fields(layer, config)
+    if missing:
+        return "Diese Felder fehlen im Layer: " + ", ".join(missing)
+
+    return ""
+
+
+def _can_sync_existing_layer_data(layer, config: dict) -> bool:
+    operator_name_field = str(config.get("operator_name_field_name", "") or "").strip()
+    if not operator_name_field or layer.fields().indexOf(operator_name_field) < 0:
+        return False
+
+    for key in (
+        "folder_link_field_name",
+        "operator_contact_field_name",
+        "operator_phone_field_name",
+        "operator_email_field_name",
+        "operator_fault_field_name",
+        "operator_validity_field_name",
+        "operator_stand_field_name",
+    ):
+        field_name = str(config.get(key, "") or "").strip()
+        if field_name and layer.fields().indexOf(field_name) >= 0:
+            return True
+    return False
 
 
 def _normalized_operator_name(value) -> str:
@@ -6144,7 +6337,10 @@ def _store_project_profile(layer, config: dict):
         pass
 
     try:
-        save_layer_profile_config(layer, config)
+        layer_profile_config = dict(config)
+        for key in PROJECT_WIDE_CONFIG_KEYS:
+            layer_profile_config.pop(key, None)
+        save_layer_profile_config(layer, layer_profile_config)
     except Exception:
         pass
 
@@ -6158,48 +6354,12 @@ def _apply_configuration_to_layer(
     prompt_sync_existing: bool = True,
     show_success_message: bool = True,
 ):
-    if not config["nextcloud_base_url"] or not config["nextcloud_user"] or not config["nextcloud_app_password"]:
+    validation_error = _configuration_validation_error(layer, config)
+    if validation_error:
         QMessageBox.warning(
             parent or iface.mainWindow(),
             "AttributionButler",
-            "Nextcloud URL, Benutzer und App-Passwort fehlen. "
-            "Bitte im Projektprofil oder in Trassify Master Tools > Einstellungen > Nextcloud setzen.",
-        )
-        return False
-    if not config["path_field_name"]:
-        QMessageBox.warning(
-            parent or iface.mainWindow(),
-            "AttributionButler",
-            "Pfadfeld ist erforderlich.",
-        )
-        return False
-
-    target_fields = [
-        config.get("file_link_field_name", ""),
-        config.get("folder_link_field_name", ""),
-        config.get("name_field_name", ""),
-        config.get("stand_field_name", ""),
-        config.get("operator_contact_field_name", ""),
-        config.get("operator_phone_field_name", ""),
-        config.get("operator_email_field_name", ""),
-        config.get("operator_fault_field_name", ""),
-        config.get("operator_validity_field_name", ""),
-        config.get("operator_stand_field_name", ""),
-    ]
-    if not any(str(name or "").strip() for name in target_fields):
-        QMessageBox.warning(
-            parent or iface.mainWindow(),
-            "AttributionButler",
-            "Mindestens ein Zielfeld muss gesetzt sein.",
-        )
-        return False
-
-    missing = _missing_fields(layer, config)
-    if missing:
-        QMessageBox.warning(
-            parent or iface.mainWindow(),
-            "AttributionButler",
-            "Diese Felder fehlen im Layer:\n- " + "\n- ".join(missing),
+            validation_error,
         )
         return False
 
@@ -6209,6 +6369,8 @@ def _apply_configuration_to_layer(
             layer_config[key] = []
         else:
             layer_config[key] = ""
+    for key in PROJECT_WIDE_CONFIG_KEYS:
+        layer_config.pop(key, None)
     _save_layer_config(layer, layer_config)
     _apply_form_init_code(layer)
     _store_project_profile(layer, config)
@@ -6274,6 +6436,154 @@ def _apply_configuration_to_layer(
             duration=5,
         )
     return True
+
+
+def _apply_configuration_to_layers(
+    iface,
+    config: dict,
+    *,
+    primary_layer=None,
+    target_layers=None,
+    merged_operator_entries=None,
+    parent=None,
+    show_success_message: bool = True,
+):
+    layers = []
+    seen_layer_ids = set()
+
+    for candidate in [primary_layer, *(target_layers or [])]:
+        if not isinstance(candidate, QgsVectorLayer):
+            continue
+        if candidate.id() in seen_layer_ids:
+            continue
+        seen_layer_ids.add(candidate.id())
+        layers.append(candidate)
+
+    if not layers:
+        QMessageBox.warning(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            "Bitte mindestens einen Vektor-Layer auswaehlen.",
+        )
+        return False
+
+    valid_layers = []
+    validation_failures = []
+    for layer in layers:
+        validation_error = _configuration_validation_error(layer, config)
+        if validation_error:
+            validation_failures.append((layer.name(), validation_error))
+            continue
+        valid_layers.append(layer)
+
+    if not valid_layers:
+        if validation_failures:
+            QMessageBox.warning(
+                parent or iface.mainWindow(),
+                "AttributionButler",
+                "Die Konfiguration passt zu keinem der ausgewaehlten Layer:\n- "
+                + "\n- ".join(f"{name}: {error}" for name, error in validation_failures),
+            )
+        return False
+
+    sync_targets = [layer for layer in valid_layers if _can_sync_existing_layer_data(layer, config)]
+    should_sync_existing = False
+    if sync_targets:
+        sync_label = (
+            f"dem Layer '{sync_targets[0].name()}'"
+            if len(sync_targets) == 1
+            else f"{len(sync_targets)} ausgewaehlten Layern"
+        )
+        answer = QMessageBox.question(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            f"Sollen bestehende Datensaetze in {sync_label} jetzt mit der Betreiberliste synchronisiert werden?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        should_sync_existing = answer == QMessageBox.Yes
+
+    applied_layers = []
+    sync_updated_rows = 0
+    sync_updated_values = 0
+    sync_pending_edits = False
+    sync_failures = []
+
+    for layer in valid_layers:
+        if not _apply_configuration_to_layer(
+            iface,
+            layer,
+            config,
+            merged_operator_entries=merged_operator_entries,
+            parent=parent,
+            prompt_sync_existing=False,
+            show_success_message=False,
+        ):
+            continue
+
+        applied_layers.append(layer)
+        if should_sync_existing and layer in sync_targets:
+            try:
+                sync_result = _sync_layer_operator_fields(
+                    layer,
+                    config,
+                    operator_entries=merged_operator_entries,
+                )
+                sync_updated_rows += int(sync_result.get("updated_rows", 0) or 0)
+                sync_updated_values += int(sync_result.get("updated_values", 0) or 0)
+                sync_pending_edits = sync_pending_edits or bool(sync_result.get("pending_edits", False))
+            except Exception as exc:
+                sync_failures.append(f"{layer.name()}: {exc}")
+
+    if validation_failures:
+        QMessageBox.warning(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            "Diese Layer wurden uebersprungen:\n- "
+            + "\n- ".join(f"{name}: {error}" for name, error in validation_failures),
+        )
+
+    if sync_failures:
+        QMessageBox.warning(
+            parent or iface.mainWindow(),
+            "AttributionButler",
+            "Die Synchronisierung ist fuer einzelne Layer fehlgeschlagen:\n- " + "\n- ".join(sync_failures),
+        )
+
+    if show_success_message and applied_layers:
+        if len(applied_layers) == 1:
+            iface.messageBar().pushMessage(
+                "AttributionButler",
+                f"Layer '{applied_layers[0].name()}' ist verbunden.",
+                level=Qgis.Success,
+                duration=5,
+            )
+        else:
+            iface.messageBar().pushMessage(
+                "AttributionButler",
+                f"{len(applied_layers)} Layer sind verbunden.",
+                level=Qgis.Success,
+                duration=5,
+            )
+
+    if should_sync_existing:
+        if sync_updated_values > 0:
+            suffix = " (Aenderungen sind noch nicht gespeichert.)" if sync_pending_edits else ""
+            iface.messageBar().pushMessage(
+                "AttributionButler",
+                f"Synchronisiert: {sync_updated_rows} Datensaetze, {sync_updated_values} Feldwerte{suffix}",
+                level=Qgis.Info,
+                duration=6,
+            )
+        elif applied_layers:
+            iface.messageBar().pushMessage(
+                "AttributionButler",
+                "Keine Aenderungen noetig: Betreiberdaten sind bereits aktuell.",
+                level=Qgis.Info,
+                duration=5,
+            )
+
+    return bool(applied_layers)
 
 
 class NextcloudFormPlugin:
@@ -6368,10 +6678,11 @@ class NextcloudFormPlugin:
         if dialog.exec_() != QDialog.Accepted:
             return
 
-        _apply_configuration_to_layer(
+        _apply_configuration_to_layers(
             self.iface,
-            layer,
             dialog.values(),
+            primary_layer=layer,
+            target_layers=dialog.selected_target_layers(),
             merged_operator_entries=dialog.merged_operator_entries(),
             parent=self.iface.mainWindow(),
         )

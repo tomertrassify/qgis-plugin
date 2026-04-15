@@ -398,6 +398,8 @@ def save_shared_settings_from_config(config: dict, project_root: Path | None = N
         "nextcloud_base_url": str(config.get("nextcloud_base_url", "") or "").strip(),
         "nextcloud_user": str(config.get("nextcloud_user", "") or "").strip(),
         "nextcloud_folder_marker": str(config.get("nextcloud_folder_marker", "") or "").strip(),
+        "operators": copy.deepcopy(config.get("operators", [])),
+        "external_data_sources": copy.deepcopy(config.get("external_data_sources", [])),
     }
     profile["shared_settings"] = _normalize_config_paths(shared_settings, root)
     return save_project_profile(profile, root)

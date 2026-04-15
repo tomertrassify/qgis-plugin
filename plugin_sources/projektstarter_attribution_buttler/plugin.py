@@ -20,7 +20,7 @@ from .attribution_plugin import (
     DEFAULT_CONFIG,
     INIT_FUNCTION_NAME,
     LayerConfigDialog,
-    _apply_configuration_to_layer,
+    _apply_configuration_to_layers,
     _effective_layer_config,
     _first_field_match,
 )
@@ -285,10 +285,11 @@ class ProjectStarterButlerDialog(QDialog):
         if not self.layer_config_dialog._save_external_operator_changes(show_feedback=False):
             return
 
-        if not _apply_configuration_to_layer(
+        if not _apply_configuration_to_layers(
             self.plugin.iface,
-            self.current_layer,
             self.layer_config_dialog.values(),
+            primary_layer=self.current_layer,
+            target_layers=self.layer_config_dialog.selected_target_layers(),
             merged_operator_entries=self.layer_config_dialog.merged_operator_entries(),
             parent=self,
         ):

@@ -68,6 +68,7 @@ USER_CONFIG_KEYS = (
     "local_nextcloud_roots",
     "nextcloud_folder_marker",
 )
+_LAYER_PROPERTY_MISSING = "__psb_missing__"
 
 _SHARE_CACHE: dict[tuple[str, str, str], str] = {}
 _SHARE_BACKOFF_UNTIL: dict[tuple[str, str, str], float] = {}
@@ -389,19 +390,31 @@ def _parse_data_sources(value) -> list[dict]:
 
 def _layer_config(layer) -> dict:
     cfg = dict(DEFAULT_CONFIG)
+    shared_cfg = load_shared_settings()
+    if isinstance(shared_cfg, dict):
+        cfg.update(shared_cfg)
     profile_cfg = load_layer_profile_config(layer)
     if isinstance(profile_cfg, dict):
-        cfg.update(profile_cfg)
+        for key, value in profile_cfg.items():
+            if key in ("operators", "external_data_sources") and not value and key in shared_cfg:
+                continue
+            cfg[key] = value
     for key, default in DEFAULT_CONFIG.items():
-        raw = layer.customProperty(_property_key(key), default)
+        raw = layer.customProperty(_property_key(key), _LAYER_PROPERTY_MISSING)
+        if raw == _LAYER_PROPERTY_MISSING:
+            continue
         if key in ("overwrite_existing_values", "fill_on_form_open"):
             cfg[key] = _to_bool(raw, bool(default))
         elif key == "local_nextcloud_roots":
             cfg[key] = _parse_roots(raw)
         elif key == "operators":
-            cfg[key] = _parse_operators(raw)
+            parsed = _parse_operators(raw)
+            if parsed:
+                cfg[key] = parsed
         elif key == "external_data_sources":
-            cfg[key] = _parse_data_sources(raw)
+            parsed = _parse_data_sources(raw)
+            if parsed:
+                cfg[key] = parsed
         else:
             cfg[key] = str(raw or "").strip()
     user_cfg = _load_user_config()
