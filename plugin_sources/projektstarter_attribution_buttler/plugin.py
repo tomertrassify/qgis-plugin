@@ -20,6 +20,7 @@ from .attribution_plugin import (
     DEFAULT_CONFIG,
     INIT_FUNCTION_NAME,
     LayerConfigDialog,
+    _apply_configuration_to_layer,
     _apply_configuration_to_layers,
     _effective_layer_config,
     _first_field_match,
