@@ -309,6 +309,7 @@ class ProjectStarterPlugin:
         if not self._group_has_children(basemap_group):
             self._add_osm_basemap(basemap_group)
             self._load_alkis_for_project(project_area_layer, basemap_group)
+        self._collapse_root_groups()
         self._save_project_file(
             project_dir,
             notify=False,
@@ -531,6 +532,7 @@ class ProjectStarterPlugin:
     def _configure_project(self, project_dir):
         project = QgsProject.instance()
         project_file = self._project_file_path(project_dir)
+        self._ensure_project_file_directory(project_dir)
         project.setPresetHomePath(self._portable_project_dir_value(project_dir, project_file=project_file))
         project.setTitle(project_dir.name)
         project.setFileName(str(project_file))
@@ -543,10 +545,10 @@ class ProjectStarterPlugin:
             project.setCrs(project_crs)
 
     def _project_file_path(self, project_dir):
-        return project_dir / f"{project_dir.name}.qgz"
+        return project_dir / self.PROJECT_INFO_DIRNAME / f"{project_dir.name}.qgz"
 
     def _legacy_project_file_path(self, project_dir):
-        return project_dir / self.PROJECT_INFO_DIRNAME / f"{project_dir.name}.qgz"
+        return project_dir / f"{project_dir.name}.qgz"
 
     def _existing_project_file_path(self, project_dir):
         preferred = self._project_file_path(project_dir)
@@ -558,6 +560,18 @@ class ProjectStarterPlugin:
             return legacy
 
         return preferred
+
+    def _ensure_project_file_directory(self, project_dir):
+        project_file = self._project_file_path(project_dir)
+        try:
+            project_file.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            self._show_message(
+                "Projektstarter",
+                f"Projektinfos-Ordner konnte nicht erstellt werden: {error}",
+                Qgis.Critical,
+            )
+        return project_file
 
     def _project_geopackage_path(self, project_dir):
         return project_dir / self.RESULT_DIRNAME / f"{project_dir.name}.gpkg"
@@ -788,6 +802,7 @@ class ProjectStarterPlugin:
     ):
         project = QgsProject.instance()
         project_file = self._project_file_path(project_dir)
+        self._ensure_project_file_directory(project_dir)
         project.setFileName(str(project_file))
         self._set_relative_project_paths(project)
         if sync_georef and self._current_project_dir is not None:
@@ -1179,6 +1194,24 @@ class ProjectStarterPlugin:
             self.GEOREF_MANUAL_GROUP_NAME,
             1,
         )
+
+    def _set_group_expanded_recursive(self, group, expanded):
+        if group is None:
+            return
+        try:
+            group.setExpanded(bool(expanded))
+        except Exception:
+            pass
+
+        for child in group.children():
+            if isinstance(child, QgsLayerTreeGroup):
+                self._set_group_expanded_recursive(child, expanded)
+
+    def _collapse_root_groups(self, root=None):
+        root_group = root or QgsProject.instance().layerTreeRoot()
+        for child in root_group.children():
+            if isinstance(child, QgsLayerTreeGroup):
+                self._set_group_expanded_recursive(child, False)
 
     def _find_root_group(self, root, group_name):
         for node in root.children():
