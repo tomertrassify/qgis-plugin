@@ -2,7 +2,7 @@
 name=Projektstarter Butler
 qgisMinimumVersion=3.28
 description=Kombiniert Projektstarter und AttributionButler in einem Plugin fuer Projektanlage und Betreiberattribute.
-version=0.1.19
+version=1.0
 author=Tomer Maith
 email=
 about=Waehlt einen Projektordner, erstellt die Projektstruktur und oeffnet aus demselben Plugin die Betreiber-/Layer-Konfiguration fuer den aktiven Layer.
