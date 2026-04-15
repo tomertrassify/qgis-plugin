@@ -81,6 +81,8 @@ BOOTSTRAP_CODE_MARKERS = (
     "nextcloud_form_plugin.form_handler",
 )
 LOCAL_ROOT_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*lokale\s*sync-roots\s*\}\}", flags=re.IGNORECASE)
+PLANS_DIR_CANDIDATES = ("Leitungspläne", "002_Leitungsauskunft")
+PLANS_DIR_LABEL = "Leitungspläne"
 
 DEFAULT_CONFIG = {
     "nextcloud_base_url": "https://nextcloud.trassify.cloud",
@@ -232,6 +234,18 @@ def _date_values_match(left: str, right: str) -> bool:
     if left_date is not None and right_date is not None:
         return left_date == right_date
     return False
+
+
+def _plans_directory(project_root: Path | None) -> Path | None:
+    if project_root is None:
+        return None
+
+    for directory_name in PLANS_DIR_CANDIDATES:
+        candidate = project_root / directory_name
+        if candidate.is_dir():
+            return candidate
+
+    return project_root / PLANS_DIR_LABEL
 
 
 class LayerConfigDialog(QDialog):
@@ -400,7 +414,7 @@ class LayerConfigDialog(QDialog):
         local_tab = QWidget()
         local_layout = QVBoxLayout(local_tab)
         self.local_operator_status_label = QLabel(
-            "Lokale Ordner aus '002_Leitungsauskunft' koennen hier projektweit einem Eintrag aus der Betreiberliste zugeordnet werden."
+            "Lokale Ordner aus 'Leitungspläne' koennen hier projektweit einem Eintrag aus der Betreiberliste zugeordnet werden."
         )
         self.local_operator_status_label.setWordWrap(True)
         local_layout.addWidget(self.local_operator_status_label)
@@ -863,7 +877,7 @@ class LayerConfigDialog(QDialog):
         if project_root is None:
             return []
 
-        leitungsauskunft_dir = project_root / "002_Leitungsauskunft"
+        leitungsauskunft_dir = _plans_directory(project_root)
         if not leitungsauskunft_dir.is_dir():
             return []
 
@@ -1002,17 +1016,17 @@ class LayerConfigDialog(QDialog):
         project_root = self._project_root_from_context()
         if project_root is None:
             self.local_operator_status_label.setText(
-                "Kein verbundenes Projekt gefunden. Die lokalen Ordner aus '002_Leitungsauskunft' erscheinen hier automatisch."
+                "Kein verbundenes Projekt gefunden. Die lokalen Ordner aus 'Leitungspläne' erscheinen hier automatisch."
             )
         else:
-            leitungsauskunft_dir = project_root / "002_Leitungsauskunft"
+            leitungsauskunft_dir = _plans_directory(project_root)
             if not leitungsauskunft_dir.is_dir():
                 self.local_operator_status_label.setText(
-                    "Im verbundenen Projekt wurde kein Ordner '002_Leitungsauskunft' gefunden."
+                    "Im verbundenen Projekt wurde kein Ordner 'Leitungspläne' gefunden."
                 )
             elif not rows:
                 self.local_operator_status_label.setText(
-                    "In '002_Leitungsauskunft' wurden noch keine Betreiberordner gefunden."
+                    "In 'Leitungspläne' wurden noch keine Betreiberordner gefunden."
                 )
             else:
                 self.local_operator_status_label.setText(

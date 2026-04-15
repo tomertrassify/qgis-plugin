@@ -54,12 +54,15 @@ class ProjectStarterButlerDialog(QDialog):
         self.choose_project_button.clicked.connect(self._choose_project)
         self.sync_plans_button = QPushButton("Leitungsauskunft aktualisieren")
         self.sync_plans_button.clicked.connect(self._sync_plans)
+        self.add_template_button = QPushButton("Template hinzufügen")
+        self.add_template_button.clicked.connect(self._add_template)
         self.disconnect_button = QPushButton("Verbindung trennen")
         self.disconnect_button.clicked.connect(self._disconnect_project)
 
         for button in (
             self.choose_project_button,
             self.sync_plans_button,
+            self.add_template_button,
             self.disconnect_button,
         ):
             button_row.addWidget(button)
@@ -203,8 +206,8 @@ class ProjectStarterButlerDialog(QDialog):
             self.placeholder_widget = self._build_placeholder_card(
                 "Aktiven Layer auswählen",
                 (
-                    "Aktiviere in QGIS einen Vektor-Layer. Falls keiner aktiv ist, zeigt der Dialog "
-                    "den Standardlayer 'Fremdleitungen' aus dem Projekt an."
+                    "Aktiviere in QGIS einen Vektor-Layer. Falls die Projektlayer noch nicht geladen sind, "
+                    "füge sie zuerst über 'Template hinzufügen' hinzu."
                 ),
             )
             self.layer_host_layout.addWidget(self.placeholder_widget, 1)
@@ -222,7 +225,7 @@ class ProjectStarterButlerDialog(QDialog):
     def _project_context_info(self, panel_layer):
         project_dir = self.plugin._current_project_dir
         connected = self.plugin._has_active_connection()
-        profile_path = current_profile_path_string().strip() or "Wird nach dem ersten Projektspeichern angelegt."
+        profile_path = current_profile_path_string().strip() or "Wird im QGIS-Projekt gespeichert."
         layer_name = panel_layer.name() if panel_layer is not None else "-"
         return {
             "status": "Verbunden" if connected else "Nicht verbunden",
@@ -242,9 +245,11 @@ class ProjectStarterButlerDialog(QDialog):
         self.button_row_widget.setVisible(project_dir is not None)
         self.choose_project_button.setVisible(False)
         self.sync_plans_button.setEnabled(project_dir is not None)
+        self.add_template_button.setEnabled(project_dir is not None)
         self.disconnect_button.setEnabled(project_dir is not None)
         self.disconnect_button.setVisible(project_dir is not None)
         self.sync_plans_button.setVisible(project_dir is not None)
+        self.add_template_button.setVisible(project_dir is not None)
 
         if rebuild_layer or panel_layer is not self.current_layer:
             self._rebuild_layer_panel(panel_layer)
@@ -262,6 +267,10 @@ class ProjectStarterButlerDialog(QDialog):
     def _sync_plans(self):
         self.plugin._refresh_leitungsauskunft()
         self.refresh_state(rebuild_layer=False)
+
+    def _add_template(self):
+        self.plugin.add_template_layers(notify=True)
+        self.refresh_state(rebuild_layer=True)
 
     def _disconnect_project(self):
         self.plugin._disconnect_current_connection()
@@ -293,7 +302,7 @@ class ProjectStarterButlerDialog(QDialog):
         QMessageBox.information(
             self,
             "Projektstarter Butler",
-            "Layer-Konfiguration und Projektprofil wurden gespeichert.",
+            "Layer-Konfiguration und Butler-Profil wurden gespeichert.",
         )
         super().accept()
 
@@ -378,11 +387,14 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
         )
 
     def _default_butler_layer(self):
-        project_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
-        if project_group is not None:
-            layer = self._find_vector_layer_by_name(project_group, self.DEFAULT_BUTLER_LAYER_NAME)
-            if layer is not None:
-                return layer
+        project_root = self._project_layer_root(QgsProject.instance().layerTreeRoot())
+        layer = self._find_project_vector_layer_by_name(project_root, self.DEFAULT_BUTLER_LAYER_NAME)
+        if layer is not None:
+            return layer
+
+        layer = self._find_vector_layer_by_name(QgsProject.instance().layerTreeRoot(), self.DEFAULT_BUTLER_LAYER_NAME)
+        if layer is not None:
+            return layer
 
         for layer in self._managed_layers:
             if layer is not None and layer.name() == self.DEFAULT_BUTLER_LAYER_NAME:
@@ -455,6 +467,12 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
         if self._current_project_dir is None:
             return
         self._ensure_default_butler_binding()
+
+    def add_template_layers(self, notify=True):
+        added = super().add_template_layers(notify=notify)
+        if self._current_project_dir is not None:
+            self._ensure_default_butler_binding()
+        return added
 
     def run(self):
         self._refresh_connection_state()

@@ -15,6 +15,8 @@ LOCAL_ROOTS_SETTINGS_KEY = "TrassifyMasterTools/shared_settings/local_nextcloud_
 LOCAL_ROOT_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*lokale\s*sync-roots\s*\}\}", flags=re.IGNORECASE)
 PROJECT_INFO_DIRNAME = "001_Projektinfos"
 PROFILE_VERSION = 1
+PROJECT_PROFILE_SCOPE = "projektstarter_butler_profile"
+PROJECT_PROFILE_ENTRY_KEY = "profile_json"
 
 
 def _default_profile() -> dict:
@@ -136,10 +138,8 @@ def _legacy_profile_path(project_root: Path) -> Path:
 
 
 def profile_path(project_root: Path | None = None) -> Path | None:
-    root = project_root or detect_project_root()
-    if root is None:
-        return None
-    return _preferred_profile_path(root)
+    del project_root
+    return current_project_file()
 
 
 def _existing_profile_path(project_root: Path | None = None) -> Path | None:
@@ -159,8 +159,7 @@ def _existing_profile_path(project_root: Path | None = None) -> Path | None:
 
 
 def current_profile_path_string() -> str:
-    path = profile_path()
-    return str(path) if path is not None else ""
+    return "Im QGIS-Projekt (.qgz) gespeichert"
 
 
 def _normalize_single_path(value: str, project_root: Path | None) -> str:
@@ -315,6 +314,26 @@ def _find_layer_index(profile: dict, layer, project_root: Path | None = None) ->
 
 
 def load_project_profile(project_root: Path | None = None) -> dict:
+    project = QgsProject.instance()
+    serialized, ok = project.readEntry(PROJECT_PROFILE_SCOPE, PROJECT_PROFILE_ENTRY_KEY, "")
+    if ok and str(serialized or "").strip():
+        try:
+            loaded = json.loads(serialized)
+        except Exception:
+            loaded = None
+        if isinstance(loaded, dict):
+            profile = _default_profile()
+            profile["version"] = int(loaded.get("version", PROFILE_VERSION) or PROFILE_VERSION)
+
+            shared_settings = loaded.get("shared_settings", {})
+            if isinstance(shared_settings, dict):
+                profile["shared_settings"] = shared_settings
+
+            layers = loaded.get("layers", [])
+            if isinstance(layers, list):
+                profile["layers"] = [entry for entry in layers if isinstance(entry, dict)]
+            return profile
+
     path = _existing_profile_path(project_root)
     if path is None or not path.is_file():
         return _default_profile()
@@ -343,10 +362,6 @@ def load_project_profile(project_root: Path | None = None) -> dict:
 
 
 def save_project_profile(profile: dict, project_root: Path | None = None) -> Path | None:
-    path = profile_path(project_root)
-    if path is None:
-        return None
-
     serializable = _default_profile()
     if isinstance(profile, dict):
         serializable["version"] = int(profile.get("version", PROFILE_VERSION) or PROFILE_VERSION)
@@ -355,11 +370,13 @@ def save_project_profile(profile: dict, project_root: Path | None = None) -> Pat
         if isinstance(profile.get("layers"), list):
             serializable["layers"] = [entry for entry in profile["layers"] if isinstance(entry, dict)]
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(serializable, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
-    return path
+    QgsProject.instance().writeEntry(
+        PROJECT_PROFILE_SCOPE,
+        PROJECT_PROFILE_ENTRY_KEY,
+        json.dumps(serializable, ensure_ascii=False, indent=2),
+    )
+    del project_root
+    return current_project_file()
 
 
 def load_shared_settings(project_root: Path | None = None) -> dict:

@@ -42,17 +42,18 @@ from qgis.core import (
 
 
 class ProjectStarterPlugin:
-    REQUIRED_FOLDERS = (
-        "001_Projektinfos",
-        "002_Leitungsauskunft",
-        "003_Ergebnis",
-    )
+    PROJECT_INFO_DIRNAME = "001_Projektinfos"
+    PLANS_DIRNAME = "Leitungspläne"
+    LEGACY_PLANS_DIRNAME = "002_Leitungsauskunft"
+    RESULT_DIRNAME = "003_Ergebnis"
     SETTINGS_KEY = "projektstarter/last_project_dir"
     LEGACY_SETTINGS_KEYS = ("max_wild_project_starter/last_project_dir",)
     PROJECT_AREA_LAYER_NAME = "Projektgebiet"
-    GROUP_PROJECT = "001 Projekt"
-    GROUP_GEOREF = "002 Georeferenzierte Pläne"
-    GROUP_BASEMAPS = "003 Basemaps/ ALKIS"
+    LEGACY_GROUP_PROJECT = "001 Projekt"
+    GROUP_GEOREF = "Leitungspläne"
+    LEGACY_GROUP_GEOREF = "002 Georeferenzierte Pläne"
+    GROUP_BASEMAPS = "Basemap/ ALKIS"
+    LEGACY_GROUP_BASEMAPS = "003 Basemaps/ ALKIS"
     MANAGED_SUBGROUP_NAME = "_Projektstarter"
     GEOREF_AUTO_GROUP_NAME = "Automatisch"
     GEOREF_MANUAL_GROUP_NAME = "Händisch"
@@ -258,11 +259,11 @@ class ProjectStarterPlugin:
             self._show_message("Projektstarter", validation_error, Qgis.Warning)
             return
 
-        kml_file = self._find_kml_file(project_dir / "001_Projektinfos")
+        kml_file = self._find_kml_file(project_dir)
         if not kml_file:
             self._show_message(
                 "Projektstarter",
-                "Im Ordner 001_Projektinfos wurde keine KML-Datei gefunden.",
+                "Im Projektordner wurde keine KML-Datei gefunden.",
                 Qgis.Warning,
             )
             return
@@ -279,13 +280,17 @@ class ProjectStarterPlugin:
             return
 
         preserve_manual_georef = self._should_preserve_manual_georef_layers(project_dir)
-        project_group, georef_group, basemap_group = self._prepare_workspace_groups(
+        project_root, georef_group, basemap_group = self._prepare_workspace_groups(
             project_dir,
             preserve_manual_georef=preserve_manual_georef,
         )
-        project_area_layer = self._find_vector_layer_by_name(project_group, self.PROJECT_AREA_LAYER_NAME)
+        project_area_layer = self._find_project_vector_layer_by_name(project_root, self.PROJECT_AREA_LAYER_NAME)
         if project_area_layer is None:
-            project_area_layer = self._load_project_geopackage_layers(project_gpkg, project_group)
+            project_area_layer, _added_layers = self._load_project_geopackage_layers(
+                project_gpkg,
+                project_root,
+                include_template_layers=False,
+            )
         if not project_area_layer:
             self._show_message(
                 "Projektstarter",
@@ -296,14 +301,13 @@ class ProjectStarterPlugin:
 
         self._current_project_dir = project_dir
         self._store_connection_state(True, project_dir)
-        self._register_managed_project_layers(project_group)
+        self._register_managed_project_layers(project_root)
         self._update_connection_icon(bool(self._managed_layers))
         self._sync_georeferenced_plans(georef_group=georef_group, notify=False)
 
         if not self._group_has_children(basemap_group):
             self._add_osm_basemap(basemap_group)
             self._load_alkis_for_project(project_area_layer, basemap_group)
-        self._export_auxiliary_formats(notify=False)
         self._save_project_file(project_dir, notify=False, sync_georef=False)
         self._schedule_final_zoom(project_area_layer)
         if notify:
@@ -320,7 +324,6 @@ class ProjectStarterPlugin:
         menu = QMenu(self.iface.mainWindow())
         refresh_action = menu.addAction("Verbindung aktualisieren")
         leitungsauskunft_action = menu.addAction("Leitungsauskunft aktualisieren")
-        export_action = menu.addAction("Exporte jetzt aktualisieren")
         zoom_action = menu.addAction("Zum Projektgebiet zoomen")
         save_action = menu.addAction("Projekt speichern")
         menu.addSeparator()
@@ -338,8 +341,6 @@ class ProjectStarterPlugin:
             self._refresh_current_connection()
         elif selected_action is leitungsauskunft_action:
             self._refresh_leitungsauskunft()
-        elif selected_action is export_action:
-            self._export_auxiliary_formats(notify=True)
         elif selected_action is zoom_action:
             self._zoom_to_project_area_now()
         elif selected_action is save_action:
@@ -431,23 +432,51 @@ class ProjectStarterPlugin:
         if not project_dir.exists() or not project_dir.is_dir():
             return "Der ausgewaehlte Pfad ist kein gueltiger Projektordner."
 
-        missing_folders = [
-            folder_name
-            for folder_name in self.REQUIRED_FOLDERS
-            if not (project_dir / folder_name).is_dir()
-        ]
+        missing_folders = []
+        if not self._plans_directory(project_dir).is_dir():
+            missing_folders.append(self.PLANS_DIRNAME)
+        if not (project_dir / self.RESULT_DIRNAME).is_dir():
+            missing_folders.append(self.RESULT_DIRNAME)
         if missing_folders:
             folder_list = ", ".join(missing_folders)
             return f"Folgende Pflichtordner fehlen: {folder_list}"
 
         return None
 
-    def _find_kml_file(self, project_info_dir):
-        kml_files = sorted(
-            file_path
-            for file_path in project_info_dir.iterdir()
-            if file_path.is_file() and file_path.suffix.lower() == ".kml"
-        )
+    def _plans_directory(self, project_dir):
+        if project_dir is None:
+            return Path(self.PLANS_DIRNAME)
+
+        preferred = project_dir / self.PLANS_DIRNAME
+        if preferred.is_dir():
+            return preferred
+
+        legacy = project_dir / self.LEGACY_PLANS_DIRNAME
+        if legacy.is_dir():
+            return legacy
+
+        return preferred
+
+    def _find_kml_file(self, project_dir):
+        candidate_dirs = []
+        for candidate in (project_dir, project_dir / self.PROJECT_INFO_DIRNAME):
+            if candidate is None or not candidate.is_dir():
+                continue
+            if candidate in candidate_dirs:
+                continue
+            candidate_dirs.append(candidate)
+
+        kml_files = []
+        seen_paths = set()
+        for directory in candidate_dirs:
+            for file_path in sorted(directory.iterdir(), key=lambda path: path.name.casefold()):
+                if not file_path.is_file() or file_path.suffix.lower() != ".kml":
+                    continue
+                path_key = str(file_path.resolve()) if file_path.exists() else str(file_path)
+                if path_key in seen_paths:
+                    continue
+                seen_paths.add(path_key)
+                kml_files.append(file_path)
         if not kml_files:
             return None
 
@@ -484,7 +513,7 @@ class ProjectStarterPlugin:
             )
             return None
 
-        target_gpkg = project_dir / "003_Ergebnis" / f"{project_dir.name}.gpkg"
+        target_gpkg = project_dir / self.RESULT_DIRNAME / f"{project_dir.name}.gpkg"
         if not target_gpkg.exists():
             try:
                 copy2(template_source, target_gpkg)
@@ -506,17 +535,31 @@ class ProjectStarterPlugin:
         project.setFileName(str(project_file))
         self._set_relative_project_paths(project)
 
-        project_crs = self._read_project_crs(project_file)
+        project_crs = self._read_project_crs(self._existing_project_file_path(project_dir) or project_file)
         if project_crs is None:
             project_crs = QgsCoordinateReferenceSystem(self.DEFAULT_PROJECT_CRS)
         if project_crs.isValid():
             project.setCrs(project_crs)
 
     def _project_file_path(self, project_dir):
-        return project_dir / "001_Projektinfos" / f"{project_dir.name}.qgz"
+        return project_dir / f"{project_dir.name}.qgz"
+
+    def _legacy_project_file_path(self, project_dir):
+        return project_dir / self.PROJECT_INFO_DIRNAME / f"{project_dir.name}.qgz"
+
+    def _existing_project_file_path(self, project_dir):
+        preferred = self._project_file_path(project_dir)
+        if preferred.is_file():
+            return preferred
+
+        legacy = self._legacy_project_file_path(project_dir)
+        if legacy.is_file():
+            return legacy
+
+        return preferred
 
     def _project_geopackage_path(self, project_dir):
-        return project_dir / "003_Ergebnis" / f"{project_dir.name}.gpkg"
+        return project_dir / self.RESULT_DIRNAME / f"{project_dir.name}.gpkg"
 
     def _current_project_file_path(self):
         project_file = str(QgsProject.instance().fileName() or "").strip()
@@ -743,9 +786,7 @@ class ProjectStarterPlugin:
         if sync_georef and self._current_project_dir is not None:
             self._sync_georeferenced_plans(notify=False)
         self._sync_project_layers_to_geopackage(project_dir)
-        project_root_group = self._find_root_group(project.layerTreeRoot(), self.GROUP_PROJECT)
-        if project_root_group is not None:
-            self._register_managed_project_layers(project_root_group)
+        self._register_managed_project_layers(self._project_layer_root(project.layerTreeRoot()))
 
         if project.write():
             if notify:
@@ -810,18 +851,28 @@ class ProjectStarterPlugin:
     def _prepare_workspace_groups(self, project_dir, preserve_manual_georef=False):
         root = QgsProject.instance().layerTreeRoot()
         self._clear_managed_layer_connections()
+        self._migrate_legacy_project_group(root)
         self._remove_legacy_group(root, project_dir)
         preserve_existing_workspace = self._should_preserve_existing_workspace(project_dir)
 
-        project_root_group = self._get_or_create_root_group(root, self.GROUP_PROJECT, 0)
-        georef_root_group = self._get_or_create_root_group(root, self.GROUP_GEOREF, 1)
-        basemap_root_group = self._get_or_create_root_group(root, self.GROUP_BASEMAPS, 2)
+        project_root = self._project_layer_root(root)
+        georef_root_group = self._get_or_create_root_group(
+            root,
+            self.GROUP_GEOREF,
+            0,
+            legacy_names=(self.LEGACY_GROUP_GEOREF,),
+        )
+        basemap_root_group = self._get_or_create_root_group(
+            root,
+            self.GROUP_BASEMAPS,
+            1,
+            legacy_names=(self.LEGACY_GROUP_BASEMAPS,),
+        )
 
         if not preserve_existing_workspace:
-            self._reset_group(project_root_group)
+            self._reset_project_root_layers(project_root, project_dir)
             self._reset_group(basemap_root_group)
 
-        project_group = self._normalize_free_workspace_group(project_root_group)
         georef_group = self._get_or_create_georef_auto_group(georef_root_group)
         self._get_or_create_georef_manual_group(georef_root_group)
         basemap_group = self._normalize_free_workspace_group(basemap_root_group)
@@ -830,7 +881,7 @@ class ProjectStarterPlugin:
             self._reset_managed_georef_group(georef_group)
         else:
             self._reset_group(georef_group)
-        return project_group, georef_group, basemap_group
+        return project_root, georef_group, basemap_group
 
     def _should_preserve_manual_georef_layers(self, project_dir):
         if project_dir is None:
@@ -856,11 +907,84 @@ class ProjectStarterPlugin:
             QgsProject.instance().removeMapLayers(layer_ids)
         root.removeChildNode(legacy_group)
 
-    def _get_or_create_root_group(self, root, group_name, index):
-        group = self._find_root_group(root, group_name)
-        if group is not None:
-            return group
-        return root.insertGroup(index, group_name)
+    def _project_layer_root(self, root=None):
+        return root or QgsProject.instance().layerTreeRoot()
+
+    def _leading_project_layer_count(self, root):
+        count = 0
+        for child in root.children():
+            if isinstance(child, QgsLayerTreeLayer):
+                count += 1
+                continue
+            break
+        return count
+
+    def _root_group_insert_index(self, root, ordinal):
+        return self._leading_project_layer_count(root) + max(0, int(ordinal))
+
+    def _migrate_legacy_project_group(self, root):
+        legacy_group = self._find_root_group(root, self.LEGACY_GROUP_PROJECT)
+        if legacy_group is None:
+            return
+
+        project_group = self._normalize_free_workspace_group(legacy_group)
+        insert_index = 0
+        for child in list(project_group.children()):
+            root.insertChildNode(insert_index, child.clone())
+            insert_index += 1
+            project_group.removeChildNode(child)
+        root.removeChildNode(project_group)
+
+    def _layer_belongs_to_project_gpkg(self, layer, project_dir):
+        if layer is None or project_dir is None:
+            return False
+
+        expected_source = str(self._project_geopackage_path(project_dir).resolve())
+        layer_source = str(layer.source() or "").split("|", 1)[0]
+        if not layer_source:
+            return False
+
+        try:
+            return str(Path(layer_source).resolve()) == expected_source
+        except OSError:
+            return False
+
+    def _reset_project_root_layers(self, root, project_dir):
+        layer_ids = []
+        for layer in self._managed_layers:
+            if layer is not None:
+                layer_ids.append(layer.id())
+
+        for child in root.children():
+            if not isinstance(child, QgsLayerTreeLayer):
+                continue
+            layer = child.layer()
+            if self._layer_belongs_to_project_gpkg(layer, project_dir):
+                layer_ids.append(child.layerId())
+
+        if layer_ids:
+            QgsProject.instance().removeMapLayers(list(dict.fromkeys(layer_ids)))
+
+    def _get_or_create_root_group(self, root, group_name, index, legacy_names=()):
+        target_index = self._root_group_insert_index(root, index)
+        for child_index, child in enumerate(root.children()):
+            if not isinstance(child, QgsLayerTreeGroup):
+                continue
+            if child.name() != group_name and child.name() not in legacy_names:
+                continue
+
+            if child.name() != group_name:
+                child.setName(group_name)
+            if child_index == target_index:
+                return child
+
+            clone = child.clone()
+            clone.setName(group_name)
+            root.insertChildNode(target_index, clone)
+            root.removeChildNode(child)
+            return clone
+
+        return root.insertGroup(target_index, group_name)
 
     def _get_or_create_child_group(self, parent_group, group_name):
         for child in parent_group.children():
@@ -992,7 +1116,7 @@ class ProjectStarterPlugin:
     def _leitungsauskunft_directory(self):
         if self._current_project_dir is None:
             return None
-        return self._current_project_dir / "002_Leitungsauskunft"
+        return self._plans_directory(self._current_project_dir)
 
     def _sync_georeferenced_plans(self, georef_group=None, notify=False):
         if self._current_project_dir is None:
@@ -1366,7 +1490,7 @@ class ProjectStarterPlugin:
             removed_any = True
         return removed_any
 
-    def _load_project_geopackage_layers(self, gpkg_file, target_group):
+    def _load_project_geopackage_layers(self, gpkg_file, target_group, include_template_layers=True):
         sublayer_names = self._list_sublayer_names(gpkg_file)
         if not sublayer_names:
             self._show_message(
@@ -1374,12 +1498,15 @@ class ProjectStarterPlugin:
                 f"Im GeoPackage wurden keine Vektorlayer gefunden: {gpkg_file.name}",
                 Qgis.Warning,
             )
-            return None
+            return None, []
 
         project_area_layer = None
+        added_layers = []
         for sublayer_name in self._ordered_sublayer_names(sublayer_names):
+            if not include_template_layers and sublayer_name != self.PROJECT_AREA_LAYER_NAME:
+                continue
             layer_source = f"{gpkg_file}|layername={sublayer_name}"
-            existing_layer = self._find_vector_layer_by_source(target_group, layer_source)
+            existing_layer = self._find_vector_layer_by_source(QgsProject.instance().layerTreeRoot(), layer_source)
             if existing_layer is not None:
                 if sublayer_name == self.PROJECT_AREA_LAYER_NAME:
                     project_area_layer = existing_layer
@@ -1390,12 +1517,13 @@ class ProjectStarterPlugin:
                 continue
 
             QgsProject.instance().addMapLayer(layer, False)
-            target_group.addLayer(layer)
+            self._add_project_layer_to_root(target_group, layer)
             if sublayer_name == self.PROJECT_AREA_LAYER_NAME:
                 project_area_layer = layer
+            added_layers.append(sublayer_name)
             self._apply_project_layer_style(layer)
 
-        return project_area_layer
+        return project_area_layer, added_layers
 
     def _list_sublayer_names(self, gpkg_file):
         container_layer = QgsVectorLayer(str(gpkg_file), gpkg_file.stem, "ogr")
@@ -1494,11 +1622,49 @@ class ProjectStarterPlugin:
                 Qgis.Warning,
             )
 
+    def _add_project_layer_to_root(self, root, layer):
+        insert_index = self._leading_project_layer_count(root)
+        root.insertLayer(insert_index, layer)
+
+    def _iter_project_root_vector_layers(self, root, spatial_only=True):
+        seen_layer_ids = set()
+        for child in root.children():
+            if not isinstance(child, QgsLayerTreeLayer):
+                continue
+            layer = child.layer()
+            if not isinstance(layer, QgsVectorLayer):
+                continue
+            if spatial_only and layer.geometryType() < 0:
+                continue
+            if self._current_project_dir is not None and not self._is_managed_layer_source(layer):
+                continue
+            layer_id = layer.id()
+            if layer_id in seen_layer_ids:
+                continue
+            seen_layer_ids.add(layer_id)
+            yield layer
+
+    def _find_project_vector_layer_by_name(self, root, layer_name):
+        for layer in self._iter_project_root_vector_layers(root, spatial_only=False):
+            if layer.name() == layer_name:
+                return layer
+        return None
+
+    def _find_project_vector_layer_by_source(self, root, layer_source):
+        normalized_source = self._normalized_layer_source(layer_source)
+        if not normalized_source:
+            return None
+
+        for layer in self._iter_project_root_vector_layers(root, spatial_only=False):
+            if self._normalized_layer_source(layer.source()) == normalized_source:
+                return layer
+        return None
+
     def _register_managed_project_layers(self, project_group):
         self._clear_managed_layer_connections()
 
         managed_layers = []
-        for layer in self._iter_group_vector_layers(project_group, spatial_only=True):
+        for layer in self._iter_project_root_vector_layers(project_group, spatial_only=True):
             try:
                 layer.afterCommitChanges.connect(self._on_managed_layer_committed)
             except TypeError:
@@ -1519,18 +1685,7 @@ class ProjectStarterPlugin:
             self._update_connection_icon(False)
 
     def _is_managed_layer_source(self, layer):
-        if self._current_project_dir is None or layer is None:
-            return False
-
-        expected_source = str(self._project_geopackage_path(self._current_project_dir).resolve())
-        layer_source = str(layer.source() or "").split("|", 1)[0]
-        if not layer_source:
-            return False
-
-        try:
-            return str(Path(layer_source).resolve()) == expected_source
-        except OSError:
-            return False
+        return self._layer_belongs_to_project_gpkg(layer, self._current_project_dir)
 
     def _icon_path(self, connected=False):
         icon_name = self.CONNECTED_ICON_FILENAME if connected else self.DEFAULT_ICON_FILENAME
@@ -1559,15 +1714,10 @@ class ProjectStarterPlugin:
             self._update_connection_icon(False)
             return
 
-        project_root_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
+        project_root = self._project_layer_root(QgsProject.instance().layerTreeRoot())
         self._current_project_dir = project_dir
         self._store_connection_state(True, project_dir)
-        if project_root_group is None:
-            self._connect_project(project_dir, notify=False)
-            return
-
-        project_group = self._normalize_free_workspace_group(project_root_group)
-        self._register_managed_project_layers(project_group)
+        self._register_managed_project_layers(project_root)
         if not self._managed_layers or self._project_area_layer() is None:
             self._connect_project(project_dir, notify=False)
             return
@@ -1575,11 +1725,14 @@ class ProjectStarterPlugin:
         self._sync_georeferenced_plans(notify=False)
 
     def _detect_connected_project_dir(self):
-        project = QgsProject.instance()
         project_file = self._current_project_file_path()
         if project_file is not None:
+            project_dir = project_file.parent
+            if self._is_connected_project_dir(project_dir, project_file):
+                return project_dir
+
             project_info_dir = project_file.parent
-            if project_info_dir.name == "001_Projektinfos":
+            if project_info_dir.name == self.PROJECT_INFO_DIRNAME:
                 project_dir = project_info_dir.parent
                 if self._is_connected_project_dir(project_dir, project_file):
                     return project_dir
@@ -1610,9 +1763,12 @@ class ProjectStarterPlugin:
             return False
 
         if project_file is not None:
-            expected_project_file = self._project_file_path(project_dir)
+            expected_project_files = (
+                self._project_file_path(project_dir),
+                self._legacy_project_file_path(project_dir),
+            )
             try:
-                if project_file.resolve() != expected_project_file.resolve():
+                if project_file.resolve() not in {path.resolve() for path in expected_project_files}:
                     return False
             except OSError:
                 return False
@@ -1624,11 +1780,11 @@ class ProjectStarterPlugin:
             if layer is not None and layer.name() == self.PROJECT_AREA_LAYER_NAME:
                 return layer
 
-        project_root_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
-        if project_root_group is None:
-            return None
-
-        return self._find_vector_layer_by_name(project_root_group, self.PROJECT_AREA_LAYER_NAME)
+        project_root = self._project_layer_root(QgsProject.instance().layerTreeRoot())
+        layer = self._find_project_vector_layer_by_name(project_root, self.PROJECT_AREA_LAYER_NAME)
+        if layer is not None:
+            return layer
+        return self._find_vector_layer_by_name(QgsProject.instance().layerTreeRoot(), self.PROJECT_AREA_LAYER_NAME)
 
     def _find_vector_layer_by_name(self, group, layer_name):
         for layer in self._iter_group_vector_layers(group, spatial_only=False):
@@ -2378,10 +2534,8 @@ class ProjectStarterPlugin:
         return words
 
     def _vector_export_layers(self):
-        project_group = self._find_root_group(QgsProject.instance().layerTreeRoot(), self.GROUP_PROJECT)
-        if project_group is None:
-            return []
-        return list(self._iter_group_vector_layers(project_group, spatial_only=True))
+        project_root = self._project_layer_root(QgsProject.instance().layerTreeRoot())
+        return list(self._iter_project_root_vector_layers(project_root, spatial_only=True))
 
     def _sync_project_layers_to_geopackage(self, project_dir):
         vector_layers = self._vector_export_layers()
@@ -2488,7 +2642,50 @@ class ProjectStarterPlugin:
     def _result_directory(self):
         if self._current_project_dir is None:
             return None
-        return self._current_project_dir / "003_Ergebnis"
+        return self._current_project_dir / self.RESULT_DIRNAME
+
+    def add_template_layers(self, notify=True):
+        if self._current_project_dir is None:
+            if notify:
+                self._show_message(
+                    "Projektstarter",
+                    "Bitte zuerst einen Projektordner verbinden.",
+                    Qgis.Warning,
+                )
+            return False
+
+        gpkg_file = self._prepare_project_geopackage(self._current_project_dir)
+        if not gpkg_file:
+            return False
+
+        project_root = self._project_layer_root(QgsProject.instance().layerTreeRoot())
+        _project_area_layer, added_layers = self._load_project_geopackage_layers(
+            gpkg_file,
+            project_root,
+            include_template_layers=True,
+        )
+        self._register_managed_project_layers(project_root)
+
+        template_layers = [
+            layer_name for layer_name in added_layers if layer_name != self.PROJECT_AREA_LAYER_NAME
+        ]
+        if not template_layers:
+            if notify:
+                self._show_message(
+                    "Projektstarter",
+                    "Die Template-Layer sind bereits im Projekt vorhanden.",
+                    Qgis.Info,
+                )
+            return False
+
+        self._save_project_file(self._current_project_dir, notify=False, sync_georef=False)
+        if notify:
+            self._show_message(
+                "Projektstarter",
+                f"Template hinzugefuegt: {template_layers[0]}",
+                Qgis.Success,
+            )
+        return True
 
     def _schedule_export_sync(self):
         if self._export_sync_pending:
@@ -2929,7 +3126,7 @@ class ProjectStarterPlugin:
         canvas.refresh()
 
     def _on_managed_layer_committed(self):
-        self._schedule_export_sync()
+        return
 
     def _on_project_read(self, *args):
         QTimer.singleShot(0, self._refresh_connection_state)
@@ -2937,7 +3134,6 @@ class ProjectStarterPlugin:
     def _on_project_saved(self):
         if self._resaving_after_georef_sync:
             self._resaving_after_georef_sync = False
-            self._schedule_export_sync()
             QTimer.singleShot(0, self._refresh_connection_state)
             return
 
@@ -2945,7 +3141,6 @@ class ProjectStarterPlugin:
         if georef_changed and self._current_project_dir is not None:
             self._resaving_after_georef_sync = True
             QTimer.singleShot(0, self._resave_after_georef_sync)
-        self._schedule_export_sync()
         QTimer.singleShot(0, self._refresh_connection_state)
 
     def _resave_after_georef_sync(self):
