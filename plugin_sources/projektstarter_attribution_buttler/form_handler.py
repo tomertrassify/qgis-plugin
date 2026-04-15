@@ -12,10 +12,11 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 from qgis.PyQt.QtCore import Qt, QStringListModel, QSettings
-from qgis.PyQt.QtWidgets import QComboBox, QCompleter, QLineEdit, QMessageBox, QWidget
+from qgis.PyQt.QtWidgets import QComboBox, QCompleter, QLineEdit, QWidget
 from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsVectorLayer
 
 from .project_profile import expand_config_from_storage, load_layer_profile_config, load_shared_settings
+from .ui_helpers import ButlerMessageBox as QMessageBox
 
 
 PROPERTY_PREFIX = "nextcloud_form/"

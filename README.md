@@ -25,3 +25,5 @@ Wichtig:
 - Normale Tools koennen ueber die Master-Uebersicht geladen werden; als Favorit markierte Tools werden beim Start automatisch mitgeladen.
 - Hintergrundtools werden beim Start automatisch aktiviert und sind fuer Kontextmenues oder unauffaellige Hilfsfunktionen gedacht.
 - Fuer das GitHub-Setup kannst du `./prepare_plugin_repository.sh` ausfuehren. Das aktualisiert `plugins.xml` und `trassify_master_tools.zip`.
+- Fuer Projektstarter-Butler-Aenderungen gibt es zusaetzlich `python3 tools/release_projektstarter_butler.py`. Das synchronisiert die Version von `plugin_sources/projektstarter_attribution_buttler/metadata.txt` und `trassify_master_tools/metadata.txt` und baut anschliessend die GitHub-QGIS-Artefakte neu.
+- Nach dem Push auf `main` uebernimmt `.github/workflows/release-projektstarter-butler.yml` denselben Ablauf automatisch und committed die aktualisierten Release-Dateien zurueck ins Repository. Damit reicht kuenftig ein Push, damit QGIS ein neues Update angeboten bekommt.

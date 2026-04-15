@@ -19,7 +19,7 @@ except ImportError:
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QFile, QIODevice, QSettings, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
-from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMenu, QMessageBox, QToolBar
+from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMenu, QToolBar
 from qgis.PyQt.QtXml import QDomDocument
 from qgis.core import (
     Qgis,
@@ -43,6 +43,8 @@ from qgis.core import (
     QgsVectorLayer,
 )
 from qgis.gui import QgsNewGeoPackageLayerDialog
+
+from .ui_helpers import ButlerMessageBox as QMessageBox
 
 
 class ProjectStarterPlugin:

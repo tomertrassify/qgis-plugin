@@ -1,0 +1,51 @@
+name: Release Projektstarter Butler
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "plugin_sources/projektstarter_attribution_buttler/**"
+      - "trassify_master_tools/**"
+      - "prepare_plugin_repository.sh"
+      - "tools/release_projektstarter_butler.py"
+      - ".github/workflows/release-projektstarter-butler.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Sync versions and rebuild QGIS repository files
+        run: python3 tools/release_projektstarter_butler.py --from-ref "${{ github.event.before }}"
+
+      - name: Commit generated release artifacts
+        run: |
+          if git diff --quiet; then
+            echo "Keine Release-Aenderungen vorhanden."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            plugin_sources/projektstarter_attribution_buttler/metadata.txt \
+            trassify_master_tools/metadata.txt \
+            plugins.xml \
+            trassify_master_tools.zip
+          git commit -m "chore: release Projektstarter Butler"
+          git push

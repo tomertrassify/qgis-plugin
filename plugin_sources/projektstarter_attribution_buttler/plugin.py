@@ -6,7 +6,7 @@ from qgis.PyQt.QtWidgets import (
     QDialogButtonBox,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
+    QMenuBar,
     QPushButton,
     QSizePolicy,
     QToolBar,
@@ -27,6 +27,7 @@ from .attribution_plugin import (
 )
 from .project_profile import current_profile_path_string
 from .projectstarter_plugin import ProjectStarterPlugin
+from .ui_helpers import ButlerMessageBox as QMessageBox
 
 
 class ProjectStarterButlerDialog(QDialog):
@@ -46,32 +47,53 @@ class ProjectStarterButlerDialog(QDialog):
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
 
-        self.button_row_widget = QWidget(self)
-        button_row = QHBoxLayout(self.button_row_widget)
-        button_row.setContentsMargins(0, 0, 0, 0)
-        button_row.setSpacing(8)
+        self.command_bar = QMenuBar(self)
+        self.command_bar.setNativeMenuBar(False)
+        self.command_bar.setStyleSheet(
+            "QMenuBar {"
+            "background: transparent;"
+            "border: 1px solid #d7cfbf;"
+            "border-radius: 10px;"
+            "padding: 4px 8px;"
+            "}"
+            "QMenuBar::item {"
+            "spacing: 8px;"
+            "padding: 6px 14px;"
+            "border-radius: 8px;"
+            "background: transparent;"
+            "}"
+            "QMenuBar::item:selected {"
+            "background: #f1eadc;"
+            "}"
+        )
 
-        self.choose_project_button = QPushButton("Projektordner auswählen")
-        self.choose_project_button.clicked.connect(self._choose_project)
-        self.sync_plans_button = QPushButton("Leitungsauskunft aktualisieren")
-        self.sync_plans_button.clicked.connect(self._sync_plans)
-        self.add_template_button = QPushButton("Template hinzufügen")
-        self.add_template_button.clicked.connect(self._add_template)
-        self.create_object_button = QPushButton("Objekt erstellen")
-        self.create_object_button.clicked.connect(self._create_object)
-        self.disconnect_button = QPushButton("Verbindung trennen")
-        self.disconnect_button.clicked.connect(self._disconnect_project)
+        self.project_menu = self.command_bar.addMenu("Projekt")
+        self.choose_project_action = self.project_menu.addAction("Projektordner auswählen")
+        self.choose_project_action.triggered.connect(self._choose_project)
+        self.sync_plans_action = self.project_menu.addAction("Leitungsauskunft aktualisieren")
+        self.sync_plans_action.triggered.connect(self._sync_plans)
+        self.project_menu.addSeparator()
+        self.disconnect_action = self.project_menu.addAction("Verbindung trennen")
+        self.disconnect_action.triggered.connect(self._disconnect_project)
 
-        for button in (
-            self.choose_project_button,
-            self.sync_plans_button,
-            self.add_template_button,
-            self.create_object_button,
-            self.disconnect_button,
-        ):
-            button_row.addWidget(button)
-        button_row.addStretch(1)
-        root_layout.addWidget(self.button_row_widget)
+        self.add_menu = self.command_bar.addMenu("Hinzufügen")
+        self.add_template_action = self.add_menu.addAction("Template hinzufügen")
+        self.add_template_action.triggered.connect(self._add_template)
+        self.create_object_action = self.add_menu.addAction("Objekt erstellen")
+        self.create_object_action.triggered.connect(self._create_object)
+
+        self.settings_menu = self.command_bar.addMenu("Einstellungen")
+        self.show_operator_list_action = self.settings_menu.addAction("Betreiberliste")
+        self.show_operator_list_action.triggered.connect(self._show_operator_list)
+        self.show_local_assignments_action = self.settings_menu.addAction("Lokale Ordner")
+        self.show_local_assignments_action.triggered.connect(self._show_local_assignments)
+        self.settings_menu.addSeparator()
+        self.show_data_sources_action = self.settings_menu.addAction("Datenquellen")
+        self.show_data_sources_action.triggered.connect(self._show_data_sources)
+        self.show_configuration_action = self.settings_menu.addAction("Konfiguration")
+        self.show_configuration_action.triggered.connect(self._show_configuration)
+
+        root_layout.addWidget(self.command_bar)
 
         self.layer_host = QWidget(self)
         self.layer_host_layout = QVBoxLayout(self.layer_host)
@@ -221,6 +243,7 @@ class ProjectStarterButlerDialog(QDialog):
         dialog.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         dialog.set_values(_effective_layer_config(layer))
         dialog.set_project_context_info(self._project_context_info(layer))
+        dialog.set_embedded_navigation_visible(False)
         if getattr(dialog, "button_box", None) is not None:
             dialog.button_box.hide()
         self.layer_config_dialog = dialog
@@ -246,21 +269,27 @@ class ProjectStarterButlerDialog(QDialog):
         project_dir = self.plugin._current_project_dir
         panel_layer = self._panel_layer()
 
-        self.button_row_widget.setVisible(project_dir is not None)
-        self.choose_project_button.setVisible(False)
-        self.sync_plans_button.setEnabled(project_dir is not None)
-        self.add_template_button.setEnabled(project_dir is not None)
-        self.disconnect_button.setEnabled(project_dir is not None)
-        self.disconnect_button.setVisible(project_dir is not None)
-        self.sync_plans_button.setVisible(project_dir is not None)
-        self.add_template_button.setVisible(project_dir is not None)
-        self.create_object_button.setEnabled(project_dir is not None)
-        self.create_object_button.setVisible(project_dir is not None)
-
         if rebuild_layer or panel_layer is not self.current_layer:
             self._rebuild_layer_panel(panel_layer)
         elif self.layer_config_dialog is not None:
             self.layer_config_dialog.set_project_context_info(self._project_context_info(panel_layer))
+
+        has_project = project_dir is not None
+        has_settings_panel = self.layer_config_dialog is not None
+
+        self.choose_project_action.setText(
+            "Projektordner wechseln" if has_project else "Projektordner auswählen"
+        )
+        self.sync_plans_action.setEnabled(has_project)
+        self.disconnect_action.setEnabled(has_project)
+        self.add_menu.menuAction().setEnabled(has_project)
+        self.add_template_action.setEnabled(has_project)
+        self.create_object_action.setEnabled(has_project)
+        self.settings_menu.menuAction().setEnabled(has_settings_panel)
+        self.show_operator_list_action.setEnabled(has_settings_panel)
+        self.show_local_assignments_action.setEnabled(has_settings_panel)
+        self.show_data_sources_action.setEnabled(has_settings_panel)
+        self.show_configuration_action.setEnabled(has_settings_panel)
 
         save_button = self.button_box.button(QDialogButtonBox.Save)
         if save_button is not None:
@@ -285,6 +314,26 @@ class ProjectStarterButlerDialog(QDialog):
     def _disconnect_project(self):
         self.plugin._disconnect_current_connection()
         self.refresh_state(rebuild_layer=True)
+
+    def _show_operator_list(self):
+        if self.layer_config_dialog is None:
+            return
+        self.layer_config_dialog.show_external_operators_tab()
+
+    def _show_local_assignments(self):
+        if self.layer_config_dialog is None:
+            return
+        self.layer_config_dialog.show_local_operators_tab()
+
+    def _show_data_sources(self):
+        if self.layer_config_dialog is None:
+            return
+        self.layer_config_dialog.show_data_sources_tab()
+
+    def _show_configuration(self):
+        if self.layer_config_dialog is None:
+            return
+        self.layer_config_dialog.show_configuration_tab()
 
     def accept(self):
         if self.layer_config_dialog is None or self.current_layer is None:

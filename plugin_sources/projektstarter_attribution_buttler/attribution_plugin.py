@@ -27,11 +27,9 @@ from qgis.PyQt.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QHeaderView,
-    QInputDialog,
     QTableWidget,
     QTableWidgetItem,
     QStackedWidget,
@@ -63,6 +61,11 @@ from .form_handler import (
     _is_rate_limit_error,
     _to_nextcloud_and_local_path,
     get_or_create_public_link,
+)
+from .ui_helpers import (
+    ButlerMessageBox as QMessageBox,
+    apply_butler_window_icon,
+    get_butler_item,
 )
 
 
@@ -290,7 +293,8 @@ class LayerConfigDialog(QDialog):
         logo_row.addStretch(1)
         root_layout.addLayout(logo_row)
 
-        top_row = QHBoxLayout()
+        self.navigation_row_widget = QWidget(self)
+        top_row = QHBoxLayout(self.navigation_row_widget)
         self._configure_action_row(top_row)
         top_row.addStretch(1)
         self.open_settings_button = QPushButton("Einstellungen")
@@ -301,7 +305,7 @@ class LayerConfigDialog(QDialog):
         self._configure_action_button(self.back_to_operators_button, minimum_width=148)
         top_row.addWidget(self.open_settings_button)
         top_row.addWidget(self.back_to_operators_button)
-        root_layout.addLayout(top_row)
+        root_layout.addWidget(self.navigation_row_widget)
 
         self.page_stack = QStackedWidget(self)
         root_layout.addWidget(self.page_stack, 1)
@@ -760,6 +764,28 @@ class LayerConfigDialog(QDialog):
 
     def _show_operators_page(self):
         self._set_main_page(self._operators_page_index)
+
+    def set_embedded_navigation_visible(self, visible: bool):
+        if getattr(self, "navigation_row_widget", None) is not None:
+            self.navigation_row_widget.setVisible(bool(visible))
+
+    def show_local_operators_tab(self):
+        self._show_operators_page()
+        if self._local_operator_tab_index >= 0:
+            self.operator_tabs.setCurrentIndex(self._local_operator_tab_index)
+
+    def show_external_operators_tab(self):
+        self._show_operators_page()
+        if self._external_operator_tab_index >= 0:
+            self.operator_tabs.setCurrentIndex(self._external_operator_tab_index)
+
+    def show_data_sources_tab(self):
+        self._show_settings_page()
+        self.settings_tabs.setCurrentIndex(0)
+
+    def show_configuration_tab(self):
+        self._show_settings_page()
+        self.settings_tabs.setCurrentIndex(1)
 
     def _configure_action_row(self, layout: QHBoxLayout):
         layout.setContentsMargins(0, 0, 0, 0)
@@ -4360,7 +4386,7 @@ class LayerConfigDialog(QDialog):
         return result
 
     def _prompt_pick_external_operator(self, entries: list[dict]):
-        dialog = QDialog(self)
+        dialog = apply_butler_window_icon(QDialog(self), self)
         dialog.setWindowTitle("Betreiber aus Datenquelle uebernehmen")
         dialog.resize(760, 460)
 
@@ -4894,7 +4920,7 @@ class LayerConfigDialog(QDialog):
         if len(candidates) == 1:
             return candidates[0]
 
-        value, accepted = QInputDialog.getItem(
+        value, accepted = get_butler_item(
             self,
             "Datenbankquelle",
             "Tabelle / Layer auswaehlen:",
@@ -4946,7 +4972,7 @@ class LayerConfigDialog(QDialog):
 
     def _prompt_data_source_dialog(self, source_type: str) -> dict | None:
         is_file = source_type == "file"
-        dialog = QDialog(self)
+        dialog = apply_butler_window_icon(QDialog(self), self)
         dialog.setWindowTitle("Dateiquelle verbinden" if is_file else "Datenbank verbinden")
         dialog.resize(700, 560 if not is_file else 520)
 
@@ -5410,7 +5436,7 @@ class LayerConfigDialog(QDialog):
                 row_values.append("" if value is None else str(value))
             rows.append(row_values)
 
-        preview = QDialog(self)
+        preview = apply_butler_window_icon(QDialog(self), self)
         preview.setWindowTitle(title)
         preview.resize(920, 560)
         layout = QVBoxLayout(preview)
