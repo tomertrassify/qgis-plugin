@@ -3126,16 +3126,20 @@ class LayerConfigDialog(QDialog):
             )
             return
 
+        operator_values = self._prompt_new_external_operator_values(context)
+        if operator_values is None:
+            return
+
         self._add_operator_row(
             [
                 str(context.get("source_name", "") or "").strip(),
+                operator_values["operator_name"],
+                operator_values["validity"],
                 "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
+                operator_values["contact_name"],
+                operator_values["phone"],
+                operator_values["email"],
+                operator_values["fault_number"],
                 "",
                 "",
             ],
@@ -3153,6 +3157,88 @@ class LayerConfigDialog(QDialog):
                 },
             },
         )
+
+    def _prompt_new_external_operator_values(self, context: dict) -> dict | None:
+        source_name = str(context.get("source_name", "") or "").strip()
+        dialog = apply_butler_window_icon(QDialog(self), self)
+        dialog.setWindowTitle("Neuen Betreiber anlegen")
+        dialog.resize(560, 0)
+
+        layout = QVBoxLayout(dialog)
+
+        intro = QLabel(
+            "Lege hier einen neuen Eintrag fuer die aktuell ausgewaehlte Betreiberquelle an. "
+            "Die Werte werden nach dem Speichern in die Datenquelle geschrieben."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        form_group = QGroupBox("Betreiberdaten", dialog)
+        form = QFormLayout(form_group)
+
+        source_value = QLabel(source_name or "-")
+        source_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        operator_name_input = QLineEdit(dialog)
+        operator_name_input.setPlaceholderText("Pflichtfeld")
+        validity_input = QLineEdit(dialog)
+        validity_input.setPlaceholderText("z. B. 31.12.2026 oder unbefristet")
+        contact_input = QLineEdit(dialog)
+        contact_input.setPlaceholderText("Ansprechpartner")
+        phone_input = QLineEdit(dialog)
+        phone_input.setPlaceholderText("Telefonnummer")
+        email_input = QLineEdit(dialog)
+        email_input.setPlaceholderText("E-Mail-Adresse")
+        fault_number_input = QLineEdit(dialog)
+        fault_number_input.setPlaceholderText("Stoer- oder Rufnummer")
+
+        form.addRow("Datenquelle", source_value)
+        form.addRow("Betreibername", operator_name_input)
+        form.addRow("Gueltigkeit", validity_input)
+        form.addRow("Ansprechpartner", contact_input)
+        form.addRow("Telefonnummer", phone_input)
+        form.addRow("E-Mail", email_input)
+        form.addRow("Stoernummer", fault_number_input)
+        layout.addWidget(form_group)
+
+        note = QLabel(
+            "Stand, Pfad und Nextcloud Link pflegst du anschliessend wie gewohnt in der Tabelle "
+            "oder lokal im Projekt."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
+        ok_button = buttons.button(QDialogButtonBox.Ok)
+        if ok_button is not None:
+            ok_button.setText("Anlegen")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        operator_name_input.setFocus()
+
+        while True:
+            if dialog.exec_() != QDialog.Accepted:
+                return None
+
+            operator_name = operator_name_input.text().strip()
+            if not operator_name:
+                QMessageBox.warning(
+                    dialog,
+                    "Betreiberliste",
+                    "Bitte mindestens einen Betreibername ausfuellen.",
+                )
+                operator_name_input.setFocus()
+                continue
+
+            return {
+                "operator_name": operator_name,
+                "validity": validity_input.text().strip(),
+                "contact_name": contact_input.text().strip(),
+                "phone": phone_input.text().strip(),
+                "email": email_input.text().strip(),
+                "fault_number": fault_number_input.text().strip(),
+            }
 
     def _remove_selected_external_operator_row(self):
         context = self._external_operator_context
