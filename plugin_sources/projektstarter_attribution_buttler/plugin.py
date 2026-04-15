@@ -340,10 +340,7 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
         self.action_unbind_hidden.setVisible(False)
         self.iface.mainWindow().addAction(self.action_unbind_hidden)
 
-        project = QgsProject.instance()
-        project.readProject.connect(self._on_project_read)
-        project.projectSaved.connect(self._on_project_saved)
-        project.cleared.connect(self._on_project_cleared)
+        self._connect_project_signals()
         QTimer.singleShot(0, self._refresh_connection_state)
 
     def unload(self):

@@ -2,6 +2,7 @@ import json
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
 from difflib import SequenceMatcher
 from os.path import relpath
 from pathlib import Path
@@ -19,7 +20,7 @@ except ImportError:
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QFile, QIODevice, QSettings, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
-from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMenu, QToolBar
+from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMenu, QMessageBox, QToolBar
 from qgis.core import (
     Qgis,
     QgsCategorizedSymbolRenderer,
@@ -30,6 +31,7 @@ from qgis.core import (
     QgsFeatureRequest,
     QgsLayerTreeGroup,
     QgsLayerTreeLayer,
+    QgsMapLayerType,
     QgsMapLayerUtils,
     QgsMapSettings,
     QgsProject,
@@ -161,6 +163,7 @@ class ProjectStarterPlugin:
         self._pending_zoom_layer_id = None
         self._pending_zoom_extent = None
         self._resaving_after_georef_sync = False
+        self._external_vector_prompt_suppression = 0
 
     def initGui(self):
         self.action = QAction(QIcon(str(self._icon_path())), "Projektstarter", self.iface.mainWindow())
@@ -174,10 +177,7 @@ class ProjectStarterPlugin:
 
         self.iface.addPluginToMenu(self.TOOLBAR_NAME, self.action)
 
-        project = QgsProject.instance()
-        project.readProject.connect(self._on_project_read)
-        project.projectSaved.connect(self._on_project_saved)
-        project.cleared.connect(self._on_project_cleared)
+        self._connect_project_signals()
         QTimer.singleShot(0, self._refresh_connection_state)
 
     def unload(self):
@@ -187,19 +187,7 @@ class ProjectStarterPlugin:
         self.action = None
         self.toolbar = None
 
-        project = QgsProject.instance()
-        try:
-            project.readProject.disconnect(self._on_project_read)
-        except TypeError:
-            pass
-        try:
-            project.projectSaved.disconnect(self._on_project_saved)
-        except TypeError:
-            pass
-        try:
-            project.cleared.disconnect(self._on_project_cleared)
-        except TypeError:
-            pass
+        self._disconnect_project_signals()
 
         self._clear_managed_layer_connections()
 
@@ -216,6 +204,47 @@ class ProjectStarterPlugin:
         self._pending_zoom_extent = None
         self._export_sync_pending = False
         self._resaving_after_georef_sync = False
+        self._external_vector_prompt_suppression = 0
+
+    def _connect_project_signals(self):
+        project = QgsProject.instance()
+        project.readProject.connect(self._on_project_read)
+        project.projectSaved.connect(self._on_project_saved)
+        project.cleared.connect(self._on_project_cleared)
+
+        legend_layers_added = getattr(project, "legendLayersAdded", None)
+        if legend_layers_added is not None:
+            legend_layers_added.connect(self._on_project_legend_layers_added)
+
+    def _disconnect_project_signals(self):
+        project = QgsProject.instance()
+        try:
+            project.readProject.disconnect(self._on_project_read)
+        except TypeError:
+            pass
+        try:
+            project.projectSaved.disconnect(self._on_project_saved)
+        except TypeError:
+            pass
+        try:
+            project.cleared.disconnect(self._on_project_cleared)
+        except TypeError:
+            pass
+
+        legend_layers_added = getattr(project, "legendLayersAdded", None)
+        if legend_layers_added is not None:
+            try:
+                legend_layers_added.disconnect(self._on_project_legend_layers_added)
+            except TypeError:
+                pass
+
+    @contextmanager
+    def _suppress_external_vector_prompt(self):
+        self._external_vector_prompt_suppression += 1
+        try:
+            yield
+        finally:
+            self._external_vector_prompt_suppression = max(0, self._external_vector_prompt_suppression - 1)
 
     def _find_toolbar(self):
         try:
@@ -308,7 +337,8 @@ class ProjectStarterPlugin:
 
         if not self._group_has_children(basemap_group):
             self._add_osm_basemap(basemap_group)
-            self._load_alkis_for_project(project_area_layer, basemap_group)
+            with self._suppress_external_vector_prompt():
+                self._load_alkis_for_project(project_area_layer, basemap_group)
         self._collapse_root_groups()
         self._save_project_file(
             project_dir,
@@ -1829,6 +1859,121 @@ class ProjectStarterPlugin:
     def _is_managed_layer_source(self, layer):
         return self._layer_belongs_to_project_gpkg(layer, self._current_project_dir)
 
+    def _is_external_vector_prompt_candidate(self, layer):
+        if self._current_project_dir is None or self._external_vector_prompt_suppression > 0:
+            return False
+        if not isinstance(layer, QgsVectorLayer):
+            return False
+        if layer.type() != QgsMapLayerType.VectorLayer:
+            return False
+        if not layer.isValid() or not layer.isSpatial():
+            return False
+        if self._layer_belongs_to_project_gpkg(layer, self._current_project_dir):
+            return False
+        return True
+
+    def _prompt_copy_layer_to_project_geopackage(self, layer):
+        answer = QMessageBox.question(
+            self.iface.mainWindow(),
+            "Projektstarter",
+            (
+                f"Der Layer '{layer.name()}' wurde zum Projekt hinzugefuegt.\n\n"
+                "Soll der Layer in das Projekt-GeoPackage kopiert werden?\n"
+                "Bei 'Nein' bleibt der Layer mit seiner Originalquelle im QGIS-Projekt."
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        return answer == QMessageBox.Yes
+
+    def _replace_with_project_geopackage_layer(self, layer):
+        if self._current_project_dir is None:
+            return False
+
+        gpkg_file = self._prepare_project_geopackage(self._current_project_dir)
+        if not gpkg_file:
+            return False
+
+        existing_names = set(self._list_sublayer_names(gpkg_file)) if gpkg_file.is_file() else set()
+        used_names = {name.lower() for name in existing_names}
+        target_layer_name = self._unique_name(layer.name(), used_names)
+        action_on_existing = (
+            QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+            if gpkg_file.exists()
+            else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
+        )
+
+        try:
+            export_layer = self._snapshot_vector_layer(layer)
+            self._write_vector_layer(
+                export_layer,
+                gpkg_file,
+                "GPKG",
+                layer_name=target_layer_name,
+                action_on_existing=action_on_existing,
+            )
+        except Exception as error:
+            self._show_message(
+                "Projektstarter",
+                f"Layer konnte nicht in das Projekt-GeoPackage kopiert werden: {error}",
+                Qgis.Warning,
+            )
+            return False
+
+        gpkg_layer = QgsVectorLayer(f"{gpkg_file}|layername={target_layer_name}", target_layer_name, "ogr")
+        if not gpkg_layer.isValid():
+            self._show_message(
+                "Projektstarter",
+                f"Der kopierte Layer konnte nicht aus dem GeoPackage geladen werden: {target_layer_name}",
+                Qgis.Warning,
+            )
+            return False
+
+        self._copy_embedded_layer_style(layer, gpkg_layer)
+
+        root = QgsProject.instance().layerTreeRoot()
+        original_node = root.findLayer(layer.id())
+        original_visibility = True
+        if original_node is not None:
+            try:
+                original_visibility = bool(original_node.itemVisibilityChecked())
+            except Exception:
+                original_visibility = True
+
+        project_root = self._project_layer_root(root)
+        original_active_layer_id = self.iface.activeLayer().id() if self.iface.activeLayer() is not None else None
+
+        with self._suppress_external_vector_prompt():
+            QgsProject.instance().addMapLayer(gpkg_layer, False)
+            self._add_project_layer_to_root(project_root, gpkg_layer)
+
+        gpkg_node = root.findLayer(gpkg_layer.id())
+        if gpkg_node is not None:
+            try:
+                gpkg_node.setItemVisibilityChecked(original_visibility)
+            except Exception:
+                pass
+
+        QgsProject.instance().removeMapLayer(layer.id())
+        self._register_managed_project_layers(project_root)
+
+        if original_active_layer_id == layer.id():
+            self.iface.setActiveLayer(gpkg_layer)
+
+        self._save_project_file(
+            self._current_project_dir,
+            notify=False,
+            sync_georef=False,
+            sync_project_layers=False,
+        )
+
+        self._show_message(
+            "Projektstarter",
+            f"Layer '{target_layer_name}' wurde in das Projekt-GeoPackage uebernommen.",
+            Qgis.Success,
+        )
+        return True
+
     def _icon_path(self, connected=False):
         icon_name = self.CONNECTED_ICON_FILENAME if connected else self.DEFAULT_ICON_FILENAME
         return self.plugin_dir / "assets" / icon_name
@@ -3289,6 +3434,17 @@ class ProjectStarterPlugin:
     def _on_project_read(self, *args):
         QTimer.singleShot(0, self._refresh_connection_state)
 
+    def _on_project_legend_layers_added(self, layers):
+        if self._current_project_dir is None or self._external_vector_prompt_suppression > 0:
+            return
+
+        for layer in list(layers or []):
+            if not self._is_external_vector_prompt_candidate(layer):
+                continue
+            if not self._prompt_copy_layer_to_project_geopackage(layer):
+                continue
+            self._replace_with_project_geopackage_layer(layer)
+
     def _on_project_saved(self):
         if self._resaving_after_georef_sync:
             self._resaving_after_georef_sync = False
@@ -3321,6 +3477,7 @@ class ProjectStarterPlugin:
         self._pending_zoom_extent = None
         self._export_sync_pending = False
         self._resaving_after_georef_sync = False
+        self._external_vector_prompt_suppression = 0
 
     def _show_message(self, title, message, level):
         self.iface.messageBar().pushMessage(title, message, level=level, duration=5)
