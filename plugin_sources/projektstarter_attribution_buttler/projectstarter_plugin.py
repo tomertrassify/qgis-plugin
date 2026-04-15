@@ -5,7 +5,8 @@ import xml.etree.ElementTree as ET
 from difflib import SequenceMatcher
 from os.path import relpath
 from pathlib import Path
-from shutil import copy2, move
+from shutil import move
+from tempfile import NamedTemporaryFile
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 from zipfile import BadZipFile, ZipFile
@@ -308,7 +309,12 @@ class ProjectStarterPlugin:
         if not self._group_has_children(basemap_group):
             self._add_osm_basemap(basemap_group)
             self._load_alkis_for_project(project_area_layer, basemap_group)
-        self._save_project_file(project_dir, notify=False, sync_georef=False)
+        self._save_project_file(
+            project_dir,
+            notify=False,
+            sync_georef=False,
+            sync_project_layers=False,
+        )
         self._schedule_final_zoom(project_area_layer)
         if notify:
             self._show_message(
@@ -362,7 +368,12 @@ class ProjectStarterPlugin:
 
         changed = self._sync_georeferenced_plans(notify=False)
         if changed:
-            self._save_project_file(self._current_project_dir, notify=False, sync_georef=False)
+            self._save_project_file(
+                self._current_project_dir,
+                notify=False,
+                sync_georef=False,
+                sync_project_layers=False,
+            )
             self._show_message(
                 "Projektstarter",
                 "Leitungsauskunft wurde aktualisiert.",
@@ -399,7 +410,7 @@ class ProjectStarterPlugin:
         self._update_connection_icon(False)
 
         if project_dir is not None:
-            self._save_project_file(project_dir, notify=False)
+            self._save_project_file(project_dir, notify=False, sync_project_layers=False)
 
         self._show_message(
             "Projektstarter",
@@ -504,26 +515,16 @@ class ProjectStarterPlugin:
     def _prepare_project_geopackage(self, project_dir):
         self._configure_project(project_dir)
 
-        template_source = self._find_template_source()
-        if not template_source:
+        target_gpkg = self._project_geopackage_path(project_dir)
+        try:
+            target_gpkg.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
             self._show_message(
                 "Projektstarter",
-                "Keine Vorgabe-GPKG gefunden. Der Projektstart laedt nur die KML.",
-                Qgis.Warning,
+                f"Ergebnisordner konnte nicht erstellt werden: {error}",
+                Qgis.Critical,
             )
             return None
-
-        target_gpkg = project_dir / self.RESULT_DIRNAME / f"{project_dir.name}.gpkg"
-        if not target_gpkg.exists():
-            try:
-                copy2(template_source, target_gpkg)
-            except OSError as error:
-                self._show_message(
-                    "Projektstarter",
-                    f"GeoPackage konnte nicht erstellt werden: {error}",
-                    Qgis.Critical,
-                )
-                return None
 
         return target_gpkg
 
@@ -778,14 +779,21 @@ class ProjectStarterPlugin:
 
         return None
 
-    def _save_project_file(self, project_dir, notify=False, sync_georef=True):
+    def _save_project_file(
+        self,
+        project_dir,
+        notify=False,
+        sync_georef=True,
+        sync_project_layers=True,
+    ):
         project = QgsProject.instance()
         project_file = self._project_file_path(project_dir)
         project.setFileName(str(project_file))
         self._set_relative_project_paths(project)
         if sync_georef and self._current_project_dir is not None:
             self._sync_georeferenced_plans(notify=False)
-        self._sync_project_layers_to_geopackage(project_dir)
+        if sync_project_layers:
+            self._sync_project_layers_to_geopackage(project_dir)
         self._register_managed_project_layers(self._project_layer_root(project.layerTreeRoot()))
 
         if project.write():
@@ -846,6 +854,104 @@ class ProjectStarterPlugin:
             )
             return False
 
+        return True
+
+    def _copy_missing_template_layers_to_geopackage(self, gpkg_file):
+        template_source = self._find_template_source()
+        if not template_source:
+            self._show_message(
+                "Projektstarter",
+                "Keine Vorgabe-GPKG fuer Template-Layer gefunden.",
+                Qgis.Warning,
+            )
+            return None
+
+        template_layer_names = [
+            layer_name
+            for layer_name in self._ordered_sublayer_names(self._list_sublayer_names(template_source))
+            if layer_name != self.PROJECT_AREA_LAYER_NAME
+        ]
+        if not template_layer_names:
+            return []
+
+        existing_layer_names = set(self._list_sublayer_names(gpkg_file)) if gpkg_file.is_file() else set()
+        copied_layer_names = []
+
+        try:
+            for layer_name in template_layer_names:
+                if layer_name in existing_layer_names:
+                    continue
+
+                source_layer = QgsVectorLayer(
+                    f"{template_source}|layername={layer_name}",
+                    layer_name,
+                    "ogr",
+                )
+                if not source_layer.isValid():
+                    raise RuntimeError(f"Template-Layer konnte nicht gelesen werden: {layer_name}")
+
+                export_layer = self._snapshot_vector_layer(source_layer)
+                self._write_vector_layer(
+                    export_layer,
+                    gpkg_file,
+                    "GPKG",
+                    layer_name=layer_name,
+                    action_on_existing=QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer,
+                )
+
+                target_layer = QgsVectorLayer(f"{gpkg_file}|layername={layer_name}", layer_name, "ogr")
+                if target_layer.isValid():
+                    self._copy_embedded_layer_style(source_layer, target_layer)
+
+                existing_layer_names.add(layer_name)
+                copied_layer_names.append(layer_name)
+        except Exception as error:
+            self._show_message(
+                "Projektstarter",
+                f"Template-Layer konnten nicht in das GeoPackage uebernommen werden: {error}",
+                Qgis.Warning,
+            )
+            return None
+
+        return copied_layer_names
+
+    def _copy_embedded_layer_style(self, source_layer, target_layer):
+        style_path = None
+        try:
+            self._apply_embedded_layer_style(source_layer)
+            with NamedTemporaryFile(suffix=".qml", delete=False) as handle:
+                style_path = handle.name
+
+            if not self._style_result_succeeded(source_layer.saveNamedStyle(style_path)):
+                return False
+            if not self._style_result_succeeded(target_layer.loadNamedStyle(style_path)):
+                return False
+
+            self._refresh_layer_symbology(target_layer)
+            if hasattr(target_layer, "saveDefaultStyle"):
+                try:
+                    target_layer.saveDefaultStyle()
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return False
+        finally:
+            if style_path:
+                try:
+                    Path(style_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    def _style_result_succeeded(self, result):
+        if isinstance(result, tuple):
+            if not result:
+                return True
+            return bool(result[-1])
+        if result is None:
+            return True
+        if isinstance(result, bool):
+            return result
         return True
 
     def _prepare_workspace_groups(self, project_dir, preserve_manual_georef=False):
@@ -2659,6 +2765,10 @@ class ProjectStarterPlugin:
         if not gpkg_file:
             return False
 
+        copied_layers = self._copy_missing_template_layers_to_geopackage(gpkg_file)
+        if copied_layers is None:
+            return False
+
         project_root = self._project_layer_root(QgsProject.instance().layerTreeRoot())
         _project_area_layer, added_layers = self._load_project_geopackage_layers(
             gpkg_file,
@@ -2667,19 +2777,26 @@ class ProjectStarterPlugin:
         )
         self._register_managed_project_layers(project_root)
 
-        template_layers = [
-            layer_name for layer_name in added_layers if layer_name != self.PROJECT_AREA_LAYER_NAME
-        ]
+        template_layers = []
+        for layer_name in copied_layers + added_layers:
+            if layer_name == self.PROJECT_AREA_LAYER_NAME or layer_name in template_layers:
+                continue
+            template_layers.append(layer_name)
         if not template_layers:
             if notify:
                 self._show_message(
                     "Projektstarter",
-                    "Die Template-Layer sind bereits im Projekt vorhanden.",
+                    "Die Template-Layer sind bereits im GeoPackage und im Projekt vorhanden.",
                     Qgis.Info,
                 )
             return False
 
-        self._save_project_file(self._current_project_dir, notify=False, sync_georef=False)
+        self._save_project_file(
+            self._current_project_dir,
+            notify=False,
+            sync_georef=False,
+            sync_project_layers=False,
+        )
         if notify:
             self._show_message(
                 "Projektstarter",
@@ -3084,7 +3201,11 @@ class ProjectStarterPlugin:
             self._zoom_to_extent(self._pending_zoom_extent)
         self._pending_zoom_extent = None
         if self._current_project_dir is not None:
-            self._save_project_file(self._current_project_dir, notify=False)
+            self._save_project_file(
+                self._current_project_dir,
+                notify=False,
+                sync_project_layers=False,
+            )
 
     def _zoom_to_layer(self, layer):
         extent = self._layer_extent_in_project_crs(layer)
@@ -3150,7 +3271,11 @@ class ProjectStarterPlugin:
         if self._current_project_dir is None:
             self._resaving_after_georef_sync = False
             return
-        if not self._save_project_file(self._current_project_dir, notify=False):
+        if not self._save_project_file(
+            self._current_project_dir,
+            notify=False,
+            sync_project_layers=False,
+        ):
             self._resaving_after_georef_sync = False
 
     def _on_project_cleared(self):
