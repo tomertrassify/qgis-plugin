@@ -42,6 +42,7 @@ from qgis.core import (
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
+from qgis.gui import QgsNewGeoPackageLayerDialog
 
 
 class ProjectStarterPlugin:
@@ -361,6 +362,7 @@ class ProjectStarterPlugin:
         menu = QMenu(self.iface.mainWindow())
         refresh_action = menu.addAction("Verbindung aktualisieren")
         leitungsauskunft_action = menu.addAction("Leitungsauskunft aktualisieren")
+        create_object_action = menu.addAction("Objekt händisch erstellen")
         zoom_action = menu.addAction("Zum Projektgebiet zoomen")
         save_action = menu.addAction("Projekt speichern")
         menu.addSeparator()
@@ -378,6 +380,8 @@ class ProjectStarterPlugin:
             self._refresh_current_connection()
         elif selected_action is leitungsauskunft_action:
             self._refresh_leitungsauskunft()
+        elif selected_action is create_object_action:
+            self.create_manual_project_layer(notify=True)
         elif selected_action is zoom_action:
             self._zoom_to_project_area_now()
         elif selected_action is save_action:
@@ -1697,6 +1701,22 @@ class ProjectStarterPlugin:
 
         return project_area_layer, added_layers
 
+    def _load_project_geopackage_sublayer(self, gpkg_file, target_group, sublayer_name):
+        layer_source = f"{gpkg_file}|layername={sublayer_name}"
+        existing_layer = self._find_vector_layer_by_source(QgsProject.instance().layerTreeRoot(), layer_source)
+        if existing_layer is not None:
+            self._apply_project_layer_style(existing_layer)
+            return existing_layer, False
+
+        layer = QgsVectorLayer(layer_source, sublayer_name, "ogr")
+        if not layer.isValid():
+            return None, False
+
+        QgsProject.instance().addMapLayer(layer, False)
+        self._add_project_layer_to_root(target_group, layer)
+        self._apply_project_layer_style(layer)
+        return layer, True
+
     def _list_sublayer_names(self, gpkg_file):
         container_layer = QgsVectorLayer(str(gpkg_file), gpkg_file.stem, "ogr")
         if not container_layer.isValid():
@@ -1973,6 +1993,79 @@ class ProjectStarterPlugin:
             Qgis.Success,
         )
         return True
+
+    def create_manual_project_layer(self, notify=True):
+        if self._current_project_dir is None:
+            if notify:
+                self._show_message(
+                    "Projektstarter",
+                    "Bitte zuerst einen Projektordner verbinden.",
+                    Qgis.Warning,
+                )
+            return False
+
+        gpkg_file = self._prepare_project_geopackage(self._current_project_dir)
+        if not gpkg_file:
+            return False
+
+        before_names = set(self._list_sublayer_names(gpkg_file)) if gpkg_file.is_file() else set()
+
+        dialog = QgsNewGeoPackageLayerDialog(self.iface.mainWindow())
+        dialog.setDatabasePath(str(gpkg_file))
+        dialog.lockDatabasePath()
+        dialog.setCrs(QgsProject.instance().crs())
+        dialog.setAddToProject(False)
+        overwrite_behavior = getattr(QgsNewGeoPackageLayerDialog.OverwriteBehavior, "AddNewLayer", None)
+        if overwrite_behavior is not None:
+            dialog.setOverwriteBehavior(overwrite_behavior)
+
+        if not dialog.exec():
+            return False
+
+        after_names = self._ordered_sublayer_names(self._list_sublayer_names(gpkg_file))
+        new_names = [name for name in after_names if name not in before_names]
+        if not new_names:
+            if notify:
+                self._show_message(
+                    "Projektstarter",
+                    "Es wurde kein neuer Layer im Projekt-GeoPackage angelegt.",
+                    Qgis.Info,
+                )
+            return False
+
+        project_root = self._project_layer_root(QgsProject.instance().layerTreeRoot())
+        added_layers = []
+        active_layer = None
+        with self._suppress_external_vector_prompt():
+            for layer_name in new_names:
+                loaded_layer, added = self._load_project_geopackage_sublayer(
+                    gpkg_file,
+                    project_root,
+                    layer_name,
+                )
+                if loaded_layer is None:
+                    continue
+                if added:
+                    added_layers.append(layer_name)
+                active_layer = loaded_layer
+
+        self._register_managed_project_layers(project_root)
+        if active_layer is not None:
+            self.iface.setActiveLayer(active_layer)
+        self._save_project_file(
+            self._current_project_dir,
+            notify=False,
+            sync_georef=False,
+            sync_project_layers=False,
+        )
+
+        if notify and added_layers:
+            self._show_message(
+                "Projektstarter",
+                f"Neuer Layer im GeoPackage erstellt: {added_layers[0]}",
+                Qgis.Success,
+            )
+        return bool(added_layers)
 
     def _icon_path(self, connected=False):
         icon_name = self.CONNECTED_ICON_FILENAME if connected else self.DEFAULT_ICON_FILENAME

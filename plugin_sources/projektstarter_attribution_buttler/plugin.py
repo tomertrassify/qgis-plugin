@@ -57,6 +57,8 @@ class ProjectStarterButlerDialog(QDialog):
         self.sync_plans_button.clicked.connect(self._sync_plans)
         self.add_template_button = QPushButton("Template hinzufügen")
         self.add_template_button.clicked.connect(self._add_template)
+        self.create_object_button = QPushButton("Objekt erstellen")
+        self.create_object_button.clicked.connect(self._create_object)
         self.disconnect_button = QPushButton("Verbindung trennen")
         self.disconnect_button.clicked.connect(self._disconnect_project)
 
@@ -64,6 +66,7 @@ class ProjectStarterButlerDialog(QDialog):
             self.choose_project_button,
             self.sync_plans_button,
             self.add_template_button,
+            self.create_object_button,
             self.disconnect_button,
         ):
             button_row.addWidget(button)
@@ -251,6 +254,8 @@ class ProjectStarterButlerDialog(QDialog):
         self.disconnect_button.setVisible(project_dir is not None)
         self.sync_plans_button.setVisible(project_dir is not None)
         self.add_template_button.setVisible(project_dir is not None)
+        self.create_object_button.setEnabled(project_dir is not None)
+        self.create_object_button.setVisible(project_dir is not None)
 
         if rebuild_layer or panel_layer is not self.current_layer:
             self._rebuild_layer_panel(panel_layer)
@@ -271,6 +276,10 @@ class ProjectStarterButlerDialog(QDialog):
 
     def _add_template(self):
         self.plugin.add_template_layers(notify=True)
+        self.refresh_state(rebuild_layer=True)
+
+    def _create_object(self):
+        self.plugin.create_manual_project_layer(notify=True)
         self.refresh_state(rebuild_layer=True)
 
     def _disconnect_project(self):
