@@ -66,6 +66,7 @@ from .ui_helpers import (
     ButlerMessageBox as QMessageBox,
     apply_butler_window_icon,
     get_butler_item,
+    push_butler_message,
 )
 
 
@@ -492,6 +493,9 @@ class LayerConfigDialog(QDialog):
             sortable=False,
         )
         self.local_operator_table.itemChanged.connect(self._on_local_operator_table_item_changed)
+        self.local_operator_table.itemSelectionChanged.connect(
+            self._refresh_local_operator_selection_controls
+        )
         local_header = self.local_operator_table.horizontalHeader()
         local_header.setStretchLastSection(False)
         local_header.setMinimumSectionSize(40)
@@ -524,6 +528,7 @@ class LayerConfigDialog(QDialog):
         self.local_operator_link_button.clicked.connect(self._generate_local_operator_nextcloud_links)
         self.local_operator_clear_button = QPushButton("Zuordnung loeschen")
         self.local_operator_clear_button.clicked.connect(self._clear_selected_local_operator_rows)
+        self.local_operator_clear_button.setVisible(False)
         self.local_operator_reload_button = QPushButton("Ordner neu laden")
         self.local_operator_reload_button.clicked.connect(self._reload_local_operator_table)
         for button in (
@@ -604,6 +609,7 @@ class LayerConfigDialog(QDialog):
             selection_mode=QAbstractItemView.ExtendedSelection,
         )
         self.operator_table.itemSelectionChanged.connect(self._refresh_pending_local_assignment_controls)
+        self.operator_table.itemSelectionChanged.connect(self._refresh_external_operator_selection_controls)
         header = self.operator_table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(90)
@@ -641,18 +647,23 @@ class LayerConfigDialog(QDialog):
         self.operator_save_button.clicked.connect(self._save_external_operator_changes)
         self.operator_add_button = QPushButton("Zeile hinzufuegen")
         self.operator_add_button.clicked.connect(self._add_external_operator_row)
+        self.operator_edit_button = QPushButton("Bearbeiten")
+        self.operator_edit_button.clicked.connect(self._edit_selected_external_operator_row)
+        self.operator_edit_button.setVisible(False)
         self.operator_remove_button = QPushButton("Ausgewaehlte Zeilen loeschen")
         self.operator_remove_button.clicked.connect(self._remove_selected_external_operator_row)
         for button in (
             self.operator_reload_button,
             self.operator_save_button,
             self.operator_add_button,
+            self.operator_edit_button,
             self.operator_remove_button,
         ):
             self._configure_action_button(button)
         operator_buttons.addWidget(self.operator_reload_button)
         operator_buttons.addWidget(self.operator_save_button)
         operator_buttons.addWidget(self.operator_add_button)
+        operator_buttons.addWidget(self.operator_edit_button)
         operator_buttons.addWidget(self.operator_remove_button)
         operator_buttons.addStretch(1)
         external_layout.addLayout(operator_buttons)
@@ -662,6 +673,7 @@ class LayerConfigDialog(QDialog):
         self.operator_reload_button.setEnabled(False)
         self.operator_save_button.setEnabled(False)
         self.operator_add_button.setEnabled(False)
+        self.operator_edit_button.setEnabled(False)
         self.operator_remove_button.setEnabled(False)
 
         data_tab = QWidget()
@@ -1205,6 +1217,7 @@ class LayerConfigDialog(QDialog):
             self.local_operator_table,
             self.local_operator_search_input.text(),
         )
+        self._refresh_local_operator_selection_controls()
         self._refresh_pending_local_assignment_controls()
 
     def _set_local_operator_overlays(self, operators):
@@ -1380,6 +1393,11 @@ class LayerConfigDialog(QDialog):
         button.setStyleSheet("padding: 0;")
         button.clicked.connect(self._start_local_operator_assignment_from_button)
         self.local_operator_table.setCellWidget(row, LOCAL_OPERATOR_COLUMN_ACTION, button)
+
+    def _refresh_local_operator_selection_controls(self):
+        selection_model = self.local_operator_table.selectionModel()
+        has_selection = bool(selection_model and selection_model.selectedRows())
+        self.local_operator_clear_button.setVisible(has_selection)
 
     def _start_local_operator_assignment_from_button(self):
         button = self.sender()
@@ -2065,6 +2083,109 @@ class LayerConfigDialog(QDialog):
         self._apply_table_text_filter(self.operator_table, self.operator_search_input.text())
         self._refilter_external_operator_table()
         return row
+
+    def _selected_external_operator_row_index(self) -> int:
+        return self._selected_row_index(self.operator_table)
+
+    def _external_operator_row_values(self, row_index: int) -> dict:
+        if row_index < 0 or row_index >= self.operator_table.rowCount():
+            return {
+                "operator_name": "",
+                "validity": "",
+                "contact_name": "",
+                "phone": "",
+                "email": "",
+                "fault_number": "",
+            }
+
+        def _cell_text(column: int) -> str:
+            item = self.operator_table.item(row_index, column)
+            return item.text().strip() if item is not None else ""
+
+        return {
+            "operator_name": _cell_text(OPERATOR_COLUMN_OPERATOR),
+            "validity": _cell_text(OPERATOR_COLUMN_VALIDITY),
+            "contact_name": _cell_text(OPERATOR_COLUMN_CONTACT),
+            "phone": _cell_text(OPERATOR_COLUMN_PHONE),
+            "email": _cell_text(OPERATOR_COLUMN_EMAIL),
+            "fault_number": _cell_text(OPERATOR_COLUMN_FAULT),
+        }
+
+    def _apply_external_operator_values_to_row(self, row_index: int, values: dict) -> None:
+        if row_index < 0 or row_index >= self.operator_table.rowCount():
+            return
+
+        for key, column in (
+            ("operator_name", OPERATOR_COLUMN_OPERATOR),
+            ("validity", OPERATOR_COLUMN_VALIDITY),
+            ("contact_name", OPERATOR_COLUMN_CONTACT),
+            ("phone", OPERATOR_COLUMN_PHONE),
+            ("email", OPERATOR_COLUMN_EMAIL),
+            ("fault_number", OPERATOR_COLUMN_FAULT),
+        ):
+            item = self.operator_table.item(row_index, column)
+            if item is None:
+                item = QTableWidgetItem("")
+                self.operator_table.setItem(row_index, column, item)
+            item.setText(str(values.get(key, "") or "").strip())
+
+    def _select_external_operator_row(
+        self,
+        *,
+        feature_id=None,
+        source_name: str = "",
+        operator_name: str = "",
+        validity: str = "",
+        contact_name: str = "",
+    ) -> bool:
+        target_source = self._normalized_source_name(source_name)
+        for row_index in range(self.operator_table.rowCount()):
+            operator_item = self.operator_table.item(row_index, OPERATOR_COLUMN_OPERATOR)
+            payload = operator_item.data(Qt.UserRole) if operator_item is not None else None
+            if feature_id is not None and isinstance(payload, dict) and payload.get("feature_id") == feature_id:
+                self.operator_table.clearSelection()
+                self.operator_table.selectRow(row_index)
+                self.operator_table.setCurrentCell(row_index, OPERATOR_COLUMN_OPERATOR)
+                if operator_item is not None:
+                    self.operator_table.scrollToItem(operator_item)
+                return True
+
+            row_source_item = self.operator_table.item(row_index, OPERATOR_COLUMN_SOURCE)
+            row_source = row_source_item.text().strip() if row_source_item is not None else ""
+            if target_source and self._normalized_source_name(row_source) != target_source:
+                continue
+
+            row_operator = operator_item.text().strip() if operator_item is not None else ""
+            if row_operator != str(operator_name or "").strip():
+                continue
+
+            row_validity_item = self.operator_table.item(row_index, OPERATOR_COLUMN_VALIDITY)
+            row_validity = row_validity_item.text().strip() if row_validity_item is not None else ""
+            if row_validity != str(validity or "").strip():
+                continue
+
+            row_contact_item = self.operator_table.item(row_index, OPERATOR_COLUMN_CONTACT)
+            row_contact = row_contact_item.text().strip() if row_contact_item is not None else ""
+            if str(contact_name or "").strip() and row_contact != str(contact_name or "").strip():
+                continue
+
+            self.operator_table.clearSelection()
+            self.operator_table.selectRow(row_index)
+            self.operator_table.setCurrentCell(row_index, OPERATOR_COLUMN_OPERATOR)
+            if operator_item is not None:
+                self.operator_table.scrollToItem(operator_item)
+            return True
+
+        return False
+
+    def _refresh_external_operator_selection_controls(self):
+        context = self._external_operator_context if isinstance(self._external_operator_context, dict) else {}
+        selection_model = self.operator_table.selectionModel()
+        selected_rows = list(selection_model.selectedRows()) if selection_model is not None else []
+        has_single_selection = len(selected_rows) == 1
+        can_edit = bool(context.get("editable", False) and has_single_selection)
+        self.operator_edit_button.setVisible(can_edit)
+        self.operator_edit_button.setEnabled(can_edit)
 
     def _operator_path_alias(self, path_value: str) -> str:
         raw = str(path_value or "").strip()
@@ -2929,6 +3050,8 @@ class LayerConfigDialog(QDialog):
             self.operator_reload_button.setEnabled(False)
             self.operator_save_button.setEnabled(False)
             self.operator_add_button.setEnabled(False)
+            self.operator_edit_button.setEnabled(False)
+            self.operator_edit_button.setVisible(False)
             self.operator_remove_button.setEnabled(False)
             return
 
@@ -2941,6 +3064,8 @@ class LayerConfigDialog(QDialog):
             self.operator_reload_button.setEnabled(True)
             self.operator_save_button.setEnabled(False)
             self.operator_add_button.setEnabled(False)
+            self.operator_edit_button.setEnabled(False)
+            self.operator_edit_button.setVisible(False)
             self.operator_remove_button.setEnabled(False)
             return
 
@@ -3017,6 +3142,7 @@ class LayerConfigDialog(QDialog):
         self.operator_remove_button.setEnabled(
             bool(context.get("editable", False) and (context.get("deletable", False) or context.get("addable", False)))
         )
+        self._refresh_external_operator_selection_controls()
         self.operator_table.setColumnHidden(OPERATOR_COLUMN_SOURCE, self.operator_source_combo.count() <= 1)
         self._apply_table_text_filter(
             self.operator_table,
@@ -3126,11 +3252,18 @@ class LayerConfigDialog(QDialog):
             )
             return
 
-        operator_values = self._prompt_new_external_operator_values(context)
+        operator_values = self._prompt_external_operator_values(
+            context,
+            dialog_title="Neuen Betreiber anlegen",
+            intro_text=(
+                "Lege hier einen neuen Eintrag fuer die aktuell ausgewaehlte Betreiberquelle an. "
+                "Beim Speichern schreibt Butler den Eintrag direkt in die Datenquelle."
+            ),
+        )
         if operator_values is None:
             return
 
-        self._add_operator_row(
+        row_index = self._add_operator_row(
             [
                 str(context.get("source_name", "") or "").strip(),
                 operator_values["operator_name"],
@@ -3157,18 +3290,95 @@ class LayerConfigDialog(QDialog):
                 },
             },
         )
+        self.operator_table.clearSelection()
+        self.operator_table.selectRow(row_index)
+        self.operator_table.setCurrentCell(row_index, OPERATOR_COLUMN_OPERATOR)
 
-    def _prompt_new_external_operator_values(self, context: dict) -> dict | None:
+        if self._save_external_operator_changes(show_feedback=True):
+            self._select_external_operator_row(
+                source_name=str(context.get("source_name", "") or "").strip(),
+                operator_name=operator_values["operator_name"],
+                validity=operator_values["validity"],
+                contact_name=operator_values["contact_name"],
+            )
+
+    def _edit_selected_external_operator_row(self):
+        context = self._external_operator_context
+        if not isinstance(context, dict):
+            QMessageBox.information(
+                self,
+                "Betreiberliste",
+                "Bitte zuerst eine Datenquelle auswaehlen und laden.",
+            )
+            return
+
+        if not context.get("editable", False):
+            QMessageBox.warning(
+                self,
+                "Betreiberliste",
+                "Diese Quelle ist aktuell nur lesbar.",
+            )
+            return
+
+        selected_rows = self.operator_table.selectionModel().selectedRows()
+        if len(selected_rows) != 1:
+            QMessageBox.information(
+                self,
+                "Betreiberliste",
+                "Bitte genau eine Zeile in der Betreiberliste auswaehlen.",
+            )
+            return
+
+        row_index = selected_rows[0].row()
+        operator_item = self.operator_table.item(row_index, OPERATOR_COLUMN_OPERATOR)
+        payload = operator_item.data(Qt.UserRole) if operator_item is not None else None
+        current_values = self._external_operator_row_values(row_index)
+        updated_values = self._prompt_external_operator_values(
+            context,
+            initial_values=current_values,
+            dialog_title="Betreiber bearbeiten",
+            intro_text=(
+                "Bearbeite hier den ausgewaehlten Betreiber-Eintrag. "
+                "Beim Speichern schreibt Butler die Aenderungen direkt in die Datenquelle."
+            ),
+        )
+        if updated_values is None or updated_values == current_values:
+            return
+
+        feature_id = payload.get("feature_id") if isinstance(payload, dict) else None
+        self._apply_external_operator_values_to_row(row_index, updated_values)
+
+        if self._save_external_operator_changes(show_feedback=True):
+            self._select_external_operator_row(
+                feature_id=feature_id,
+                source_name=str(context.get("source_name", "") or "").strip(),
+                operator_name=updated_values["operator_name"],
+                validity=updated_values["validity"],
+                contact_name=updated_values["contact_name"],
+            )
+
+    def _prompt_external_operator_values(
+        self,
+        context: dict,
+        *,
+        initial_values: dict | None = None,
+        dialog_title: str = "Betreiber speichern",
+        intro_text: str | None = None,
+    ) -> dict | None:
         source_name = str(context.get("source_name", "") or "").strip()
+        initial_values = dict(initial_values or {})
         dialog = apply_butler_window_icon(QDialog(self), self)
-        dialog.setWindowTitle("Neuen Betreiber anlegen")
+        dialog.setWindowTitle(dialog_title)
         dialog.resize(560, 0)
 
         layout = QVBoxLayout(dialog)
 
         intro = QLabel(
-            "Lege hier einen neuen Eintrag fuer die aktuell ausgewaehlte Betreiberquelle an. "
-            "Die Werte werden nach dem Speichern in die Datenquelle geschrieben."
+            intro_text
+            or (
+                "Pflege hier die Werte fuer den Betreiber-Eintrag. "
+                "Beim Speichern schreibt Butler die Aenderungen direkt in die Datenquelle."
+            )
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -3180,16 +3390,22 @@ class LayerConfigDialog(QDialog):
         source_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
         operator_name_input = QLineEdit(dialog)
         operator_name_input.setPlaceholderText("Pflichtfeld")
+        operator_name_input.setText(str(initial_values.get("operator_name", "") or "").strip())
         validity_input = QLineEdit(dialog)
         validity_input.setPlaceholderText("z. B. 31.12.2026 oder unbefristet")
+        validity_input.setText(str(initial_values.get("validity", "") or "").strip())
         contact_input = QLineEdit(dialog)
         contact_input.setPlaceholderText("Ansprechpartner")
+        contact_input.setText(str(initial_values.get("contact_name", "") or "").strip())
         phone_input = QLineEdit(dialog)
         phone_input.setPlaceholderText("Telefonnummer")
+        phone_input.setText(str(initial_values.get("phone", "") or "").strip())
         email_input = QLineEdit(dialog)
         email_input.setPlaceholderText("E-Mail-Adresse")
+        email_input.setText(str(initial_values.get("email", "") or "").strip())
         fault_number_input = QLineEdit(dialog)
         fault_number_input.setPlaceholderText("Stoer- oder Rufnummer")
+        fault_number_input.setText(str(initial_values.get("fault_number", "") or "").strip())
 
         form.addRow("Datenquelle", source_value)
         form.addRow("Betreibername", operator_name_input)
@@ -3210,12 +3426,13 @@ class LayerConfigDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
         ok_button = buttons.button(QDialogButtonBox.Ok)
         if ok_button is not None:
-            ok_button.setText("Anlegen")
+            ok_button.setText("Speichern")
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
 
         operator_name_input.setFocus()
+        operator_name_input.selectAll()
 
         while True:
             if dialog.exec_() != QDialog.Accepted:
@@ -3512,34 +3729,28 @@ class LayerConfigDialog(QDialog):
                 )
             return True
 
-        if started_editing:
-            if not layer.commitChanges():
-                errors = []
-                if hasattr(layer, "commitErrors"):
-                    try:
-                        errors = layer.commitErrors()
-                    except Exception:
-                        errors = []
-                if layer.isEditable():
-                    layer.rollBack()
-                detail = "; ".join(errors) if errors else "Unbekannter Fehler."
-                QMessageBox.warning(
-                    self,
-                    "Betreiberliste",
-                    f"Speichern fehlgeschlagen: {detail}",
-                )
-                return False
-            if show_feedback:
-                QMessageBox.information(
-                    self,
-                    "Betreiberliste",
-                    f"{changed_values} Feldwerte aktualisiert, {added_rows} neue Zeilen in '{context['source_name']}' gespeichert.",
-                )
-        elif show_feedback:
+        if not layer.commitChanges():
+            errors = []
+            if hasattr(layer, "commitErrors"):
+                try:
+                    errors = layer.commitErrors()
+                except Exception:
+                    errors = []
+            if started_editing and layer.isEditable():
+                layer.rollBack()
+            detail = "; ".join(errors) if errors else "Unbekannter Fehler."
+            QMessageBox.warning(
+                self,
+                "Betreiberliste",
+                f"Speichern fehlgeschlagen: {detail}",
+            )
+            return False
+
+        if show_feedback:
             QMessageBox.information(
                 self,
                 "Betreiberliste",
-                f"{changed_values} Feldwerte aktualisiert, {added_rows} neue Zeilen erstellt. Bitte die Quelle separat speichern.",
+                f"{changed_values} Feldwerte aktualisiert, {added_rows} neue Zeilen in '{context['source_name']}' gespeichert.",
             )
 
         self._reload_selected_external_operator_source()
@@ -6541,18 +6752,22 @@ def _apply_configuration_to_layer(
                     suffix = ""
                     if sync_result["pending_edits"]:
                         suffix = " (Aenderungen sind noch nicht gespeichert.)"
-                    iface.messageBar().pushMessage(
+                    push_butler_message(
+                        iface.messageBar(),
                         "AttributionButler",
                         f"Synchronisiert: {sync_result['updated_rows']} Datensaetze, {sync_result['updated_values']} Feldwerte{suffix}",
                         level=Qgis.Info,
                         duration=6,
+                        parent=parent or iface.mainWindow(),
                     )
                 else:
-                    iface.messageBar().pushMessage(
+                    push_butler_message(
+                        iface.messageBar(),
                         "AttributionButler",
                         "Keine Aenderungen noetig: Betreiberdaten sind bereits aktuell.",
                         level=Qgis.Info,
                         duration=5,
+                        parent=parent or iface.mainWindow(),
                     )
             except Exception as exc:
                 QMessageBox.warning(
@@ -6562,11 +6777,13 @@ def _apply_configuration_to_layer(
                 )
 
     if show_success_message:
-        iface.messageBar().pushMessage(
+        push_butler_message(
+            iface.messageBar(),
             "AttributionButler",
             f"Layer '{layer.name()}' ist verbunden.",
             level=Qgis.Success,
             duration=5,
+            parent=parent or iface.mainWindow(),
         )
     return True
 
@@ -6685,35 +6902,43 @@ def _apply_configuration_to_layers(
 
     if show_success_message and applied_layers:
         if len(applied_layers) == 1:
-            iface.messageBar().pushMessage(
+            push_butler_message(
+                iface.messageBar(),
                 "AttributionButler",
                 f"Layer '{applied_layers[0].name()}' ist verbunden.",
                 level=Qgis.Success,
                 duration=5,
+                parent=parent or iface.mainWindow(),
             )
         else:
-            iface.messageBar().pushMessage(
+            push_butler_message(
+                iface.messageBar(),
                 "AttributionButler",
                 f"{len(applied_layers)} Layer sind verbunden.",
                 level=Qgis.Success,
                 duration=5,
+                parent=parent or iface.mainWindow(),
             )
 
     if should_sync_existing:
         if sync_updated_values > 0:
             suffix = " (Aenderungen sind noch nicht gespeichert.)" if sync_pending_edits else ""
-            iface.messageBar().pushMessage(
+            push_butler_message(
+                iface.messageBar(),
                 "AttributionButler",
                 f"Synchronisiert: {sync_updated_rows} Datensaetze, {sync_updated_values} Feldwerte{suffix}",
                 level=Qgis.Info,
                 duration=6,
+                parent=parent or iface.mainWindow(),
             )
         elif applied_layers:
-            iface.messageBar().pushMessage(
+            push_butler_message(
+                iface.messageBar(),
                 "AttributionButler",
                 "Keine Aenderungen noetig: Betreiberdaten sind bereits aktuell.",
                 level=Qgis.Info,
                 duration=5,
+                parent=parent or iface.mainWindow(),
             )
 
     return bool(applied_layers)
@@ -6832,9 +7057,11 @@ class NextcloudFormPlugin:
 
         _clear_layer_config(layer)
         _remove_form_init_code_if_managed(layer)
-        self.iface.messageBar().pushMessage(
+        push_butler_message(
+            self.iface.messageBar(),
             "AttributionButler",
             f"AttributionButler von Layer '{layer.name()}' entfernt.",
             level=Qgis.Info,
             duration=5,
+            parent=self.iface.mainWindow(),
         )

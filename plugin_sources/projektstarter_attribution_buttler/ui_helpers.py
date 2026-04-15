@@ -4,6 +4,8 @@ from pathlib import Path
 
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QInputDialog, QMessageBox as QtQMessageBox
+from qgis.core import Qgis
+from qgis.gui import QgsMessageBar
 
 
 _PLUGIN_DIR = Path(__file__).resolve().parent
@@ -44,6 +46,34 @@ def apply_butler_window_icon(widget, parent=None):
     return widget
 
 
+def butler_icon_pixmap(parent=None, size: int = 40):
+    try:
+        return butler_window_icon(parent).pixmap(int(size), int(size))
+    except Exception:
+        return None
+
+
+def push_butler_message(message_bar, title, text, level=Qgis.Info, duration: int = 5, parent=None):
+    if message_bar is None:
+        return None
+
+    try:
+        item = QgsMessageBar.createMessage(str(title or ""), str(text or ""), parent or message_bar)
+        if item is None:
+            raise RuntimeError("QgsMessageBar.createMessage returned None")
+        item.setIcon(butler_window_icon(parent))
+        item.setLevel(level)
+        item.setDuration(int(duration))
+        message_bar.pushItem(item)
+        return item
+    except Exception:
+        try:
+            message_bar.pushMessage(str(title or ""), str(text or ""), level=level, duration=duration)
+        except Exception:
+            return None
+        return None
+
+
 class ButlerMessageBox(QtQMessageBox):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -61,6 +91,9 @@ class ButlerMessageBox(QtQMessageBox):
     ):
         box = cls(parent)
         box.setIcon(icon)
+        pixmap = butler_icon_pixmap(parent, size=44)
+        if pixmap is not None:
+            box.setIconPixmap(pixmap)
         box.setWindowTitle(str(title or ""))
         box.setText(str(text or ""))
         box.setStandardButtons(buttons)

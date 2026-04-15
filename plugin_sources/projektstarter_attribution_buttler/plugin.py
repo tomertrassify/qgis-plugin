@@ -14,6 +14,7 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 from qgis.core import Qgis, QgsMapLayerType, QgsProject
+from qgis.gui import QgsLayerTreeViewIndicator
 
 from .attribution_plugin import (
     BOOTSTRAP_CODE_MARKERS,
@@ -27,7 +28,7 @@ from .attribution_plugin import (
 )
 from .project_profile import current_profile_path_string
 from .projectstarter_plugin import ProjectStarterPlugin
-from .ui_helpers import ButlerMessageBox as QMessageBox
+from .ui_helpers import ButlerMessageBox as QMessageBox, push_butler_message
 
 
 class ProjectStarterButlerDialog(QDialog):
@@ -382,10 +383,13 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
     DEFAULT_ICON_FILENAME = "projektstarter-butler.svg"
     CONNECTED_ICON_FILENAME = "projektstarter-butler-connected.svg"
     DEFAULT_BUTLER_LAYER_NAME = "Fremdleitungen"
+    LAYER_TREE_TOOLTIP = "Mit Projektstarter Butler verbunden"
 
     def __init__(self, iface):
         super().__init__(iface)
         self.action_unbind_hidden = None
+        self._layer_tree_indicators = {}
+        self._original_layer_mark_width = None
 
     def initGui(self):
         self.action = QAction(QIcon(str(self._icon_path())), "Projektstarter Butler", self.iface.mainWindow())
@@ -411,6 +415,9 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
         QTimer.singleShot(0, self._refresh_connection_state)
 
     def unload(self):
+        self._clear_bound_layer_indicators()
+        self._restore_bound_layer_indicator_space()
+
         action_unbind_hidden = self.action_unbind_hidden
         self.action_unbind_hidden = None
 
@@ -426,11 +433,117 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
         except Exception:
             return self.toolbar
 
+    def _connect_project_signals(self):
+        super()._connect_project_signals()
+        project = QgsProject.instance()
+        project.layersAdded.connect(self._on_project_layers_changed)
+        project.layersRemoved.connect(self._on_project_layers_changed)
+
+    def _disconnect_project_signals(self):
+        project = QgsProject.instance()
+        try:
+            project.layersAdded.disconnect(self._on_project_layers_changed)
+        except TypeError:
+            pass
+        try:
+            project.layersRemoved.disconnect(self._on_project_layers_changed)
+        except TypeError:
+            pass
+        super()._disconnect_project_signals()
+
     def _active_vector_layer(self):
         layer = self.iface.activeLayer()
         if layer is None or layer.type() != QgsMapLayerType.VectorLayer:
             return None
         return layer
+
+    def _layer_tree_view(self):
+        return getattr(self.iface, "layerTreeView", lambda: None)()
+
+    def _ensure_bound_layer_indicator_space(self):
+        layer_tree_view = self._layer_tree_view()
+        if layer_tree_view is None:
+            return
+
+        try:
+            current_width = int(layer_tree_view.layerMarkWidth())
+        except Exception:
+            current_width = 0
+
+        if self._original_layer_mark_width is None:
+            self._original_layer_mark_width = current_width
+
+        try:
+            layer_tree_view.setLayerMarkWidth(max(current_width, 24))
+        except Exception:
+            pass
+
+    def _restore_bound_layer_indicator_space(self):
+        if self._original_layer_mark_width is None:
+            return
+
+        layer_tree_view = self._layer_tree_view()
+        if layer_tree_view is not None:
+            try:
+                layer_tree_view.setLayerMarkWidth(int(self._original_layer_mark_width))
+            except Exception:
+                pass
+        self._original_layer_mark_width = None
+
+    def _clear_bound_layer_indicators(self):
+        layer_tree_view = self._layer_tree_view()
+        layer_tree_root = QgsProject.instance().layerTreeRoot()
+        for layer_id, indicator in list(self._layer_tree_indicators.items()):
+            if layer_tree_view is not None:
+                node = layer_tree_root.findLayer(layer_id) if layer_tree_root is not None else None
+                try:
+                    layer_tree_view.removeIndicator(node, indicator)
+                except Exception:
+                    pass
+            if self._is_qt_object_alive(indicator):
+                self._safe_qt_call(indicator.deleteLater)
+        self._layer_tree_indicators.clear()
+
+    def _refresh_bound_layer_indicators(self):
+        self._clear_bound_layer_indicators()
+
+        layer_tree_view = self._layer_tree_view()
+        layer_tree_root = QgsProject.instance().layerTreeRoot()
+        if layer_tree_view is None or layer_tree_root is None:
+            return
+
+        icon = QIcon(str(self._icon_path(connected=True)))
+        added_any = False
+        for layer in QgsProject.instance().mapLayers().values():
+            if layer is None or layer.type() != QgsMapLayerType.VectorLayer:
+                continue
+            if not self._layer_has_butler_binding(layer):
+                continue
+
+            node = layer_tree_root.findLayer(layer.id())
+            if node is None:
+                continue
+
+            if not added_any:
+                self._ensure_bound_layer_indicator_space()
+                added_any = True
+
+            indicator = QgsLayerTreeViewIndicator(layer_tree_view)
+            indicator.setIcon(icon)
+            indicator.setToolTip(self.LAYER_TREE_TOOLTIP)
+            self._layer_tree_indicators[layer.id()] = indicator
+            layer_tree_view.addIndicator(node, indicator)
+
+        if not added_any:
+            self._restore_bound_layer_indicator_space()
+
+    def _on_project_layers_changed(self, *args):
+        del args
+        QTimer.singleShot(0, self._refresh_bound_layer_indicators)
+
+    def _on_project_cleared(self):
+        super()._on_project_cleared()
+        self._refresh_bound_layer_indicators()
 
     def _layer_has_butler_binding(self, layer) -> bool:
         if layer is None:
@@ -518,14 +631,18 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
         ):
             return
 
+        self._refresh_bound_layer_indicators()
+
         if self._current_project_dir is not None:
             self._save_project_file(self._current_project_dir, notify=False)
 
-        self.iface.messageBar().pushMessage(
+        push_butler_message(
+            self.iface.messageBar(),
             "Projektstarter Butler",
             "Der Standardlayer 'Fremdleitungen' wurde automatisch mit der Betreiberliste verbunden.",
             level=Qgis.Success,
             duration=5,
+            parent=self.iface.mainWindow(),
         )
 
     def _connect_project(self, project_dir, notify=True):
@@ -544,6 +661,11 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
         self._refresh_connection_state()
         dialog = ProjectStarterButlerDialog(self, self.iface.mainWindow())
         dialog.exec_()
+        self._refresh_bound_layer_indicators()
+
+    def _refresh_connection_state(self):
+        super()._refresh_connection_state()
+        self._refresh_bound_layer_indicators()
 
     def unbind_active_layer(self):
         layer = self._active_vector_layer()
@@ -559,9 +681,12 @@ class ProjectStarterAttributionButlerPlugin(ProjectStarterPlugin):
 
         _clear_layer_config(layer)
         _remove_form_init_code_if_managed(layer)
-        self.iface.messageBar().pushMessage(
+        self._refresh_bound_layer_indicators()
+        push_butler_message(
+            self.iface.messageBar(),
             "Projektstarter Butler",
             f"Layer '{layer.name()}' wurde vom Butler getrennt.",
             level=Qgis.Info,
             duration=5,
+            parent=self.iface.mainWindow(),
         )

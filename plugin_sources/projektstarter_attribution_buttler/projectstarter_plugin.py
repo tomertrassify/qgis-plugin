@@ -44,7 +44,7 @@ from qgis.core import (
 )
 from qgis.gui import QgsNewGeoPackageLayerDialog
 
-from .ui_helpers import ButlerMessageBox as QMessageBox
+from .ui_helpers import ButlerMessageBox as QMessageBox, push_butler_message
 
 
 class ProjectStarterPlugin:
@@ -3610,4 +3610,11 @@ class ProjectStarterPlugin:
         self._clear_pending_external_vector_prompts()
 
     def _show_message(self, title, message, level):
-        self.iface.messageBar().pushMessage(title, message, level=level, duration=5)
+        push_butler_message(
+            self.iface.messageBar(),
+            title,
+            message,
+            level=level,
+            duration=5,
+            parent=self.iface.mainWindow(),
+        )
