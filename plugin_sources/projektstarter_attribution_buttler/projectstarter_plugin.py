@@ -7,7 +7,6 @@ from difflib import SequenceMatcher
 from os.path import relpath
 from pathlib import Path
 from shutil import move
-from tempfile import NamedTemporaryFile
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 from zipfile import BadZipFile, ZipFile
@@ -21,6 +20,7 @@ from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QFile, QIODevice, QSettings, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMenu, QMessageBox, QToolBar
+from qgis.PyQt.QtXml import QDomDocument
 from qgis.core import (
     Qgis,
     QgsCategorizedSymbolRenderer,
@@ -165,6 +165,9 @@ class ProjectStarterPlugin:
         self._pending_zoom_extent = None
         self._resaving_after_georef_sync = False
         self._external_vector_prompt_suppression = 0
+        self._pending_external_vector_layer_ids = []
+        self._pending_external_vector_layer_id_set = set()
+        self._external_vector_prompt_scheduled = False
 
     def initGui(self):
         self.action = QAction(QIcon(str(self._icon_path())), "Projektstarter", self.iface.mainWindow())
@@ -206,6 +209,7 @@ class ProjectStarterPlugin:
         self._export_sync_pending = False
         self._resaving_after_georef_sync = False
         self._external_vector_prompt_suppression = 0
+        self._clear_pending_external_vector_prompts()
 
     def _connect_project_signals(self):
         project = QgsProject.instance()
@@ -246,6 +250,50 @@ class ProjectStarterPlugin:
             yield
         finally:
             self._external_vector_prompt_suppression = max(0, self._external_vector_prompt_suppression - 1)
+
+    def _clear_pending_external_vector_prompts(self):
+        self._pending_external_vector_layer_ids = []
+        self._pending_external_vector_layer_id_set = set()
+        self._external_vector_prompt_scheduled = False
+
+    def _queue_external_vector_prompt(self, layer):
+        if layer is None:
+            return
+
+        layer_id = str(layer.id() or "").strip()
+        if not layer_id or layer_id in self._pending_external_vector_layer_id_set:
+            return
+
+        self._pending_external_vector_layer_ids.append(layer_id)
+        self._pending_external_vector_layer_id_set.add(layer_id)
+        if self._external_vector_prompt_scheduled:
+            return
+
+        self._external_vector_prompt_scheduled = True
+        QTimer.singleShot(0, self._process_pending_external_vector_prompts)
+
+    def _process_pending_external_vector_prompts(self):
+        self._external_vector_prompt_scheduled = False
+        if self._current_project_dir is None:
+            self._clear_pending_external_vector_prompts()
+            return
+
+        if self._external_vector_prompt_suppression > 0:
+            if self._pending_external_vector_layer_ids:
+                self._external_vector_prompt_scheduled = True
+                QTimer.singleShot(0, self._process_pending_external_vector_prompts)
+            return
+
+        project = QgsProject.instance()
+        while self._pending_external_vector_layer_ids and self._current_project_dir is not None:
+            layer_id = self._pending_external_vector_layer_ids.pop(0)
+            self._pending_external_vector_layer_id_set.discard(layer_id)
+            layer = project.mapLayer(layer_id)
+            if not self._is_external_vector_prompt_candidate(layer):
+                continue
+            if not self._prompt_copy_layer_to_project_geopackage(layer):
+                continue
+            self._replace_with_project_geopackage_layer(layer)
 
     def _find_toolbar(self):
         try:
@@ -442,6 +490,7 @@ class ProjectStarterPlugin:
         self._pending_zoom_layer_id = None
         self._pending_zoom_extent = None
         self._export_sync_pending = False
+        self._clear_pending_external_vector_prompts()
         self._update_connection_icon(False)
 
         if project_dir is not None:
@@ -968,15 +1017,15 @@ class ProjectStarterPlugin:
         return copied_layer_names
 
     def _copy_embedded_layer_style(self, source_layer, target_layer):
-        style_path = None
         try:
             self._apply_embedded_layer_style(source_layer)
-            with NamedTemporaryFile(suffix=".qml", delete=False) as handle:
-                style_path = handle.name
-
-            if not self._style_result_succeeded(source_layer.saveNamedStyle(style_path)):
+            style_document = QDomDocument("qgis")
+            export_error = source_layer.exportNamedStyle(style_document)
+            if export_error:
                 return False
-            if not self._style_result_succeeded(target_layer.loadNamedStyle(style_path)):
+
+            imported, _import_error = target_layer.importNamedStyle(style_document)
+            if not imported:
                 return False
 
             self._refresh_layer_symbology(target_layer)
@@ -988,23 +1037,6 @@ class ProjectStarterPlugin:
             return True
         except Exception:
             return False
-        finally:
-            if style_path:
-                try:
-                    Path(style_path).unlink(missing_ok=True)
-                except OSError:
-                    pass
-
-    def _style_result_succeeded(self, result):
-        if isinstance(result, tuple):
-            if not result:
-                return True
-            return bool(result[-1])
-        if result is None:
-            return True
-        if isinstance(result, bool):
-            return result
-        return True
 
     def _prepare_workspace_groups(self, project_dir, preserve_manual_georef=False):
         root = QgsProject.instance().layerTreeRoot()
@@ -1237,15 +1269,17 @@ class ProjectStarterPlugin:
         except Exception:
             pass
 
+        children = getattr(group, "children", None)
+        if not callable(children):
+            return
+
         for child in group.children():
-            if isinstance(child, QgsLayerTreeGroup):
-                self._set_group_expanded_recursive(child, expanded)
+            self._set_group_expanded_recursive(child, expanded)
 
     def _collapse_root_groups(self, root=None):
         root_group = root or QgsProject.instance().layerTreeRoot()
         for child in root_group.children():
-            if isinstance(child, QgsLayerTreeGroup):
-                self._set_group_expanded_recursive(child, False)
+            self._set_group_expanded_recursive(child, False)
 
     def _find_root_group(self, root, group_name):
         for node in root.children():
@@ -1973,6 +2007,7 @@ class ProjectStarterPlugin:
                 gpkg_node.setItemVisibilityChecked(original_visibility)
             except Exception:
                 pass
+            self._set_group_expanded_recursive(gpkg_node, False)
 
         QgsProject.instance().removeMapLayer(layer.id())
         self._register_managed_project_layers(project_root)
@@ -3050,6 +3085,7 @@ class ProjectStarterPlugin:
             include_template_layers=True,
         )
         self._register_managed_project_layers(project_root)
+        self._collapse_root_groups()
 
         template_layers = []
         for layer_name in copied_layers + added_layers:
@@ -3534,9 +3570,7 @@ class ProjectStarterPlugin:
         for layer in list(layers or []):
             if not self._is_external_vector_prompt_candidate(layer):
                 continue
-            if not self._prompt_copy_layer_to_project_geopackage(layer):
-                continue
-            self._replace_with_project_geopackage_layer(layer)
+            self._queue_external_vector_prompt(layer)
 
     def _on_project_saved(self):
         if self._resaving_after_georef_sync:
@@ -3571,6 +3605,7 @@ class ProjectStarterPlugin:
         self._export_sync_pending = False
         self._resaving_after_georef_sync = False
         self._external_vector_prompt_suppression = 0
+        self._clear_pending_external_vector_prompts()
 
     def _show_message(self, title, message, level):
         self.iface.messageBar().pushMessage(title, message, level=level, duration=5)
