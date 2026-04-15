@@ -1725,6 +1725,7 @@ class ProjectStarterPlugin:
         self._sync_georeferenced_plans(notify=False)
 
     def _detect_connected_project_dir(self):
+        project = QgsProject.instance()
         project_file = self._current_project_file_path()
         if project_file is not None:
             project_dir = project_file.parent
