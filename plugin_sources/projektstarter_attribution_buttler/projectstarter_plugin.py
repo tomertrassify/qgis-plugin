@@ -838,7 +838,10 @@ class ProjectStarterPlugin:
         options.fileEncoding = "UTF-8"
         options.layerName = self.PROJECT_AREA_LAYER_NAME
         options.onlySelectedFeatures = False
-        options.actionOnExistingFile = QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+        if gpkg_file.exists():
+            options.actionOnExistingFile = QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+        else:
+            options.actionOnExistingFile = QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
 
         error, _new_file, _new_layer, error_message = QgsVectorFileWriter.writeAsVectorFormatV3(
             kml_layer,
