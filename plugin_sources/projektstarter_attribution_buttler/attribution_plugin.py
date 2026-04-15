@@ -285,9 +285,9 @@ class LayerConfigDialog(QDialog):
         self._configure_action_row(logo_row)
         self.header_logo_label = QLabel(self)
         self.header_logo_label.setPixmap(
-            QIcon(os.path.join(os.path.dirname(__file__), "assets", "trassify-logo.svg")).pixmap(30, 30)
+            QIcon(os.path.join(os.path.dirname(__file__), "assets", "trassify-logo.svg")).pixmap(42, 42)
         )
-        self.header_logo_label.setFixedSize(36, 36)
+        self.header_logo_label.setFixedSize(50, 50)
         self.header_logo_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         logo_row.addWidget(self.header_logo_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         logo_row.addStretch(1)
@@ -769,6 +769,15 @@ class LayerConfigDialog(QDialog):
         if getattr(self, "navigation_row_widget", None) is not None:
             self.navigation_row_widget.setVisible(bool(visible))
 
+    def set_embedded_toolbar_actions_visible(self, visible: bool):
+        for button in (
+            getattr(self, "local_operator_reload_button", None),
+            getattr(self, "operator_reload_button", None),
+            getattr(self, "operator_add_button", None),
+        ):
+            if button is not None:
+                button.setVisible(bool(visible))
+
     def show_local_operators_tab(self):
         self._show_operators_page()
         if self._local_operator_tab_index >= 0:
@@ -786,6 +795,18 @@ class LayerConfigDialog(QDialog):
     def show_configuration_tab(self):
         self._show_settings_page()
         self.settings_tabs.setCurrentIndex(1)
+
+    def reload_local_operators(self):
+        self.show_local_operators_tab()
+        self._reload_local_operator_table()
+
+    def reload_external_operators(self):
+        self.show_external_operators_tab()
+        self._reload_selected_external_operator_source()
+
+    def add_external_operator(self):
+        self.show_external_operators_tab()
+        self._add_external_operator_row()
 
     def _configure_action_row(self, layout: QHBoxLayout):
         layout.setContentsMargins(0, 0, 0, 0)

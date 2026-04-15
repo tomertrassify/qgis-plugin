@@ -49,29 +49,16 @@ class ProjectStarterButlerDialog(QDialog):
 
         self.command_bar = QMenuBar(self)
         self.command_bar.setNativeMenuBar(False)
-        self.command_bar.setStyleSheet(
-            "QMenuBar {"
-            "background: transparent;"
-            "border: 1px solid #d7cfbf;"
-            "border-radius: 10px;"
-            "padding: 4px 8px;"
-            "}"
-            "QMenuBar::item {"
-            "spacing: 8px;"
-            "padding: 6px 14px;"
-            "border-radius: 8px;"
-            "background: transparent;"
-            "}"
-            "QMenuBar::item:selected {"
-            "background: #f1eadc;"
-            "}"
-        )
 
         self.project_menu = self.command_bar.addMenu("Projekt")
         self.choose_project_action = self.project_menu.addAction("Projektordner auswählen")
         self.choose_project_action.triggered.connect(self._choose_project)
         self.sync_plans_action = self.project_menu.addAction("Leitungsauskunft aktualisieren")
         self.sync_plans_action.triggered.connect(self._sync_plans)
+        self.reload_local_folders_action = self.project_menu.addAction("Lokale Ordner neu laden")
+        self.reload_local_folders_action.triggered.connect(self._reload_local_folders)
+        self.reload_operator_list_action = self.project_menu.addAction("Betreiberliste neu laden")
+        self.reload_operator_list_action.triggered.connect(self._reload_operator_list)
         self.project_menu.addSeparator()
         self.disconnect_action = self.project_menu.addAction("Verbindung trennen")
         self.disconnect_action.triggered.connect(self._disconnect_project)
@@ -81,6 +68,9 @@ class ProjectStarterButlerDialog(QDialog):
         self.add_template_action.triggered.connect(self._add_template)
         self.create_object_action = self.add_menu.addAction("Objekt erstellen")
         self.create_object_action.triggered.connect(self._create_object)
+        self.add_menu.addSeparator()
+        self.add_operator_action = self.add_menu.addAction("Neuen Betreiber zur Betreiberliste hinzufügen")
+        self.add_operator_action.triggered.connect(self._add_operator_to_list)
 
         self.settings_menu = self.command_bar.addMenu("Einstellungen")
         self.show_operator_list_action = self.settings_menu.addAction("Betreiberliste")
@@ -244,6 +234,7 @@ class ProjectStarterButlerDialog(QDialog):
         dialog.set_values(_effective_layer_config(layer))
         dialog.set_project_context_info(self._project_context_info(layer))
         dialog.set_embedded_navigation_visible(False)
+        dialog.set_embedded_toolbar_actions_visible(False)
         if getattr(dialog, "button_box", None) is not None:
             dialog.button_box.hide()
         self.layer_config_dialog = dialog
@@ -285,11 +276,14 @@ class ProjectStarterButlerDialog(QDialog):
         self.add_menu.menuAction().setEnabled(has_project)
         self.add_template_action.setEnabled(has_project)
         self.create_object_action.setEnabled(has_project)
+        self.add_operator_action.setEnabled(has_settings_panel)
         self.settings_menu.menuAction().setEnabled(has_settings_panel)
         self.show_operator_list_action.setEnabled(has_settings_panel)
         self.show_local_assignments_action.setEnabled(has_settings_panel)
         self.show_data_sources_action.setEnabled(has_settings_panel)
         self.show_configuration_action.setEnabled(has_settings_panel)
+        self.reload_local_folders_action.setEnabled(has_settings_panel)
+        self.reload_operator_list_action.setEnabled(has_settings_panel)
 
         save_button = self.button_box.button(QDialogButtonBox.Save)
         if save_button is not None:
@@ -314,6 +308,21 @@ class ProjectStarterButlerDialog(QDialog):
     def _disconnect_project(self):
         self.plugin._disconnect_current_connection()
         self.refresh_state(rebuild_layer=True)
+
+    def _reload_local_folders(self):
+        if self.layer_config_dialog is None:
+            return
+        self.layer_config_dialog.reload_local_operators()
+
+    def _reload_operator_list(self):
+        if self.layer_config_dialog is None:
+            return
+        self.layer_config_dialog.reload_external_operators()
+
+    def _add_operator_to_list(self):
+        if self.layer_config_dialog is None:
+            return
+        self.layer_config_dialog.add_external_operator()
 
     def _show_operator_list(self):
         if self.layer_config_dialog is None:
