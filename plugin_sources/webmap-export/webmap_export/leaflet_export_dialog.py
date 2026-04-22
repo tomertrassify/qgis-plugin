@@ -1,5 +1,6 @@
 import os
 
+from qgis.PyQt.QtCore import QSettings
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
@@ -19,8 +20,16 @@ from qgis.PyQt.QtWidgets import (
 from qgis.core import QgsProject
 from qgis.gui import QgsProjectionSelectionWidget
 
+try:
+    import processing as _processing
+except Exception:
+    _processing = None
+
 
 class LeafletExportDialog(QDialog):
+    SETTINGS_GROUP = "TrassifyToolbox"
+    SETTINGS_KEY = "webmap_export/last_output"
+
     def __init__(self, icon_path, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Webmap Export")
@@ -62,6 +71,25 @@ class LeafletExportDialog(QDialog):
         self.status_url_edit = QLineEdit()
         status_layout.addWidget(self.status_url_edit, 0, 1)
         main_layout.addLayout(status_layout)
+
+        meta_layout = QGridLayout()
+        meta_layout.addWidget(QLabel("Status (optional):"), 0, 0)
+        self.status_combo = QComboBox()
+        self.status_combo.addItem("Nicht gesetzt", "")
+        self.status_combo.addItem("Neu", "Neu")
+        self.status_combo.addItem("In Arbeit", "In Arbeit")
+        self.status_combo.addItem("Fertig", "Fertig")
+        meta_layout.addWidget(self.status_combo, 0, 1)
+
+        meta_layout.addWidget(QLabel("Download-Token (optional):"), 1, 0)
+        self.download_token_edit = QLineEdit()
+        meta_layout.addWidget(self.download_token_edit, 1, 1)
+
+        meta_layout.addWidget(QLabel("Baubeginn (YYYY-MM-DD):"), 2, 0)
+        self.baubeginn_edit = QLineEdit()
+        self.baubeginn_edit.setPlaceholderText("YYYY-MM-DD")
+        meta_layout.addWidget(self.baubeginn_edit, 2, 1)
+        main_layout.addLayout(meta_layout)
 
         advanced_toggle_layout = QHBoxLayout()
         self.show_advanced_checkbox = QCheckBox("Erweiterte Einstellungen anzeigen")
@@ -145,10 +173,27 @@ class LeafletExportDialog(QDialog):
         self.show_advanced_checkbox.toggled.connect(self.advanced_group.setVisible)
         main_layout.addWidget(self.advanced_group)
 
+        self.processing_hint_label = QLabel("")
+        self.processing_hint_label.setWordWrap(True)
+        main_layout.addWidget(self.processing_hint_label)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         main_layout.addWidget(buttons)
+
+        if _processing is None:
+            self.gpkg_checkbox.setChecked(False)
+            self.dxf_checkbox.setChecked(False)
+            self.gpkg_checkbox.setEnabled(False)
+            self.dxf_checkbox.setEnabled(False)
+            self.gpkg_group.setEnabled(False)
+            self.dxf_group.setEnabled(False)
+            self.processing_hint_label.setText(
+                "Processing-Plugin fehlt: GPKG- und DXF-Export sind deaktiviert."
+            )
+
+        self._restore_settings()
 
     def _default_base_folder(self):
         project_home = str(QgsProject.instance().homePath() or "").strip()
@@ -165,6 +210,28 @@ class LeafletExportDialog(QDialog):
         )
         if selected_dir:
             self.folder_edit.setText(selected_dir)
+            self._save_settings(selected_dir)
+
+    def _restore_settings(self):
+        settings = QSettings()
+        settings.beginGroup(self.SETTINGS_GROUP)
+        last_path = str(settings.value(self.SETTINGS_KEY, "") or "").strip()
+        settings.endGroup()
+        if last_path:
+            self.folder_edit.setText(last_path)
+
+    def _save_settings(self, path):
+        path = str(path or "").strip()
+        if not path:
+            return
+        settings = QSettings()
+        settings.beginGroup(self.SETTINGS_GROUP)
+        settings.setValue(self.SETTINGS_KEY, path)
+        settings.endGroup()
+
+    def accept(self):
+        self._save_settings(self.base_folder())
+        super().accept()
 
     def project_name(self):
         return self.name_edit.text().strip() or "webmap_export"
@@ -196,6 +263,9 @@ class LeafletExportDialog(QDialog):
                 "SYMBOLOGY_SCALE": self.kml_scale_spin.value(),
             },
             "status_url": self.status_url_edit.text().strip(),
+            "status": self.status_combo.currentData() or "",
+            "download_token": self.download_token_edit.text().strip(),
+            "baubeginn": self.baubeginn_edit.text().strip(),
             "zip": True,
             "cleanup_after_zip": True,
         }

@@ -93,6 +93,11 @@ class WebmapExportPlugin:
             lines.append(f"GeoJSON Manifest: {result['geojson_manifest']}")
         if result.get("export_manifest"):
             lines.append(f"Export Manifest: {result['export_manifest']}")
+        warnings = result.get("warnings") or []
+        if warnings:
+            lines.append("Hinweise:")
+            for warning in warnings:
+                lines.append(f"- {warning}")
 
         message = "Export abgeschlossen.\n" + "\n".join(lines)
         QgsMessageLog.logMessage(message, "Webmap Export", Qgis.Info)
