@@ -23,8 +23,10 @@ from .attribution_plugin import (
     LayerConfigDialog,
     _apply_configuration_to_layer,
     _apply_configuration_to_layers,
+    _can_sync_existing_layer_data,
     _effective_layer_config,
     _first_field_match,
+    _sync_layer_operator_fields,
 )
 from .project_profile import current_profile_path_string
 from .projectstarter_plugin import ProjectStarterPlugin
@@ -74,6 +76,8 @@ class ProjectStarterButlerDialog(QDialog):
         self.reload_local_folders_action.triggered.connect(self._reload_local_folders)
         self.reload_operator_list_action = self.update_menu.addAction("Betreiberliste neu laden")
         self.reload_operator_list_action.triggered.connect(self._reload_operator_list)
+        self.refresh_attributes_action = self.update_menu.addAction("Attribute aktualisieren")
+        self.refresh_attributes_action.triggered.connect(self._refresh_operator_attributes)
 
         self.settings_menu = self.command_bar.addMenu("Einstellungen")
         self.show_operator_list_action = self.settings_menu.addAction("Betreiberliste")
@@ -288,6 +292,7 @@ class ProjectStarterButlerDialog(QDialog):
         self.show_configuration_action.setEnabled(has_settings_panel)
         self.reload_local_folders_action.setEnabled(has_settings_panel)
         self.reload_operator_list_action.setEnabled(has_settings_panel)
+        self.refresh_attributes_action.setEnabled(has_settings_panel)
 
         save_button = self.button_box.button(QDialogButtonBox.Save)
         if save_button is not None:
@@ -322,6 +327,103 @@ class ProjectStarterButlerDialog(QDialog):
         if self.layer_config_dialog is None:
             return
         self.layer_config_dialog.reload_external_operators()
+
+    def _refresh_operator_attributes(self):
+        if self.layer_config_dialog is None:
+            return
+
+        self.layer_config_dialog._store_current_local_operator_overlays_from_table()
+        if not self.layer_config_dialog._save_external_operator_changes(show_feedback=False):
+            return
+
+        config = self.layer_config_dialog.values()
+        merged_operator_entries = self.layer_config_dialog.merged_operator_entries()
+        layers = self.layer_config_dialog.selected_target_layers()
+        if not layers:
+            QMessageBox.warning(
+                self,
+                "Projektstarter Butler",
+                "Bitte zuerst einen Vektor-Layer auswaehlen.",
+            )
+            return
+
+        sync_layers = []
+        skipped_layers = []
+        seen_layer_ids = set()
+        for layer in layers:
+            if layer is None or layer.id() in seen_layer_ids:
+                continue
+            seen_layer_ids.add(layer.id())
+            if _can_sync_existing_layer_data(layer, config):
+                sync_layers.append(layer)
+            else:
+                skipped_layers.append(layer.name())
+
+        if not sync_layers:
+            QMessageBox.information(
+                self,
+                "Projektstarter Butler",
+                "In den ausgewaehlten Layern ist keine gueltige Betreiber-Synchronisierung konfiguriert.",
+            )
+            return
+
+        updated_rows = 0
+        updated_values = 0
+        pending_edits = False
+        failures = []
+
+        for layer in sync_layers:
+            try:
+                sync_result = _sync_layer_operator_fields(
+                    layer,
+                    config,
+                    operator_entries=merged_operator_entries,
+                )
+            except Exception as exc:
+                failures.append(f"{layer.name()}: {exc}")
+                continue
+
+            updated_rows += int(sync_result.get("updated_rows", 0) or 0)
+            updated_values += int(sync_result.get("updated_values", 0) or 0)
+            pending_edits = pending_edits or bool(sync_result.get("pending_edits", False))
+
+        if updated_values > 0:
+            suffix = " (Aenderungen sind noch nicht gespeichert.)" if pending_edits else ""
+            push_butler_message(
+                self.plugin.iface.messageBar(),
+                "Projektstarter Butler",
+                f"Attribute aktualisiert: {updated_rows} Datensaetze, {updated_values} Feldwerte{suffix}",
+                level=Qgis.Success,
+                duration=6,
+                parent=self,
+            )
+        else:
+            push_butler_message(
+                self.plugin.iface.messageBar(),
+                "Projektstarter Butler",
+                "Keine Aenderungen noetig: Betreiberdaten sind bereits aktuell.",
+                level=Qgis.Info,
+                duration=5,
+                parent=self,
+            )
+
+        details = []
+        if skipped_layers:
+            details.append(
+                "Diese Layer wurden uebersprungen, weil keine passende Betreiber-Feldzuordnung aktiv ist:\n- "
+                + "\n- ".join(skipped_layers)
+            )
+        if failures:
+            details.append(
+                "Die Aktualisierung ist fuer einzelne Layer fehlgeschlagen:\n- "
+                + "\n- ".join(failures)
+            )
+        if details:
+            QMessageBox.warning(
+                self,
+                "Projektstarter Butler",
+                "\n\n".join(details),
+            )
 
     def _add_operator_to_list(self):
         if self.layer_config_dialog is None:
