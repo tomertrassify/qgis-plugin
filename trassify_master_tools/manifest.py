@@ -74,6 +74,13 @@ BUNDLED_PLUGINS = (
         "tool_type": INTERACTIVE_TOOL,
     },
     {
+        "key": "trassify_github",
+        "label": "Trassify Github",
+        "package": "trassify_github",
+        "source_path": "trassify-github/trassify_github",
+        "tool_type": INTERACTIVE_TOOL,
+    },
+    {
         "key": "quickrule",
         "label": "Quickrule",
         "package": "quickrule",
