@@ -1,63 +1,422 @@
+from __future__ import annotations
+
 import os
+import subprocess
+from pathlib import Path
 
+from qgis.PyQt import sip
+from qgis.PyQt.QtCore import QProcess, QProcessEnvironment, QSettings
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction
-
-from .github_dialog import TrassifyGithubDialog
+from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMessageBox, QToolBar
+from qgis.core import Qgis, QgsProject
 
 
 class TrassifyGithubPlugin:
+    TOOLBAR_NAME = "Trassify Github"
+    TOOLBAR_OBJECT_NAME = "TrassifyGithubToolbar"
+    SETTINGS_KEY = "trassify_github/repo_root"
+    LOG_TAG = "Trassify Github"
+
     def __init__(self, iface):
         self.iface = iface
         self.action = None
-        self.dialog = None
-        self._plugin_menu_registered = False
-        self._toolbar_registered = False
-        self._plugin_menu = "&Trassify Github"
-        self._plugin_dir = os.path.dirname(__file__)
+        self.pull_action = None
+        self.push_action = None
+        self.toolbar = None
+        self._plugin_menu = f"&{self.TOOLBAR_NAME}"
+        self._plugin_dir = Path(__file__).resolve().parent
+        self._saved_repo_root = ""
+        self._process = None
+        self._process_output = []
+        self._current_command = ""
+        self._current_command_repo = ""
 
     def initGui(self):
-        self.action = QAction(
-            QIcon(os.path.join(self._plugin_dir, "icon.svg")),
-            "Trassify Github",
-            self.iface.mainWindow(),
+        self._create_actions()
+
+        self.toolbar = self._find_toolbar()
+        if self._is_qt_object_alive(self.toolbar):
+            self._safe_qt_call(self.iface.mainWindow().removeToolBar, self.toolbar)
+            self._safe_qt_call(self.toolbar.deleteLater)
+
+        self.toolbar = self.iface.addToolBar(self.TOOLBAR_NAME)
+        self.toolbar.setObjectName(self.TOOLBAR_OBJECT_NAME)
+        self.toolbar.setToolTip(
+            "Trassify Github: Repository verbinden, pull ausfuehren, push ausfuehren."
         )
-        self.action.setObjectName("trassifyGithubAction")
-        self.action.triggered.connect(self.run)
+        self.toolbar.setWindowIcon(self._icon("SimpleIconsGithub.svg"))
+        self.toolbar.addAction(self.action)
+        self.toolbar.addAction(self.pull_action)
+        self.toolbar.addAction(self.push_action)
 
-        if hasattr(self.iface, "addToolBarIcon"):
-            self.iface.addToolBarIcon(self.action)
-            self._toolbar_registered = True
+        self.iface.addPluginToMenu(self._plugin_menu, self.action)
+        self.iface.addPluginToMenu(self._plugin_menu, self.pull_action)
+        self.iface.addPluginToMenu(self._plugin_menu, self.push_action)
 
-        if hasattr(self.iface, "addPluginToMenu"):
-            self.iface.addPluginToMenu(self._plugin_menu, self.action)
-            self._plugin_menu_registered = True
+        self._load_saved_repo()
+        self._update_action_state()
 
     def unload(self):
-        if self.dialog is not None:
-            self.dialog.shutdown()
-            self.dialog.deleteLater()
-            self.dialog = None
+        if self._command_running():
+            self._process.kill()
+            self._process.waitForFinished(2000)
+            self._cleanup_process()
 
-        if self.action is None:
-            return
+        toolbar = self._find_toolbar()
+        actions = [self.action, self.pull_action, self.push_action]
 
-        if self._toolbar_registered and hasattr(self.iface, "removeToolBarIcon"):
-            self.iface.removeToolBarIcon(self.action)
-
-        if self._plugin_menu_registered and hasattr(self.iface, "removePluginMenu"):
-            self.iface.removePluginMenu(self._plugin_menu, self.action)
-
-        self.action.deleteLater()
         self.action = None
+        self.pull_action = None
+        self.push_action = None
+        self.toolbar = None
+
+        for action in actions:
+            if not self._is_qt_object_alive(action):
+                continue
+            self._safe_qt_call(self.iface.removePluginMenu, self._plugin_menu, action)
+            self._safe_qt_call(action.deleteLater)
+
+        if self._is_qt_object_alive(toolbar):
+            self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
+            self._safe_qt_call(toolbar.deleteLater)
 
     def run(self):
-        if self.dialog is None:
-            self.dialog = TrassifyGithubDialog(
-                self.iface,
-                self.iface.mainWindow(),
-            )
+        self._select_and_save_repo()
 
-        self.dialog.show()
-        self.dialog.raise_()
-        self.dialog.activateWindow()
+    def _create_actions(self):
+        self.action = QAction(
+            self._icon("SimpleIconsGithub.svg"),
+            "GitHub-Ordner verbinden",
+            self.iface.mainWindow(),
+        )
+        self.action.setObjectName("trassifyGithubConnectAction")
+        self.action.setStatusTip("Trassify Github: Git-Repository verbinden und speichern")
+        self.action.triggered.connect(self.run)
+
+        self.pull_action = QAction(
+            self._icon("IcBaselineGetApp.svg"),
+            "Git Pull",
+            self.iface.mainWindow(),
+        )
+        self.pull_action.setObjectName("trassifyGithubPullAction")
+        self.pull_action.setStatusTip("Trassify Github: git pull fuer das gespeicherte Repository")
+        self.pull_action.triggered.connect(lambda: self._run_git_command("pull"))
+
+        self.push_action = QAction(
+            self._icon("BxPaperPlane.svg"),
+            "Git Push",
+            self.iface.mainWindow(),
+        )
+        self.push_action.setObjectName("trassifyGithubPushAction")
+        self.push_action.setStatusTip("Trassify Github: git push fuer das gespeicherte Repository")
+        self.push_action.triggered.connect(lambda: self._run_git_command("push"))
+
+    def _select_and_save_repo(self):
+        if self._command_running():
+            return
+
+        start_dir = self._saved_repo_root or self._default_start_directory()
+        selected_dir = QFileDialog.getExistingDirectory(
+            self.iface.mainWindow(),
+            "Git-Ordner waehlen",
+            start_dir,
+            QFileDialog.ShowDirsOnly,
+        )
+        if not selected_dir:
+            return
+
+        repo_root = self._detect_repo_root(selected_dir)
+        if not repo_root:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                self.TOOLBAR_NAME,
+                "Im gewaehlten Ordner wurde kein Git-Repository gefunden.",
+            )
+            return
+
+        self._save_repo_root(repo_root)
+        self._update_action_state()
+
+        repo_kind = "Git-Repository"
+        origin_url = self._read_git_output(
+            ["git", "-C", repo_root, "remote", "get-url", "origin"]
+        )
+        if origin_url and "github.com" in origin_url.lower():
+            repo_kind = "GitHub-Repository"
+
+        self.iface.messageBar().pushMessage(
+            self.LOG_TAG,
+            f"{repo_kind} gespeichert: {repo_root}",
+            level=Qgis.Success,
+            duration=4,
+        )
+
+    def _run_git_command(self, subcommand):
+        repo_root = self._resolve_saved_repo_root()
+        if not repo_root:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                self.TOOLBAR_NAME,
+                "Bitte zuerst ueber das GitHub-Symbol einen Repository-Ordner verbinden.",
+            )
+            return
+
+        if self._command_running():
+            return
+
+        self._current_command = f"git {subcommand}"
+        self._current_command_repo = repo_root
+        self._process_output = []
+
+        self._process = QProcess(self.iface.mainWindow())
+        self._process.setWorkingDirectory(repo_root)
+        self._process.setProgram("git")
+        self._process.setArguments([subcommand])
+
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("GIT_TERMINAL_PROMPT", "0")
+        self._process.setProcessEnvironment(environment)
+
+        self._process.readyReadStandardOutput.connect(self._read_stdout)
+        self._process.readyReadStandardError.connect(self._read_stderr)
+        self._process.errorOccurred.connect(self._command_error)
+        self._process.finished.connect(self._command_finished)
+
+        self._update_action_state()
+        self.iface.messageBar().pushMessage(
+            self.LOG_TAG,
+            f"{self._current_command} startet fuer {repo_root}",
+            level=Qgis.Info,
+            duration=3,
+        )
+        self._process.start()
+
+    def _read_stdout(self):
+        if self._process is None:
+            return
+        text = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        if text:
+            self._process_output.append(text)
+
+    def _read_stderr(self):
+        if self._process is None:
+            return
+        text = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
+        if text:
+            self._process_output.append(text)
+
+    def _command_error(self, error):
+        if error != QProcess.FailedToStart:
+            return
+
+        self._show_command_failure(
+            self._current_command or "git",
+            self._current_command_repo,
+            "Git konnte nicht gestartet werden. Ist Git im Systempfad verfuegbar?",
+        )
+        self._cleanup_process()
+        self._update_action_state()
+
+    def _command_finished(self, exit_code, exit_status):
+        self._read_stdout()
+        self._read_stderr()
+
+        command_text = self._current_command or "git"
+        repo_root = self._current_command_repo
+        details = self._combined_process_output()
+
+        if exit_status == QProcess.NormalExit and exit_code == 0:
+            summary = self._summarize_process_output() or f"{command_text} erfolgreich."
+            self.iface.messageBar().pushMessage(
+                self.LOG_TAG,
+                summary,
+                level=Qgis.Success,
+                duration=5,
+            )
+        else:
+            detail_text = details or f"{command_text} wurde mit Exit-Code {exit_code} beendet."
+            self._show_command_failure(command_text, repo_root, detail_text)
+
+        self._cleanup_process()
+        self._update_action_state()
+
+    def _load_saved_repo(self):
+        settings = QSettings()
+        stored_value = settings.value(self.SETTINGS_KEY, "", type=str)
+        self._saved_repo_root = str(stored_value or "").strip()
+        self._resolve_saved_repo_root()
+
+    def _resolve_saved_repo_root(self):
+        repo_root = str(self._saved_repo_root or "").strip()
+        if not repo_root:
+            self._saved_repo_root = ""
+            return ""
+
+        resolved_root = self._detect_repo_root(repo_root)
+        if not resolved_root:
+            self._clear_saved_repo_root()
+            return ""
+
+        if resolved_root != repo_root:
+            self._save_repo_root(resolved_root)
+
+        return self._saved_repo_root
+
+    def _save_repo_root(self, repo_root):
+        normalized_root = str(repo_root or "").strip()
+        self._saved_repo_root = normalized_root
+        QSettings().setValue(self.SETTINGS_KEY, normalized_root)
+
+    def _clear_saved_repo_root(self):
+        self._saved_repo_root = ""
+        QSettings().remove(self.SETTINGS_KEY)
+
+    def _update_action_state(self):
+        repo_root = self._resolve_saved_repo_root()
+        is_running = self._command_running()
+
+        connect_tooltip = "Trassify Github: Repository-Ordner auswaehlen und speichern."
+        if repo_root:
+            connect_tooltip += f"\nVerbunden: {repo_root}"
+
+        pull_tooltip = "Trassify Github: git pull fuer das verbundene Repository."
+        push_tooltip = "Trassify Github: git push fuer das verbundene Repository."
+        if repo_root:
+            branch_name = self._read_git_output(
+                ["git", "-C", repo_root, "branch", "--show-current"]
+            )
+            origin_url = self._read_git_output(
+                ["git", "-C", repo_root, "remote", "get-url", "origin"]
+            )
+            detail_lines = [f"Repo: {repo_root}"]
+            if branch_name:
+                detail_lines.append(f"Branch: {branch_name}")
+            if origin_url:
+                detail_lines.append(f"Origin: {origin_url}")
+            repo_details = "\n".join(detail_lines)
+            connect_tooltip = f"{connect_tooltip}\n{repo_details}"
+            pull_tooltip = f"{pull_tooltip}\n{repo_details}"
+            push_tooltip = f"{push_tooltip}\n{repo_details}"
+            self.action.setText("GitHub-Ordner wechseln")
+        else:
+            pull_tooltip += "\nNoch kein Repository verbunden."
+            push_tooltip += "\nNoch kein Repository verbunden."
+            self.action.setText("GitHub-Ordner verbinden")
+
+        self.action.setToolTip(connect_tooltip)
+        self.pull_action.setToolTip(pull_tooltip)
+        self.push_action.setToolTip(push_tooltip)
+
+        self.action.setEnabled(not is_running)
+        self.pull_action.setEnabled(bool(repo_root) and not is_running)
+        self.push_action.setEnabled(bool(repo_root) and not is_running)
+
+    def _show_command_failure(self, command_text, repo_root, detail_text):
+        self.iface.messageBar().pushMessage(
+            self.LOG_TAG,
+            f"{command_text} fehlgeschlagen.",
+            level=Qgis.Warning,
+            duration=6,
+        )
+
+        dialog = QMessageBox(self.iface.mainWindow())
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setWindowTitle(self.TOOLBAR_NAME)
+        dialog.setText(f"{command_text} ist fehlgeschlagen.")
+        if repo_root:
+            dialog.setInformativeText(f"Repository: {repo_root}")
+        if detail_text:
+            dialog.setDetailedText(detail_text)
+        dialog.exec_()
+
+    def _summarize_process_output(self):
+        for chunk in reversed(self._process_output):
+            lines = [line.strip() for line in chunk.splitlines() if line.strip()]
+            if not lines:
+                continue
+            return f"{self._current_command}: {lines[-1]}"
+        return ""
+
+    def _combined_process_output(self):
+        return "".join(self._process_output).strip()
+
+    def _command_running(self):
+        return self._process is not None and self._process.state() != QProcess.NotRunning
+
+    def _cleanup_process(self):
+        if self._process is not None:
+            self._process.deleteLater()
+        self._process = None
+        self._process_output = []
+        self._current_command = ""
+        self._current_command_repo = ""
+
+    def _find_toolbar(self):
+        try:
+            return self.iface.mainWindow().findChild(QToolBar, self.TOOLBAR_OBJECT_NAME)
+        except Exception:
+            return self.toolbar
+
+    def _is_qt_object_alive(self, obj):
+        if obj is None:
+            return False
+        try:
+            return not sip.isdeleted(obj)
+        except Exception:
+            return False
+
+    def _safe_qt_call(self, func, *args):
+        try:
+            return func(*args)
+        except Exception:
+            return None
+
+    def _default_start_directory(self):
+        project_home = str(QgsProject.instance().homePath() or "").strip()
+        if project_home:
+            return project_home
+        return str(Path.home())
+
+    def _icon(self, filename):
+        return QIcon(str(self._plugin_dir / filename))
+
+    def _detect_repo_root(self, selected_dir):
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(selected_dir), "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                check=False,
+                env=self._git_env(),
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+        if result.returncode != 0:
+            return ""
+
+        return result.stdout.strip()
+
+    def _read_git_output(self, command):
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                check=False,
+                env=self._git_env(),
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+        if result.returncode != 0:
+            return ""
+
+        return result.stdout.strip()
+
+    def _git_env(self):
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        return env

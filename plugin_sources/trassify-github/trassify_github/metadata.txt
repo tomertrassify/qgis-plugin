@@ -1,12 +1,12 @@
 [general]
 name=Trassify Github
 qgisMinimumVersion=3.16
-description=Waehlt einen Ordner, erkennt Git-Repositories und fuehrt Git Pull oder Git Push direkt aus.
-version=1.0.0
+description=Speichert ein Git-Repository und fuehrt Git Pull oder Git Push direkt ueber drei Toolbar-Icons aus.
+version=1.1.0
 author=Trassify
 email=
-about=Oeffnet einen Dialog zum Auswaehlen eines lokalen Ordners. Bei erkanntem Git-Repository werden Git Pull und Git Push per Shell ausgefuehrt.
+about=Das GitHub-Symbol verbindet und speichert ein lokales Git-Repository. Rechts daneben fuehren eigene Pull- und Push-Icons die Shell-Befehle fuer das gespeicherte Repository aus.
 category=Web
-icon=icon.svg
+icon=SimpleIconsGithub.svg
 experimental=False
 deprecated=False
