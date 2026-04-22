@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import os
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import QProcess, QProcessEnvironment, QSettings
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMessageBox, QToolBar
+from qgis.PyQt.QtWidgets import (
+    QAction,
+    QFileDialog,
+    QInputDialog,
+    QLineEdit,
+    QMessageBox,
+    QToolBar,
+)
 from qgis.core import Qgis, QgsProject
 
 
@@ -28,6 +36,9 @@ class TrassifyGithubPlugin:
         self._saved_repo_root = ""
         self._process = None
         self._process_output = []
+        self._sequence_output = []
+        self._pending_commands = []
+        self._final_success_message = ""
         self._current_command = ""
         self._current_command_repo = ""
 
@@ -104,11 +115,13 @@ class TrassifyGithubPlugin:
 
         self.push_action = QAction(
             self._icon("BxPaperPlane.svg"),
-            "Git Push",
+            "Git Commit + Push",
             self.iface.mainWindow(),
         )
         self.push_action.setObjectName("trassifyGithubPushAction")
-        self.push_action.setStatusTip("Trassify Github: git push fuer das gespeicherte Repository")
+        self.push_action.setStatusTip(
+            "Trassify Github: git add, git commit und git push fuer das gespeicherte Repository"
+        )
         self.push_action.triggered.connect(lambda: self._run_git_command("push"))
 
     def _select_and_save_repo(self):
@@ -164,32 +177,15 @@ class TrassifyGithubPlugin:
         if self._command_running():
             return
 
-        self._current_command = f"git {subcommand}"
         self._current_command_repo = repo_root
-        self._process_output = []
+        command_specs = self._build_command_sequence(subcommand, repo_root)
+        if not command_specs:
+            return
 
-        self._process = QProcess(self.iface.mainWindow())
-        self._process.setWorkingDirectory(repo_root)
-        self._process.setProgram("git")
-        self._process.setArguments([subcommand])
-
-        environment = QProcessEnvironment.systemEnvironment()
-        environment.insert("GIT_TERMINAL_PROMPT", "0")
-        self._process.setProcessEnvironment(environment)
-
-        self._process.readyReadStandardOutput.connect(self._read_stdout)
-        self._process.readyReadStandardError.connect(self._read_stderr)
-        self._process.errorOccurred.connect(self._command_error)
-        self._process.finished.connect(self._command_finished)
-
+        self._pending_commands = list(command_specs)
+        self._sequence_output = []
         self._update_action_state()
-        self.iface.messageBar().pushMessage(
-            self.LOG_TAG,
-            f"{self._current_command} startet fuer {repo_root}",
-            level=Qgis.Info,
-            duration=3,
-        )
-        self._process.start()
+        self._start_next_command()
 
     def _read_stdout(self):
         if self._process is None:
@@ -197,6 +193,7 @@ class TrassifyGithubPlugin:
         text = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
         if text:
             self._process_output.append(text)
+            self._sequence_output.append(text)
 
     def _read_stderr(self):
         if self._process is None:
@@ -204,6 +201,7 @@ class TrassifyGithubPlugin:
         text = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
         if text:
             self._process_output.append(text)
+            self._sequence_output.append(text)
 
     def _command_error(self, error):
         if error != QProcess.FailedToStart:
@@ -226,7 +224,14 @@ class TrassifyGithubPlugin:
         details = self._combined_process_output()
 
         if exit_status == QProcess.NormalExit and exit_code == 0:
-            summary = self._summarize_process_output() or f"{command_text} erfolgreich."
+            self._cleanup_process()
+            if self._pending_commands:
+                self._start_next_command()
+                return
+
+            summary = self._final_success_message or self._summarize_sequence_output()
+            if not summary:
+                summary = f"{command_text} erfolgreich."
             self.iface.messageBar().pushMessage(
                 self.LOG_TAG,
                 summary,
@@ -236,6 +241,7 @@ class TrassifyGithubPlugin:
         else:
             detail_text = details or f"{command_text} wurde mit Exit-Code {exit_code} beendet."
             self._show_command_failure(command_text, repo_root, detail_text)
+            self._pending_commands = []
 
         self._cleanup_process()
         self._update_action_state()
@@ -280,7 +286,9 @@ class TrassifyGithubPlugin:
             connect_tooltip += f"\nVerbunden: {repo_root}"
 
         pull_tooltip = "Trassify Github: git pull fuer das verbundene Repository."
-        push_tooltip = "Trassify Github: git push fuer das verbundene Repository."
+        push_tooltip = (
+            "Trassify Github: git add -A, git commit und git push fuer das verbundene Repository."
+        )
         if repo_root:
             branch_name = self._read_git_output(
                 ["git", "-C", repo_root, "branch", "--show-current"]
@@ -337,8 +345,17 @@ class TrassifyGithubPlugin:
             return f"{self._current_command}: {lines[-1]}"
         return ""
 
+    def _summarize_sequence_output(self):
+        for chunk in reversed(self._sequence_output):
+            lines = [line.strip() for line in chunk.splitlines() if line.strip()]
+            if not lines:
+                continue
+            return lines[-1]
+        return ""
+
     def _combined_process_output(self):
-        return "".join(self._process_output).strip()
+        parts = self._sequence_output or self._process_output
+        return "".join(parts).strip()
 
     def _command_running(self):
         return self._process is not None and self._process.state() != QProcess.NotRunning
@@ -349,13 +366,106 @@ class TrassifyGithubPlugin:
         self._process = None
         self._process_output = []
         self._current_command = ""
-        self._current_command_repo = ""
+        if not self._pending_commands:
+            self._current_command_repo = ""
+            self._sequence_output = []
+            self._final_success_message = ""
 
     def _find_toolbar(self):
         try:
             return self.iface.mainWindow().findChild(QToolBar, self.TOOLBAR_OBJECT_NAME)
         except Exception:
             return self.toolbar
+
+    def _build_command_sequence(self, subcommand, repo_root):
+        if subcommand == "pull":
+            self._final_success_message = "git pull erfolgreich."
+            return [self._command_spec("git pull", ["pull"])]
+
+        if subcommand != "push":
+            self._final_success_message = ""
+            return [self._command_spec(f"git {subcommand}", [subcommand])]
+
+        command_specs = []
+        has_local_changes = self._has_local_changes(repo_root)
+        if has_local_changes:
+            commit_message = self._prompt_commit_message(repo_root)
+            if commit_message is None:
+                return []
+            command_specs.append(self._command_spec("git add -A", ["add", "-A"]))
+            command_specs.append(
+                self._command_spec(
+                    f"git commit -m {commit_message}",
+                    ["commit", "-m", commit_message],
+                )
+            )
+            self._final_success_message = "Commit erstellt und Push erfolgreich."
+        else:
+            self._final_success_message = "git push erfolgreich."
+
+        command_specs.append(self._command_spec("git push", ["push"]))
+        return command_specs
+
+    def _command_spec(self, display_text, arguments):
+        return {
+            "display_text": display_text,
+            "arguments": list(arguments),
+        }
+
+    def _start_next_command(self):
+        if not self._pending_commands:
+            self._update_action_state()
+            return
+
+        command_spec = self._pending_commands.pop(0)
+        self._current_command = command_spec["display_text"]
+        self._process_output = []
+
+        self._process = QProcess(self.iface.mainWindow())
+        self._process.setWorkingDirectory(self._current_command_repo)
+        self._process.setProgram("git")
+        self._process.setArguments(command_spec["arguments"])
+
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("GIT_TERMINAL_PROMPT", "0")
+        self._process.setProcessEnvironment(environment)
+
+        self._process.readyReadStandardOutput.connect(self._read_stdout)
+        self._process.readyReadStandardError.connect(self._read_stderr)
+        self._process.errorOccurred.connect(self._command_error)
+        self._process.finished.connect(self._command_finished)
+
+        self.iface.messageBar().pushMessage(
+            self.LOG_TAG,
+            f"{self._current_command} startet fuer {self._current_command_repo}",
+            level=Qgis.Info,
+            duration=3,
+        )
+        self._process.start()
+
+    def _has_local_changes(self, repo_root):
+        status_output = self._read_git_output(
+            ["git", "-C", repo_root, "status", "--porcelain"]
+        )
+        return bool(status_output.strip())
+
+    def _prompt_commit_message(self, repo_root):
+        default_message = (
+            f"Update via Trassify Github {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
+        repo_name = Path(repo_root).name
+        commit_message, accepted = QInputDialog.getText(
+            self.iface.mainWindow(),
+            self.TOOLBAR_NAME,
+            f"Commit-Nachricht fuer {repo_name}:",
+            QLineEdit.Normal,
+            default_message,
+        )
+        if not accepted:
+            return None
+
+        commit_message = str(commit_message or "").strip()
+        return commit_message or default_message
 
     def _is_qt_object_alive(self, obj):
         if obj is None:
