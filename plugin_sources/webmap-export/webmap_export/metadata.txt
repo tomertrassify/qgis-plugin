@@ -1,0 +1,17 @@
+[general]
+name=Webmap Export
+qgisMinimumVersion=3.28
+description=Exportiert sichtbare Vektorlayer als Leaflet/Webmap-Daten inklusive GeoJSON, SVGs und optionalen ZIP-Exporten.
+version=1.0.1
+author=Trassify
+email=
+about=Eigenstaendiges Webmap-Export-Tool auf Basis des alten Trassify-Toolbox-Leaflet-Exports. Schreibt GeoJSON nach Gruppen, kopiert SVG-Symbole und kann Shapefile-, GPKG-, DXF- und KML-ZIPs erzeugen.
+category=Web
+icon=icon.svg
+homepage=https://github.com/tomertrassify/qgis-plugin
+tracker=https://github.com/tomertrassify/qgis-plugin/issues
+repository=https://github.com/tomertrassify/qgis-plugin
+tags=leaflet,webmap,export,geojson,web
+experimental=False
+deprecated=False
+hasProcessingProvider=False

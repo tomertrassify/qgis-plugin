@@ -81,6 +81,13 @@ BUNDLED_PLUGINS = (
         "tool_type": INTERACTIVE_TOOL,
     },
     {
+        "key": "webmap_export",
+        "label": "Webmap Export",
+        "package": "webmap_export",
+        "source_path": "webmap-export/webmap_export",
+        "tool_type": INTERACTIVE_TOOL,
+    },
+    {
         "key": "quickrule",
         "label": "Quickrule",
         "package": "quickrule",
