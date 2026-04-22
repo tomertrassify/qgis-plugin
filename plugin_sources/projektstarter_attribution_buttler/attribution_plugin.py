@@ -6490,10 +6490,10 @@ def _normalized_operator_name(value) -> str:
     return str(value or "").strip().casefold()
 
 
-def _unique_operator_entry_from_entries(entries, operator_name_value) -> dict | None:
+def _matching_operator_entries_from_entries(entries, operator_name_value) -> list[dict]:
     needle = _normalized_operator_name(operator_name_value)
     if not needle:
-        return None
+        return []
 
     matches = []
     for entry in entries or []:
@@ -6502,7 +6502,11 @@ def _unique_operator_entry_from_entries(entries, operator_name_value) -> dict | 
             continue
         if _normalized_operator_name(normalized.get("operator_name")) == needle:
             matches.append(normalized)
+    return matches
 
+
+def _unique_operator_entry_from_entries(entries, operator_name_value) -> dict | None:
+    matches = _matching_operator_entries_from_entries(entries, operator_name_value)
     if not matches:
         return None
     if len(matches) == 1:
@@ -6548,7 +6552,12 @@ def _local_unique_operator_entry(config: dict, operator_name_value) -> dict | No
     return _unique_operator_entry_from_entries(config.get("operators", []), operator_name_value)
 
 
-def _sync_layer_operator_fields(layer, config: dict, operator_entries=None) -> dict:
+def _sync_layer_operator_fields(
+    layer,
+    config: dict,
+    operator_entries=None,
+    overwrite_existing_values: bool = True,
+) -> dict:
     operator_name_field = str(config.get("operator_name_field_name", "") or "").strip()
     operator_name_index = layer.fields().indexOf(operator_name_field)
     if not operator_name_field or operator_name_index < 0:
@@ -6594,6 +6603,13 @@ def _sync_layer_operator_fields(layer, config: dict, operator_entries=None) -> d
             raise RuntimeError("Layer konnte nicht in den Bearbeitungsmodus gesetzt werden.")
         started_editing = True
 
+    def _is_empty_value(value) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return value.strip() == ""
+        return False
+
     def _same_value(current, new_value) -> bool:
         if new_value is None:
             if current is None:
@@ -6608,19 +6624,53 @@ def _sync_layer_operator_fields(layer, config: dict, operator_entries=None) -> d
     for feature in layer.getFeatures():
         processed += 1
         if operator_entries is None:
-            operator_entry = _local_unique_operator_entry(config, feature[operator_name_field])
+            matches = _matching_operator_entries_from_entries(
+                config.get("operators", []),
+                feature[operator_name_field],
+            )
         else:
-            operator_entry = _unique_operator_entry_from_entries(operator_entries, feature[operator_name_field])
+            matches = _matching_operator_entries_from_entries(
+                operator_entries,
+                feature[operator_name_field],
+            )
+
+        operator_entry = _unique_operator_entry_from_entries(matches, feature[operator_name_field])
+        if operator_entry is None and matches:
+            operator_entry = max(
+                matches,
+                key=lambda entry: sum(
+                    1
+                    for value in (
+                        str(entry.get("validity", "") or "").strip(),
+                        str(entry.get("stand", "") or "").strip(),
+                        str(entry.get("contact_name", "") or "").strip(),
+                        str(entry.get("phone", "") or "").strip(),
+                        str(entry.get("email", "") or "").strip(),
+                        str(entry.get("fault_number", "") or "").strip(),
+                        str(entry.get("folder_path", "") or "").strip(),
+                        str(entry.get("nextcloud_link", "") or "").strip(),
+                    )
+                    if value
+                ),
+            )
+
         row_changed = False
+        if not operator_entry:
+            continue
 
         for field_name, field_idx, entry_key in targets:
-            new_value = None
-            if operator_entry:
-                candidate = str(operator_entry.get(entry_key, "") or "").strip()
-                if candidate:
-                    new_value = candidate
-
             current_value = feature[field_name]
+            if not overwrite_existing_values and not _is_empty_value(current_value):
+                continue
+
+            candidate = str(operator_entry.get(entry_key, "") or "").strip()
+            if entry_key == "nextcloud_link":
+                new_value = candidate or None
+            else:
+                if not candidate:
+                    continue
+                new_value = candidate
+
             if _same_value(current_value, new_value):
                 continue
 

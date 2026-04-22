@@ -347,6 +347,17 @@ class ProjectStarterButlerDialog(QDialog):
             )
             return
 
+        overwrite_answer = QMessageBox.question(
+            self,
+            "Projektstarter Butler",
+            "Sollen bestehende Werte ueberschrieben werden?\n\nJa: vorhandene Betreiberfelder ersetzen\nNein: nur leere/null Felder befuellen\nAbbrechen: nichts aendern",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if overwrite_answer == QMessageBox.Cancel:
+            return
+        overwrite_existing_values = overwrite_answer == QMessageBox.Yes
+
         sync_layers = []
         skipped_layers = []
         seen_layer_ids = set()
@@ -378,6 +389,7 @@ class ProjectStarterButlerDialog(QDialog):
                     layer,
                     config,
                     operator_entries=merged_operator_entries,
+                    overwrite_existing_values=overwrite_existing_values,
                 )
             except Exception as exc:
                 failures.append(f"{layer.name()}: {exc}")
