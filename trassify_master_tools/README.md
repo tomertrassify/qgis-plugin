@@ -12,6 +12,7 @@ Enthaltene Module:
 - Grid Quick GeoJSON Export
 - Layer Fuser
 - Projektstarter
+- Projektstatus Butler
 - Quickrule
 - Export Pro
 

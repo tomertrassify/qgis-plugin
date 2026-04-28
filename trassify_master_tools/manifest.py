@@ -67,6 +67,13 @@ BUNDLED_PLUGINS = (
         "tool_type": INTERACTIVE_TOOL,
     },
     {
+        "key": "projektstatus_butler",
+        "label": "Projektstatus Butler",
+        "package": "max_wild_project_status_manager",
+        "source_path": "max-wild/max_wild_project_status_manager",
+        "tool_type": INTERACTIVE_TOOL,
+    },
+    {
         "key": "projektstarter_attribution_buttler",
         "label": "Projektstarter Butler",
         "package": "projektstarter_attribution_buttler",
