@@ -45,6 +45,7 @@ class MasterSettingsDialog(QDialog):
 
         self._build_general_tab()
         self._build_nextcloud_tab()
+        self._build_clickup_tab()
         self._build_database_tab()
 
         self.button_box = QDialogButtonBox(
@@ -197,6 +198,36 @@ class MasterSettingsDialog(QDialog):
 
         self.tabs.addTab(page, "Datenbank")
 
+    def _build_clickup_tab(self):
+        page = QWidget(self)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        connection_group = QGroupBox("ClickUp", page)
+        connection_form = QFormLayout(connection_group)
+
+        self.clickup_api_token = QLineEdit(connection_group)
+        self.clickup_api_token.setEchoMode(QLineEdit.Password)
+        self.clickup_api_token.setPlaceholderText("pk_...")
+        self.clickup_list_id = QLineEdit(connection_group)
+        self.clickup_list_id.setPlaceholderText("901517875704")
+
+        connection_form.addRow("Personal API Token", self.clickup_api_token)
+        connection_form.addRow("Listen-ID", self.clickup_list_id)
+        layout.addWidget(connection_group)
+
+        info = QLabel(
+            "Diese Werte werden lokal in den Master-Einstellungen gespeichert und von "
+            "kompatiblen Plugins wie dem Projektstatus Butler verwendet. Der Token wird "
+            "nicht im Git-Repository abgelegt."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        layout.addStretch(1)
+
+        self.tabs.addTab(page, "ClickUp")
+
     def set_values(self, config: dict):
         values = dict(DEFAULT_SHARED_SETTINGS)
         values.update(config or {})
@@ -214,6 +245,8 @@ class MasterSettingsDialog(QDialog):
         self.local_nextcloud_roots.setPlainText(
             "\n".join(values.get("local_nextcloud_roots", []))
         )
+        self.clickup_api_token.setText(str(values.get("clickup_api_token", "")))
+        self.clickup_list_id.setText(str(values.get("clickup_list_id", "")))
 
         self.database_connection_name.setText(
             str(values.get("database_connection_name", ""))
@@ -242,6 +275,8 @@ class MasterSettingsDialog(QDialog):
                 if line.strip()
             ],
             "nextcloud_folder_marker": self.nextcloud_folder_marker.text().strip(),
+            "clickup_api_token": self.clickup_api_token.text().strip(),
+            "clickup_list_id": self.clickup_list_id.text().strip(),
             "database_connection_name": self.database_connection_name.text().strip(),
             "database_host": self.database_host.text().strip(),
             "database_port": self.database_port.text().strip(),

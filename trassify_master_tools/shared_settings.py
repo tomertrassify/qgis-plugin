@@ -16,6 +16,8 @@ DEFAULT_SHARED_SETTINGS = {
     "nextcloud_app_password": "",
     "local_nextcloud_roots": [],
     "nextcloud_folder_marker": "Nextcloud",
+    "clickup_api_token": "",
+    "clickup_list_id": "",
     "database_connection_name": "Standard",
     "database_host": "",
     "database_port": "5432",

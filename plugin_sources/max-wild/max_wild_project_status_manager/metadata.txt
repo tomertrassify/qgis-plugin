@@ -2,7 +2,7 @@
 name=Projektstatus Butler
 qgisMinimumVersion=3.28
 description=Listet Max-Wild-Projekte aus _projekte auf und bearbeitet deren status.json-Dateien zentral.
-version=1.1.0
+version=1.2.0
 author=Tomer Maith
 email=
 about=Zeigt alle Projektordner unter /Users/tomermaith/Documents/repo-webmap/max-wild/_projekte mit status.json in einer Tabelle und schreibt Aenderungen direkt zurueck.

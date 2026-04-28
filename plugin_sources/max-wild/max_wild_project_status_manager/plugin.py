@@ -23,6 +23,8 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -82,6 +84,24 @@ DEFAULT_NEXTCLOUD_SETTINGS = {
     "nextcloud_folder_marker": "Nextcloud",
 }
 NEXTCLOUD_SHARE_CACHE = {}
+DEFAULT_CLICKUP_SETTINGS = {
+    "clickup_api_token": "",
+    "clickup_list_id": "",
+}
+CLICKUP_API_BASE_URL = "https://api.clickup.com/api/v2"
+CLICKUP_TASKS_CACHE = {}
+CLICKUP_LIST_CACHE = {}
+CLICKUP_STATUS_ALIASES = {
+    "Neu": ("neu", "to do", "todo", "open"),
+    "in Arbeit": ("in arbeit", "in progress", "in bearbeitung", "working on it"),
+    "Fehlende Betreiber Antwort": (
+        "fehlende betreiber antwort",
+        "awaiting operator response",
+        "waiting for operator response",
+        "operator response missing",
+    ),
+    "Fertig": ("fertig", "done", "complete", "completed", "closed"),
+}
 
 
 def normalize_date_text(raw_value):
@@ -178,9 +198,45 @@ def load_nextcloud_settings_from_qsettings():
     return normalize_nextcloud_settings(loaded)
 
 
+def normalize_clickup_settings(config):
+    source = config or {}
+    normalized = dict(DEFAULT_CLICKUP_SETTINGS)
+
+    for key, default in DEFAULT_CLICKUP_SETTINGS.items():
+        normalized[key] = str(source.get(key, default) or "").strip()
+
+    return normalized
+
+
+def load_clickup_settings_from_qsettings():
+    settings = QSettings()
+    loaded = dict(DEFAULT_CLICKUP_SETTINGS)
+
+    for key, default in DEFAULT_CLICKUP_SETTINGS.items():
+        full_key = f"{NEXTCLOUD_SETTINGS_PREFIX}/{key}"
+        if not settings.contains(full_key):
+            continue
+        loaded[key] = str(settings.value(full_key, default) or "").strip()
+
+    return normalize_clickup_settings(loaded)
+
+
 def status_style_for(status_text):
     normalized = normalize_status_value(status_text)
     return STATUS_STYLES.get(normalized, DEFAULT_STATUS_STYLE)
+
+
+def map_clickup_status_to_plugin(status_text):
+    normalized = str(status_text or "").strip().casefold()
+    if not normalized:
+        return ""
+
+    for plugin_status, aliases in CLICKUP_STATUS_ALIASES.items():
+        if normalized == plugin_status.casefold():
+            return plugin_status
+        if normalized in aliases:
+            return plugin_status
+    return ""
 
 
 def extract_nextcloud_share_token(share_url):
@@ -496,6 +552,142 @@ def get_or_create_public_link(config, nc_path):
     raise RuntimeError(f"Kein Share-Link erzeugt fuer '{canonical_path}'. Letzter Fehler: {detail}")
 
 
+def _clickup_request(config, method, endpoint, params=None, data=None):
+    token = str(config.get("clickup_api_token", "")).strip()
+    if not token:
+        raise RuntimeError("ClickUp-Token fehlt.")
+
+    base_url = CLICKUP_API_BASE_URL.rstrip("/")
+    path = str(endpoint or "").strip().lstrip("/")
+    url = f"{base_url}/{path}"
+    if params:
+        query = urllib.parse.urlencode(params, doseq=True)
+        url = f"{url}?{query}"
+
+    headers = {
+        "Authorization": token,
+        "Accept": "application/json",
+    }
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(url=url, data=body, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        response_text = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"ClickUp HTTP {exc.code}: {response_text}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"ClickUp nicht erreichbar: {exc}") from exc
+
+    try:
+        return json.loads(payload) if payload else {}
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Ungueltige ClickUp-Antwort: {payload[:300]}") from exc
+
+
+def _clickup_cache_key(config):
+    return (
+        str(config.get("clickup_api_token", "")).strip(),
+        str(config.get("clickup_list_id", "")).strip(),
+    )
+
+
+def invalidate_clickup_cache(config):
+    cache_key = _clickup_cache_key(config)
+    CLICKUP_TASKS_CACHE.pop(cache_key, None)
+    CLICKUP_LIST_CACHE.pop(cache_key, None)
+
+
+def get_clickup_list_info(config):
+    list_id = str(config.get("clickup_list_id", "")).strip()
+    if not list_id:
+        raise RuntimeError("ClickUp-Listen-ID fehlt.")
+
+    cache_key = _clickup_cache_key(config)
+    cached = CLICKUP_LIST_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    payload = _clickup_request(config, "GET", f"list/{list_id}")
+    CLICKUP_LIST_CACHE[cache_key] = payload
+    return payload
+
+
+def get_clickup_tasks(config):
+    list_id = str(config.get("clickup_list_id", "")).strip()
+    if not list_id:
+        raise RuntimeError("ClickUp-Listen-ID fehlt.")
+
+    cache_key = _clickup_cache_key(config)
+    cached = CLICKUP_TASKS_CACHE.get(cache_key)
+    if cached is not None:
+        return list(cached)
+
+    tasks = []
+    page = 0
+    while True:
+        payload = _clickup_request(
+            config,
+            "GET",
+            f"list/{list_id}/task",
+            params={"page": page, "include_closed": "true", "subtasks": "true"},
+        )
+        chunk = payload.get("tasks") or []
+        tasks.extend(chunk)
+        if len(chunk) < 100:
+            break
+        page += 1
+
+    CLICKUP_TASKS_CACHE[cache_key] = list(tasks)
+    return tasks
+
+
+def task_map_by_id(tasks):
+    return {
+        str(task.get("id") or "").strip(): task
+        for task in tasks
+        if str(task.get("id") or "").strip()
+    }
+
+
+def resolve_clickup_status_name(config, plugin_status):
+    target = normalize_status_value(plugin_status)
+    list_info = get_clickup_list_info(config)
+    available_statuses = list_info.get("statuses") or []
+    normalized_map = {}
+
+    for entry in available_statuses:
+        status_name = str(entry.get("status") or entry.get("name") or "").strip()
+        if status_name:
+            normalized_map[status_name.casefold()] = status_name
+
+    if target.casefold() in normalized_map:
+        return normalized_map[target.casefold()]
+
+    for alias in CLICKUP_STATUS_ALIASES.get(target, ()):
+        if alias in normalized_map:
+            return normalized_map[alias]
+
+    raise RuntimeError(
+        f"Kein passender ClickUp-Status fuer '{target}' in Liste {config.get('clickup_list_id', '')} gefunden."
+    )
+
+
+def update_clickup_task_status(config, task_id, plugin_status):
+    clickup_status = resolve_clickup_status_name(config, plugin_status)
+    _clickup_request(
+        config,
+        "PUT",
+        f"task/{task_id}",
+        data={"status": clickup_status},
+    )
+    invalidate_clickup_cache(config)
+
+
 class DateInputWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -551,6 +743,88 @@ class DateInputWidget(QWidget):
         self.calendar_menu.close()
 
 
+class ClickUpTaskPickerDialog(QDialog):
+    def __init__(self, tasks, project_name="", selected_task_id="", parent=None):
+        super().__init__(parent)
+        self.tasks = sorted(
+            list(tasks or []),
+            key=lambda task: str(task.get("name") or "").casefold(),
+        )
+        self.selected_task = None
+        self.selected_task_id = str(selected_task_id or "").strip()
+
+        self.setWindowTitle(f"ClickUp-Task verknuepfen | {project_name}".strip(" |"))
+        self.resize(760, 620)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        self.filter_input = QLineEdit(self)
+        self.filter_input.setPlaceholderText("Taskname oder Status filtern")
+        self.filter_input.textChanged.connect(lambda _text: self._populate_items())
+        layout.addWidget(self.filter_input)
+
+        self.list_widget = QListWidget(self)
+        self.list_widget.itemDoubleClicked.connect(lambda _item: self.accept())
+        layout.addWidget(self.list_widget, 1)
+
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            parent=self,
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+        self._populate_items()
+
+    def _populate_items(self):
+        needle = self.filter_input.text().strip().casefold()
+        self.list_widget.clear()
+        preselect_row = -1
+
+        for task in self.tasks:
+            task_id = str(task.get("id") or "").strip()
+            task_name = str(task.get("name") or "").strip() or "(ohne Namen)"
+            raw_status = task.get("status") or {}
+            task_status = (
+                str(raw_status.get("status") or raw_status.get("name") or "").strip()
+                if isinstance(raw_status, dict)
+                else str(raw_status or "").strip()
+            )
+            row_text = f"{task_name} {task_status} {task_id}".casefold()
+            if needle and needle not in row_text:
+                continue
+
+            label = task_name
+            if task_status:
+                label = f"{label} [{task_status}]"
+
+            item = QListWidgetItem(label, self.list_widget)
+            item.setData(Qt.UserRole, task)
+            item.setToolTip(task_id)
+
+            if task_id and task_id == self.selected_task_id:
+                preselect_row = self.list_widget.count() - 1
+
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(preselect_row if preselect_row >= 0 else 0)
+
+    def selected_task_data(self):
+        item = self.list_widget.currentItem()
+        if item is None:
+            return None
+        return item.data(Qt.UserRole)
+
+    def accept(self):
+        self.selected_task = self.selected_task_data()
+        if self.selected_task is None:
+            QMessageBox.warning(self, "ClickUp", "Bitte einen Task auswaehlen.")
+            return
+        super().accept()
+
+
 class ProjectStatusManagerDialog(QDialog):
     TAB_ACTIVE = "active"
     TAB_ALL = "all"
@@ -560,7 +834,8 @@ class ProjectStatusManagerDialog(QDialog):
     COLUMN_STATUS = 2
     COLUMN_DOWNLOAD_TOKEN = 3
     COLUMN_BAUBEGINN = 4
-    COLUMN_NEXTCLOUD = 5
+    COLUMN_CLICKUP = 5
+    COLUMN_NEXTCLOUD = 6
 
     def __init__(self, plugin, parent=None):
         super().__init__(parent or plugin.iface.mainWindow())
@@ -612,6 +887,10 @@ class ProjectStatusManagerDialog(QDialog):
         self.reload_button.clicked.connect(self.reload_rows)
         filter_row.addWidget(self.reload_button)
 
+        self.clickup_pull_button = QPushButton("Status von ClickUp laden", self)
+        self.clickup_pull_button.clicked.connect(self._pull_statuses_from_clickup)
+        filter_row.addWidget(self.clickup_pull_button)
+
         root_layout.addLayout(filter_row)
 
         self.tab_widget = QTabWidget(self)
@@ -644,7 +923,7 @@ class ProjectStatusManagerDialog(QDialog):
 
     def _build_table(self, table_key):
         table = QTableWidget(self)
-        table.setColumnCount(6)
+        table.setColumnCount(7)
         table.setHorizontalHeaderLabels(
             (
                 "Projektordner",
@@ -652,6 +931,7 @@ class ProjectStatusManagerDialog(QDialog):
                 "Status",
                 "Download Token",
                 "Baubeginn",
+                "ClickUp",
                 "Nextcloud",
             )
         )
@@ -673,6 +953,7 @@ class ProjectStatusManagerDialog(QDialog):
         header.setSectionResizeMode(self.COLUMN_STATUS, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(self.COLUMN_DOWNLOAD_TOKEN, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(self.COLUMN_BAUBEGINN, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(self.COLUMN_CLICKUP, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(self.COLUMN_NEXTCLOUD, QHeaderView.ResizeToContents)
 
         self.tables[table_key] = table
@@ -733,6 +1014,8 @@ class ProjectStatusManagerDialog(QDialog):
             "status": normalize_status_value(data.get("status", "")),
             "downloadToken": str(data.get("downloadToken", "") or "").strip(),
             "baubeginn": display_date_text(data.get("baubeginn", "")),
+            "clickupTaskId": str(data.get("clickupTaskId", "") or "").strip(),
+            "clickupTaskName": str(data.get("clickupTaskName", "") or "").strip(),
         }
 
     def _populate_row(self, table_key, row_index, project):
@@ -781,6 +1064,12 @@ class ProjectStatusManagerDialog(QDialog):
         )
         table.setCellWidget(row_index, self.COLUMN_BAUBEGINN, date_widget)
 
+        clickup_button = QPushButton(table)
+        clickup_button.clicked.connect(
+            lambda _checked=False, key=project["key"]: self._choose_clickup_task_for_project(key)
+        )
+        table.setCellWidget(row_index, self.COLUMN_CLICKUP, clickup_button)
+
         share_button = QPushButton(table)
         share_button.clicked.connect(
             lambda _checked=False, key=project["key"]: self._choose_nextcloud_folder_for_token(key)
@@ -790,8 +1079,10 @@ class ProjectStatusManagerDialog(QDialog):
         self.widget_lookup[table_key][project["key"]] = {
             "status_box": status_box,
             "date_widget": date_widget,
+            "clickup_button": clickup_button,
             "share_button": share_button,
         }
+        self._update_clickup_button(project["key"])
         self._update_share_button(project["key"])
 
     def _apply_status_combo_style(self, combo_box, status_text):
@@ -897,6 +1188,8 @@ class ProjectStatusManagerDialog(QDialog):
                 if widget is None:
                     continue
                 self._set_date_widget_value(widget, value)
+        elif field_name in {"clickupTaskId", "clickupTaskName"}:
+            self._update_clickup_button(project_key)
 
         self._update_share_button(project_key)
         self._apply_filters()
@@ -951,6 +1244,8 @@ class ProjectStatusManagerDialog(QDialog):
             edited.get("status", ""),
             edited.get("downloadToken", ""),
             edited.get("baubeginn", ""),
+            edited.get("clickupTaskId", ""),
+            edited.get("clickupTaskName", ""),
         ]
         return " ".join(str(part or "") for part in parts).casefold()
 
@@ -1000,6 +1295,164 @@ class ProjectStatusManagerDialog(QDialog):
                 f"{active_counts[current_tab]['total']} Projekte"
             )
         )
+
+    def _clickup_button_text(self, project):
+        task_name = str(project["edited_data"].get("clickupTaskName", "")).strip()
+        if task_name:
+            return task_name
+        if str(project["edited_data"].get("clickupTaskId", "")).strip():
+            return "Task verknuepft"
+        return "Task verknuepfen..."
+
+    def _update_clickup_button(self, project_key):
+        project = self.projects_by_key.get(project_key)
+        if project is None:
+            return
+
+        button_text = self._clickup_button_text(project)
+        task_id = str(project["edited_data"].get("clickupTaskId", "")).strip()
+        task_name = str(project["edited_data"].get("clickupTaskName", "")).strip()
+        tooltip = (
+            f"ClickUp-Task: {task_name or task_id}\nTask-ID: {task_id}"
+            if task_id
+            else "ClickUp-Task aus der konfigurierten Liste auswaehlen."
+        )
+
+        for table_key in self.tables:
+            button = self.widget_lookup.get(table_key, {}).get(project_key, {}).get("clickup_button")
+            if button is None:
+                continue
+            button.setText(button_text)
+            button.setToolTip(tooltip)
+
+    def _choose_clickup_task_for_project(self, project_key):
+        project = self.projects_by_key.get(project_key)
+        if project is None:
+            return
+
+        config = self.plugin.get_clickup_settings()
+        missing = self._missing_clickup_settings(config)
+        if missing:
+            QMessageBox.warning(
+                self,
+                "Projektstatus Butler",
+                (
+                    "Die ClickUp-Konfiguration ist unvollstaendig.\n\n"
+                    f"Es fehlen: {', '.join(missing)}\n\n"
+                    "Bitte die gemeinsamen ClickUp-Einstellungen in Trassify Master Tools pflegen."
+                ),
+            )
+            return
+
+        try:
+            tasks = get_clickup_tasks(config)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Projektstatus Butler",
+                f"ClickUp-Tasks konnten nicht geladen werden:\n{exc}",
+            )
+            return
+
+        dialog = ClickUpTaskPickerDialog(
+            tasks=tasks,
+            project_name=project["name"],
+            selected_task_id=project["edited_data"].get("clickupTaskId", ""),
+            parent=self,
+        )
+        if dialog.exec() != QDialog.Accepted or dialog.selected_task is None:
+            return
+
+        selected_task = dialog.selected_task
+        task_id = str(selected_task.get("id") or "").strip()
+        task_name = str(selected_task.get("name") or "").strip()
+        task_status = selected_task.get("status") or {}
+        clickup_status = (
+            str(task_status.get("status") or task_status.get("name") or "").strip()
+            if isinstance(task_status, dict)
+            else str(task_status or "").strip()
+        )
+        plugin_status = map_clickup_status_to_plugin(clickup_status)
+
+        self._set_project_field(project_key, "clickupTaskId", task_id)
+        self._set_project_field(project_key, "clickupTaskName", task_name)
+        if plugin_status:
+            self._set_project_field(project_key, "status", plugin_status)
+
+    def _pull_statuses_from_clickup(self):
+        config = self.plugin.get_clickup_settings()
+        missing = self._missing_clickup_settings(config)
+        if missing:
+            QMessageBox.warning(
+                self,
+                "Projektstatus Butler",
+                (
+                    "Die ClickUp-Konfiguration ist unvollstaendig.\n\n"
+                    f"Es fehlen: {', '.join(missing)}"
+                ),
+            )
+            return
+
+        try:
+            tasks = get_clickup_tasks(config)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Projektstatus Butler",
+                f"ClickUp-Tasks konnten nicht geladen werden:\n{exc}",
+            )
+            return
+
+        tasks_by_id = task_map_by_id(tasks)
+        updated_count = 0
+        unmatched = []
+        unsupported = []
+
+        for project in self.projects:
+            task_id = str(project["edited_data"].get("clickupTaskId", "")).strip()
+            if not task_id:
+                continue
+
+            task = tasks_by_id.get(task_id)
+            if task is None:
+                unmatched.append(project["name"])
+                continue
+
+            task_name = str(task.get("name") or "").strip()
+            raw_status = task.get("status") or {}
+            clickup_status = (
+                str(raw_status.get("status") or raw_status.get("name") or "").strip()
+                if isinstance(raw_status, dict)
+                else str(raw_status or "").strip()
+            )
+            plugin_status = map_clickup_status_to_plugin(clickup_status)
+            if not plugin_status:
+                unsupported.append(f"{project['name']} -> {clickup_status or '(leer)'}")
+                continue
+
+            self._set_project_field(project["key"], "clickupTaskName", task_name)
+            self._set_project_field(project["key"], "status", plugin_status)
+            updated_count += 1
+
+        details = [f"{updated_count} Projektstatus(e) aus ClickUp uebernommen."]
+        if unmatched:
+            details.append(f"Nicht gefunden: {', '.join(unmatched[:6])}")
+        if unsupported:
+            details.append(f"Nicht gemappt: {', '.join(unsupported[:6])}")
+
+        QMessageBox.information(
+            self,
+            "Projektstatus Butler",
+            "\n\n".join(details),
+        )
+
+    def _missing_clickup_settings(self, config):
+        missing = []
+        if not config.get("clickup_api_token"):
+            missing.append("API-Token")
+        if not config.get("clickup_list_id"):
+            missing.append("Listen-ID")
+        return missing
 
     def _share_button_text(self, project):
         if str(project["edited_data"].get("downloadToken", "")).strip():
@@ -1130,11 +1583,22 @@ class ProjectStatusManagerDialog(QDialog):
                 status=normalize_status_value(edited.get("status", "")),
                 download_token=edited.get("downloadToken", ""),
                 baubeginn=normalized_date,
+                clickup_task_id=edited.get("clickupTaskId", ""),
+                clickup_task_name=edited.get("clickupTaskName", ""),
             )
             updates.append((project, new_data))
 
         changed_count = 0
+        clickup_synced = 0
+        clickup_failures = []
+        clickup_config = self.plugin.get_clickup_settings()
+        clickup_ready = not self._missing_clickup_settings(clickup_config)
+
         for project, new_data in updates:
+            old_status = normalize_status_value(project["data"].get("status", ""))
+            new_status = normalize_status_value(new_data.get("status", ""))
+            clickup_task_id = str(new_data.get("clickupTaskId", "") or "").strip()
+
             if new_data == project["data"]:
                 continue
 
@@ -1145,15 +1609,47 @@ class ProjectStatusManagerDialog(QDialog):
             project["data"] = new_data
             changed_count += 1
 
-        QMessageBox.information(
-            self,
-            "Projektstatus Butler",
-            f"{changed_count} status.json-Datei(en) gespeichert.",
-        )
+            if clickup_task_id and old_status != new_status:
+                if clickup_ready:
+                    try:
+                        update_clickup_task_status(clickup_config, clickup_task_id, new_status)
+                        clickup_synced += 1
+                    except Exception as exc:
+                        clickup_failures.append(f"{project['name']}: {exc}")
+                else:
+                    clickup_failures.append(
+                        f"{project['name']}: ClickUp nicht konfiguriert, Status nur lokal gespeichert."
+                    )
+
+        message_lines = [f"{changed_count} status.json-Datei(en) gespeichert."]
+        if clickup_synced:
+            message_lines.append(f"{clickup_synced} ClickUp-Status aktualisiert.")
+        if clickup_failures:
+            message_lines.append(
+                "ClickUp-Probleme:\n" + "\n".join(clickup_failures[:8])
+            )
+
+        QMessageBox.information(self, "Projektstatus Butler", "\n\n".join(message_lines))
         self.reload_rows()
 
-    def _build_updated_data(self, original_data, status_url, status, download_token, baubeginn):
-        managed_keys = {"statusUrl", "status", "downloadToken", "baubeginn"}
+    def _build_updated_data(
+        self,
+        original_data,
+        status_url,
+        status,
+        download_token,
+        baubeginn,
+        clickup_task_id,
+        clickup_task_name,
+    ):
+        managed_keys = {
+            "statusUrl",
+            "status",
+            "downloadToken",
+            "baubeginn",
+            "clickupTaskId",
+            "clickupTaskName",
+        }
         new_data = {}
 
         if str(status_url or "").strip():
@@ -1163,6 +1659,10 @@ class ProjectStatusManagerDialog(QDialog):
             new_data["downloadToken"] = str(download_token).strip()
         if str(baubeginn or "").strip():
             new_data["baubeginn"] = str(baubeginn).strip()
+        if str(clickup_task_id or "").strip():
+            new_data["clickupTaskId"] = str(clickup_task_id).strip()
+        if str(clickup_task_name or "").strip():
+            new_data["clickupTaskName"] = str(clickup_task_name).strip()
 
         for key, value in original_data.items():
             if key not in managed_keys:
@@ -1220,7 +1720,7 @@ class ProjectStatusManagerPlugin:
         dialog.exec()
 
     def set_master_settings(self, shared_settings=None):
-        self.trassify_master_settings = normalize_nextcloud_settings(shared_settings or {})
+        self.trassify_master_settings = dict(shared_settings or {})
 
     def get_nextcloud_settings(self):
         settings = load_nextcloud_settings_from_qsettings()
@@ -1233,6 +1733,15 @@ class ProjectStatusManagerPlugin:
                 settings[key] = str(value).strip()
 
         return normalize_nextcloud_settings(settings)
+
+    def get_clickup_settings(self):
+        settings = load_clickup_settings_from_qsettings()
+
+        for key, value in normalize_clickup_settings(self.trassify_master_settings).items():
+            if str(value or "").strip():
+                settings[key] = str(value).strip()
+
+        return normalize_clickup_settings(settings)
 
     def load_projects(self):
         if not self.PROJECTS_ROOT.is_dir():
