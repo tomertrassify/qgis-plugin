@@ -239,6 +239,11 @@ def map_clickup_status_to_plugin(status_text):
     return ""
 
 
+def normalize_clickup_match_key(text):
+    compact = re.sub(r"\s+", " ", str(text or "").strip())
+    return compact.casefold()
+
+
 def extract_nextcloud_share_token(share_url):
     match = SHARE_URL_PATTERN.search(str(share_url or "").strip())
     if not match:
@@ -652,6 +657,40 @@ def task_map_by_id(tasks):
         for task in tasks
         if str(task.get("id") or "").strip()
     }
+
+
+def clickup_task_id(task):
+    return str((task or {}).get("id") or "").strip()
+
+
+def clickup_task_name(task):
+    return str((task or {}).get("name") or "").strip()
+
+
+def clickup_task_status_text(task):
+    raw_status = (task or {}).get("status") or {}
+    if isinstance(raw_status, dict):
+        return str(raw_status.get("status") or raw_status.get("name") or "").strip()
+    return str(raw_status or "").strip()
+
+
+def task_maps_by_name(tasks):
+    unique_matches = {}
+    duplicate_names = set()
+
+    for task in tasks or []:
+        match_key = normalize_clickup_match_key(clickup_task_name(task))
+        if not match_key:
+            continue
+        if match_key in duplicate_names:
+            continue
+        if match_key in unique_matches:
+            duplicate_names.add(match_key)
+            unique_matches.pop(match_key, None)
+            continue
+        unique_matches[match_key] = task
+
+    return unique_matches, duplicate_names
 
 
 def resolve_clickup_status_name(config, plugin_status):
@@ -1364,20 +1403,52 @@ class ProjectStatusManagerDialog(QDialog):
             return
 
         selected_task = dialog.selected_task
-        task_id = str(selected_task.get("id") or "").strip()
-        task_name = str(selected_task.get("name") or "").strip()
-        task_status = selected_task.get("status") or {}
-        clickup_status = (
-            str(task_status.get("status") or task_status.get("name") or "").strip()
-            if isinstance(task_status, dict)
-            else str(task_status or "").strip()
-        )
+        task_id = clickup_task_id(selected_task)
+        task_name = clickup_task_name(selected_task)
+        clickup_status = clickup_task_status_text(selected_task)
         plugin_status = map_clickup_status_to_plugin(clickup_status)
 
         self._set_project_field(project_key, "clickupTaskId", task_id)
         self._set_project_field(project_key, "clickupTaskName", task_name)
         if plugin_status:
             self._set_project_field(project_key, "status", plugin_status)
+
+    def _resolve_clickup_task_for_project(
+        self,
+        project,
+        tasks_by_id,
+        tasks_by_name,
+        duplicate_names,
+    ):
+        current_task_id = str(project["edited_data"].get("clickupTaskId", "")).strip()
+        current_task_name = str(project["edited_data"].get("clickupTaskName", "")).strip()
+
+        if current_task_id:
+            task = tasks_by_id.get(current_task_id)
+            if task is not None:
+                actual_name = clickup_task_name(task)
+                if actual_name and actual_name != current_task_name:
+                    self._set_project_field(project["key"], "clickupTaskName", actual_name)
+                return task, False, ""
+
+        match_key = normalize_clickup_match_key(project["name"])
+        if not match_key:
+            return None, False, "missing_name"
+        if match_key in duplicate_names:
+            return None, False, "ambiguous_name"
+
+        task = tasks_by_name.get(match_key)
+        if task is None:
+            return None, False, "missing_match"
+
+        task_id = clickup_task_id(task)
+        task_name = clickup_task_name(task)
+        if not task_id:
+            return None, False, "missing_match"
+
+        self._set_project_field(project["key"], "clickupTaskId", task_id)
+        self._set_project_field(project["key"], "clickupTaskName", task_name)
+        return task, True, ""
 
     def _pull_statuses_from_clickup(self):
         config = self.plugin.get_clickup_settings()
@@ -1404,27 +1475,31 @@ class ProjectStatusManagerDialog(QDialog):
             return
 
         tasks_by_id = task_map_by_id(tasks)
+        tasks_by_name, duplicate_names = task_maps_by_name(tasks)
         updated_count = 0
+        auto_linked = 0
         unmatched = []
+        ambiguous = []
         unsupported = []
 
         for project in self.projects:
-            task_id = str(project["edited_data"].get("clickupTaskId", "")).strip()
-            if not task_id:
-                continue
-
-            task = tasks_by_id.get(task_id)
-            if task is None:
-                unmatched.append(project["name"])
-                continue
-
-            task_name = str(task.get("name") or "").strip()
-            raw_status = task.get("status") or {}
-            clickup_status = (
-                str(raw_status.get("status") or raw_status.get("name") or "").strip()
-                if isinstance(raw_status, dict)
-                else str(raw_status or "").strip()
+            task, linked_now, issue = self._resolve_clickup_task_for_project(
+                project,
+                tasks_by_id,
+                tasks_by_name,
+                duplicate_names,
             )
+            if linked_now:
+                auto_linked += 1
+            if task is None:
+                if issue == "ambiguous_name":
+                    ambiguous.append(project["name"])
+                else:
+                    unmatched.append(project["name"])
+                continue
+
+            task_name = clickup_task_name(task)
+            clickup_status = clickup_task_status_text(task)
             plugin_status = map_clickup_status_to_plugin(clickup_status)
             if not plugin_status:
                 unsupported.append(f"{project['name']} -> {clickup_status or '(leer)'}")
@@ -1435,8 +1510,12 @@ class ProjectStatusManagerDialog(QDialog):
             updated_count += 1
 
         details = [f"{updated_count} Projektstatus(e) aus ClickUp uebernommen."]
+        if auto_linked:
+            details.append(f"{auto_linked} Projekt(e) automatisch per gleichem Namen verknuepft.")
         if unmatched:
             details.append(f"Nicht gefunden: {', '.join(unmatched[:6])}")
+        if ambiguous:
+            details.append(f"Mehrdeutige Namen: {', '.join(ambiguous[:6])}")
         if unsupported:
             details.append(f"Nicht gemappt: {', '.join(unsupported[:6])}")
 
@@ -1562,6 +1641,32 @@ class ProjectStatusManagerDialog(QDialog):
         return str(Path.home())
 
     def save_rows(self):
+        clickup_config = self.plugin.get_clickup_settings()
+        clickup_ready = not self._missing_clickup_settings(clickup_config)
+        clickup_failures = []
+        clickup_auto_linked = 0
+        clickup_resolutions = {}
+
+        if clickup_ready:
+            try:
+                tasks = get_clickup_tasks(clickup_config)
+            except Exception as exc:
+                clickup_ready = False
+                clickup_failures.append(f"ClickUp-Tasks konnten nicht geladen werden: {exc}")
+            else:
+                tasks_by_id = task_map_by_id(tasks)
+                tasks_by_name, duplicate_names = task_maps_by_name(tasks)
+                for project in self.projects:
+                    task, linked_now, issue = self._resolve_clickup_task_for_project(
+                        project,
+                        tasks_by_id,
+                        tasks_by_name,
+                        duplicate_names,
+                    )
+                    if linked_now:
+                        clickup_auto_linked += 1
+                    clickup_resolutions[project["key"]] = {"task": task, "issue": issue}
+
         updates = []
 
         for project in self.projects:
@@ -1590,14 +1695,12 @@ class ProjectStatusManagerDialog(QDialog):
 
         changed_count = 0
         clickup_synced = 0
-        clickup_failures = []
-        clickup_config = self.plugin.get_clickup_settings()
-        clickup_ready = not self._missing_clickup_settings(clickup_config)
 
         for project, new_data in updates:
             old_status = normalize_status_value(project["data"].get("status", ""))
             new_status = normalize_status_value(new_data.get("status", ""))
             clickup_task_id = str(new_data.get("clickupTaskId", "") or "").strip()
+            resolution = clickup_resolutions.get(project["key"], {})
 
             if new_data == project["data"]:
                 continue
@@ -1609,19 +1712,32 @@ class ProjectStatusManagerDialog(QDialog):
             project["data"] = new_data
             changed_count += 1
 
-            if clickup_task_id and old_status != new_status:
-                if clickup_ready:
-                    try:
-                        update_clickup_task_status(clickup_config, clickup_task_id, new_status)
-                        clickup_synced += 1
-                    except Exception as exc:
-                        clickup_failures.append(f"{project['name']}: {exc}")
-                else:
+            if old_status != new_status:
+                if clickup_task_id:
+                    if clickup_ready:
+                        try:
+                            update_clickup_task_status(clickup_config, clickup_task_id, new_status)
+                            clickup_synced += 1
+                        except Exception as exc:
+                            clickup_failures.append(f"{project['name']}: {exc}")
+                    else:
+                        clickup_failures.append(
+                            f"{project['name']}: ClickUp nicht konfiguriert, Status nur lokal gespeichert."
+                        )
+                elif resolution.get("issue") == "ambiguous_name":
                     clickup_failures.append(
-                        f"{project['name']}: ClickUp nicht konfiguriert, Status nur lokal gespeichert."
+                        f"{project['name']}: Mehrere ClickUp-Tasks mit gleichem Namen, bitte manuell verknuepfen."
+                    )
+                elif clickup_ready:
+                    clickup_failures.append(
+                        f"{project['name']}: Kein ClickUp-Task mit gleichem Namen gefunden."
                     )
 
         message_lines = [f"{changed_count} status.json-Datei(en) gespeichert."]
+        if clickup_auto_linked:
+            message_lines.append(
+                f"{clickup_auto_linked} ClickUp-Task(s) automatisch per gleichem Namen verknuepft."
+            )
         if clickup_synced:
             message_lines.append(f"{clickup_synced} ClickUp-Status aktualisiert.")
         if clickup_failures:

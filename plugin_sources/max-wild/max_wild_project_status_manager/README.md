@@ -13,4 +13,5 @@ Funktionen:
 - `baubeginn` kann per Kalender oder als Text im Format `dd.MM.yyyy` gesetzt werden
 - Ein Nextcloud-Button pro Zeile erzeugt einen oeffentlichen Ordner-Link und uebernimmt den `downloadToken`
 - ClickUp-Tasks koennen pro Projekt verknuepft werden; Status lassen sich aus ClickUp laden und beim Speichern zurueckschreiben
+- Fehlende ClickUp-Verknuepfungen werden automatisch ueber einen eindeutigen gleichen Projektnamen erkannt
 - Speichert Aenderungen direkt in die jeweilige `status.json`

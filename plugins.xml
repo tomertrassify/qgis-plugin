@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <plugins>
-  <pyqgis_plugin name="Trassify Master Tools" version="1.0.31">
+  <pyqgis_plugin name="Trassify Master Tools" version="1.0.33">
     <description><![CDATA[Ein Bundle-Plugin, das die enthaltenen Trassify-Tools in einer einzigen Installation laedt.]]></description>
     <about><![CDATA[Installiere ein Plugin und aktiviere AttributionButler, Schutzrohr, GeoBasis Loader, Coordinatify, Projektstarter, Projektstatus Butler, Export Pro, Quickrule und weitere eingebettete Tools zusammen.]]></about>
-    <version>1.0.31</version>
+    <version>1.0.33</version>
     <qgis_minimum_version>3.28</qgis_minimum_version>
     <qgis_maximum_version>3.99</qgis_maximum_version>
     <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
@@ -12,8 +12,8 @@
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/trassify_master_tools.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-04-28</create_date>
-    <update_date>2026-04-28</update_date>
+    <create_date>2026-04-29</create_date>
+    <update_date>2026-04-29</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
