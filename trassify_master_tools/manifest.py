@@ -39,6 +39,13 @@ BUNDLED_PLUGINS = (
         "tool_type": BACKGROUND_TOOL,
     },
     {
+        "key": "sparte_betreiber_regeln",
+        "label": "Sparte Betreiber Regeln",
+        "package": "sparte_betreiber_regeln",
+        "source_path": "background-tools/sparte_betreiber_regeln",
+        "tool_type": BACKGROUND_TOOL,
+    },
+    {
         "key": "quick_map_services",
         "label": "QuickMapServices",
         "package": "quick_map_services",

@@ -1,0 +1,18 @@
+[general]
+name=Sparte Betreiber Regeln
+description=Pflegt rule-based Renderer fuer den aktiven Layer automatisch aus Sparte und Betreiber.
+version=1.0.0
+qgisMinimumVersion=3.28
+author=Tomer Maith
+email=
+about=Ein checkbarer Toggle, der auf dem aktiven Vektor-Layer mit den Feldern Sparte und Betreiber verschachtelte Regeln erzeugt: oben Sparte, darunter Betreiber.
+category=Plugins
+icon=icon.svg
+hasProcessingProvider=no
+
+tracker=https://github.com/tomertrassify/qgis-plugin/issues
+repository=https://github.com/tomertrassify/qgis-plugin
+homepage=https://github.com/tomertrassify/qgis-plugin
+tags=regel,renderer,sparte,betreiber,style,layer
+experimental=False
+deprecated=False
