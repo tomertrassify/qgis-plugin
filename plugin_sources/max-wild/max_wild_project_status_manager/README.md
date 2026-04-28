@@ -1,4 +1,4 @@
-# Projektstatus Butler
+# Max Wild Projekt Status
 
 Dieses Plugin liest alle Projektordner unter
 `/Users/tomermaith/Documents/repo-webmap/max-wild/_projekte`

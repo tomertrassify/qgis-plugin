@@ -91,6 +91,7 @@ DEFAULT_CLICKUP_SETTINGS = {
 CLICKUP_API_BASE_URL = "https://api.clickup.com/api/v2"
 CLICKUP_TASKS_CACHE = {}
 CLICKUP_LIST_CACHE = {}
+PLUGIN_DISPLAY_NAME = "Max Wild Projekt Status"
 CLICKUP_STATUS_ALIASES = {
     "Neu": ("neu", "to do", "todo", "open"),
     "in Arbeit": ("in arbeit", "in progress", "in bearbeitung", "working on it"),
@@ -891,7 +892,7 @@ class ProjectStatusManagerDialog(QDialog):
             self.TAB_ALL: {},
         }
 
-        self.setWindowTitle("Projektstatus Butler")
+        self.setWindowTitle(PLUGIN_DISPLAY_NAME)
         self.setWindowIcon(QIcon(str(plugin._icon_path())))
         self.resize(1580, 920)
 
@@ -899,7 +900,7 @@ class ProjectStatusManagerDialog(QDialog):
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
 
-        title_label = QLabel("Projektstatus fuer Max Wild", self)
+        title_label = QLabel(PLUGIN_DISPLAY_NAME, self)
         title_label.setStyleSheet("font-size: 22px; font-weight: 700;")
         root_layout.addWidget(title_label)
 
@@ -1004,7 +1005,7 @@ class ProjectStatusManagerDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(
                 self,
-                "Projektstatus Butler",
+                PLUGIN_DISPLAY_NAME,
                 f"Projektordner konnten nicht geladen werden:\n{exc}",
             )
             return
@@ -1374,7 +1375,7 @@ class ProjectStatusManagerDialog(QDialog):
         if missing:
             QMessageBox.warning(
                 self,
-                "Projektstatus Butler",
+                PLUGIN_DISPLAY_NAME,
                 (
                     "Die ClickUp-Konfiguration ist unvollstaendig.\n\n"
                     f"Es fehlen: {', '.join(missing)}\n\n"
@@ -1388,7 +1389,7 @@ class ProjectStatusManagerDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(
                 self,
-                "Projektstatus Butler",
+                PLUGIN_DISPLAY_NAME,
                 f"ClickUp-Tasks konnten nicht geladen werden:\n{exc}",
             )
             return
@@ -1456,7 +1457,7 @@ class ProjectStatusManagerDialog(QDialog):
         if missing:
             QMessageBox.warning(
                 self,
-                "Projektstatus Butler",
+                PLUGIN_DISPLAY_NAME,
                 (
                     "Die ClickUp-Konfiguration ist unvollstaendig.\n\n"
                     f"Es fehlen: {', '.join(missing)}"
@@ -1469,7 +1470,7 @@ class ProjectStatusManagerDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(
                 self,
-                "Projektstatus Butler",
+                PLUGIN_DISPLAY_NAME,
                 f"ClickUp-Tasks konnten nicht geladen werden:\n{exc}",
             )
             return
@@ -1521,7 +1522,7 @@ class ProjectStatusManagerDialog(QDialog):
 
         QMessageBox.information(
             self,
-            "Projektstatus Butler",
+            PLUGIN_DISPLAY_NAME,
             "\n\n".join(details),
         )
 
@@ -1568,7 +1569,7 @@ class ProjectStatusManagerDialog(QDialog):
         if missing:
             QMessageBox.warning(
                 self,
-                "Projektstatus Butler",
+                PLUGIN_DISPLAY_NAME,
                 (
                     "Die Nextcloud-Konfiguration ist unvollstaendig.\n\n"
                     f"Es fehlen: {', '.join(missing)}\n\n"
@@ -1608,14 +1609,14 @@ class ProjectStatusManagerDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(
                 self,
-                "Projektstatus Butler",
+                PLUGIN_DISPLAY_NAME,
                 f"Nextcloud-Freigabe konnte nicht erstellt werden:\n{exc}",
             )
             return
 
         QMessageBox.information(
             self,
-            "Projektstatus Butler",
+            PLUGIN_DISPLAY_NAME,
             (
                 f"Der Download-Token fuer '{project['name']}' wurde aus der Nextcloud-Freigabe uebernommen.\n\n"
                 "Mit 'Speichern' wird die status.json aktualisiert."
@@ -1677,7 +1678,7 @@ class ProjectStatusManagerDialog(QDialog):
             except ValueError as exc:
                 QMessageBox.warning(
                     self,
-                    "Projektstatus Butler",
+                    PLUGIN_DISPLAY_NAME,
                     f"{project['name']}: {exc}",
                 )
                 return
@@ -1745,7 +1746,7 @@ class ProjectStatusManagerDialog(QDialog):
                 "ClickUp-Probleme:\n" + "\n".join(clickup_failures[:8])
             )
 
-        QMessageBox.information(self, "Projektstatus Butler", "\n\n".join(message_lines))
+        QMessageBox.information(self, PLUGIN_DISPLAY_NAME, "\n\n".join(message_lines))
         self.reload_rows()
 
     def _build_updated_data(
@@ -1789,9 +1790,9 @@ class ProjectStatusManagerDialog(QDialog):
 
 class ProjectStatusManagerPlugin:
     PROJECTS_ROOT = Path("/Users/tomermaith/Documents/repo-webmap/max-wild/_projekte")
-    TOOLBAR_NAME = "Projektstatus Butler"
+    TOOLBAR_NAME = PLUGIN_DISPLAY_NAME
     TOOLBAR_OBJECT_NAME = "ProjektstatusButlerToolbar"
-    ICON_FILENAME = "icon.svg"
+    ICON_FILENAME = "max-wild-favicon.svg"
 
     def __init__(self, iface):
         self.iface = iface
@@ -1803,7 +1804,7 @@ class ProjectStatusManagerPlugin:
     def initGui(self):
         self.action = QAction(
             QIcon(str(self._icon_path())),
-            "Projektstatus Butler",
+            PLUGIN_DISPLAY_NAME,
             self.iface.mainWindow(),
         )
         self.action.triggered.connect(self.run)

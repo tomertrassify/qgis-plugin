@@ -68,7 +68,7 @@ BUNDLED_PLUGINS = (
     },
     {
         "key": "projektstatus_butler",
-        "label": "Projektstatus Butler",
+        "label": "Max Wild Projekt Status",
         "package": "max_wild_project_status_manager",
         "source_path": "max-wild/max_wild_project_status_manager",
         "tool_type": INTERACTIVE_TOOL,
