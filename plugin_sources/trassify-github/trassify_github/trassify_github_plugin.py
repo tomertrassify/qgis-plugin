@@ -560,9 +560,22 @@ class TrassifyGithubPlugin:
         )
 
     def _probe_repo_root(self, selected_dir):
+        filesystem_root = self._find_repo_root_on_disk(selected_dir)
         result = self._run_git(["-C", str(selected_dir), "rev-parse", "--show-toplevel"])
+        if result["ok"]:
+            return {
+                "repo_root": result["stdout"] or filesystem_root,
+                "error": "",
+            }
+
+        if filesystem_root:
+            return {
+                "repo_root": filesystem_root,
+                "error": "",
+            }
+
         return {
-            "repo_root": result["stdout"] if result["ok"] else "",
+            "repo_root": "",
             "error": result["error"],
         }
 
@@ -659,3 +672,19 @@ class TrassifyGithubPlugin:
             ]
         )
         return candidates
+
+    def _find_repo_root_on_disk(self, selected_dir):
+        try:
+            current_path = Path(str(selected_dir)).expanduser().resolve()
+        except OSError:
+            current_path = Path(str(selected_dir)).expanduser()
+
+        if current_path.is_file():
+            current_path = current_path.parent
+
+        for candidate in (current_path, *current_path.parents):
+            git_marker = candidate / ".git"
+            if git_marker.is_dir() or git_marker.is_file():
+                return str(candidate)
+
+        return ""
