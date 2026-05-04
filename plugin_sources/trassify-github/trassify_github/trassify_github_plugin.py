@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -41,6 +42,7 @@ class TrassifyGithubPlugin:
         self._final_success_message = ""
         self._current_command = ""
         self._current_command_repo = ""
+        self._git_executable = ""
 
     def initGui(self):
         self._create_actions()
@@ -138,7 +140,12 @@ class TrassifyGithubPlugin:
         if not selected_dir:
             return
 
-        repo_root = self._detect_repo_root(selected_dir)
+        repo_probe = self._probe_repo_root(selected_dir)
+        if repo_probe["error"]:
+            self._show_git_missing_error()
+            return
+
+        repo_root = repo_probe["repo_root"]
         if not repo_root:
             QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -165,6 +172,10 @@ class TrassifyGithubPlugin:
         )
 
     def _run_git_command(self, subcommand):
+        if not self._ensure_git_available():
+            self._update_action_state()
+            return
+
         repo_root = self._resolve_saved_repo_root()
         if not repo_root:
             QMessageBox.warning(
@@ -258,7 +269,11 @@ class TrassifyGithubPlugin:
             self._saved_repo_root = ""
             return ""
 
-        resolved_root = self._detect_repo_root(repo_root)
+        repo_probe = self._probe_repo_root(repo_root)
+        if repo_probe["error"]:
+            return self._saved_repo_root
+
+        resolved_root = repo_probe["repo_root"]
         if not resolved_root:
             self._clear_saved_repo_root()
             return ""
@@ -280,6 +295,7 @@ class TrassifyGithubPlugin:
     def _update_action_state(self):
         repo_root = self._resolve_saved_repo_root()
         is_running = self._command_running()
+        git_available = bool(self._resolve_git_executable())
 
         connect_tooltip = "Trassify Github: Repository-Ordner auswaehlen und speichern."
         if repo_root:
@@ -290,17 +306,18 @@ class TrassifyGithubPlugin:
             "Trassify Github: git add -A, git commit und git push fuer das verbundene Repository."
         )
         if repo_root:
-            branch_name = self._read_git_output(
-                ["git", "-C", repo_root, "branch", "--show-current"]
-            )
-            origin_url = self._read_git_output(
-                ["git", "-C", repo_root, "remote", "get-url", "origin"]
-            )
             detail_lines = [f"Repo: {repo_root}"]
-            if branch_name:
-                detail_lines.append(f"Branch: {branch_name}")
-            if origin_url:
-                detail_lines.append(f"Origin: {origin_url}")
+            if git_available:
+                branch_name = self._read_git_output(
+                    ["git", "-C", repo_root, "branch", "--show-current"]
+                )
+                origin_url = self._read_git_output(
+                    ["git", "-C", repo_root, "remote", "get-url", "origin"]
+                )
+                if branch_name:
+                    detail_lines.append(f"Branch: {branch_name}")
+                if origin_url:
+                    detail_lines.append(f"Origin: {origin_url}")
             repo_details = "\n".join(detail_lines)
             connect_tooltip = f"{connect_tooltip}\n{repo_details}"
             pull_tooltip = f"{pull_tooltip}\n{repo_details}"
@@ -311,13 +328,19 @@ class TrassifyGithubPlugin:
             push_tooltip += "\nNoch kein Repository verbunden."
             self.action.setText("GitHub-Ordner verbinden")
 
+        if not git_available:
+            missing_git_hint = "\nGit wurde in QGIS nicht gefunden."
+            connect_tooltip = f"{connect_tooltip}{missing_git_hint}"
+            pull_tooltip = f"{pull_tooltip}{missing_git_hint}"
+            push_tooltip = f"{push_tooltip}{missing_git_hint}"
+
         self.action.setToolTip(connect_tooltip)
         self.pull_action.setToolTip(pull_tooltip)
         self.push_action.setToolTip(push_tooltip)
 
         self.action.setEnabled(not is_running)
-        self.pull_action.setEnabled(bool(repo_root) and not is_running)
-        self.push_action.setEnabled(bool(repo_root) and not is_running)
+        self.pull_action.setEnabled(bool(repo_root) and bool(git_available) and not is_running)
+        self.push_action.setEnabled(bool(repo_root) and bool(git_available) and not is_running)
 
     def _show_command_failure(self, command_text, repo_root, detail_text):
         self.iface.messageBar().pushMessage(
@@ -417,13 +440,21 @@ class TrassifyGithubPlugin:
             self._update_action_state()
             return
 
+        git_program = self._resolve_git_executable()
+        if not git_program:
+            self._pending_commands = []
+            self._show_git_missing_error()
+            self._cleanup_process()
+            self._update_action_state()
+            return
+
         command_spec = self._pending_commands.pop(0)
         self._current_command = command_spec["display_text"]
         self._process_output = []
 
         self._process = QProcess(self.iface.mainWindow())
         self._process.setWorkingDirectory(self._current_command_repo)
-        self._process.setProgram("git")
+        self._process.setProgram(git_program)
         self._process.setArguments(command_spec["arguments"])
 
         environment = QProcessEnvironment.systemEnvironment()
@@ -491,42 +522,140 @@ class TrassifyGithubPlugin:
         return QIcon(str(self._plugin_dir / filename))
 
     def _detect_repo_root(self, selected_dir):
-        try:
-            result = subprocess.run(
-                ["git", "-C", str(selected_dir), "rev-parse", "--show-toplevel"],
-                capture_output=True,
-                check=False,
-                env=self._git_env(),
-                text=True,
-                timeout=5,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return ""
-
-        if result.returncode != 0:
-            return ""
-
-        return result.stdout.strip()
+        return self._probe_repo_root(selected_dir)["repo_root"]
 
     def _read_git_output(self, command):
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                check=False,
-                env=self._git_env(),
-                text=True,
-                timeout=5,
-            )
-        except (OSError, subprocess.SubprocessError):
+        arguments = list(command)
+        if arguments and Path(arguments[0]).name.lower().startswith("git"):
+            arguments = arguments[1:]
+
+        result = self._run_git(arguments)
+        if not result["ok"]:
             return ""
 
-        if result.returncode != 0:
-            return ""
-
-        return result.stdout.strip()
+        return result["stdout"]
 
     def _git_env(self):
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
         return env
+
+    def _ensure_git_available(self):
+        if self._resolve_git_executable():
+            return True
+
+        self._show_git_missing_error()
+        return False
+
+    def _show_git_missing_error(self):
+        QMessageBox.warning(
+            self.iface.mainWindow(),
+            self.TOOLBAR_NAME,
+            (
+                "Git konnte in QGIS nicht gefunden werden.\n\n"
+                "Unter Windows liegt git.exe oft ausserhalb des PATH von QGIS. "
+                "Das Plugin sucht jetzt auch in typischen Git-for-Windows-Ordnern, "
+                "braucht aber eine vorhandene Git-Installation."
+            ),
+        )
+
+    def _probe_repo_root(self, selected_dir):
+        result = self._run_git(["-C", str(selected_dir), "rev-parse", "--show-toplevel"])
+        return {
+            "repo_root": result["stdout"] if result["ok"] else "",
+            "error": result["error"],
+        }
+
+    def _run_git(self, arguments, cwd=None):
+        git_program = self._resolve_git_executable()
+        if not git_program:
+            return {
+                "ok": False,
+                "stdout": "",
+                "stderr": "",
+                "returncode": None,
+                "error": "missing_git",
+            }
+
+        try:
+            result = subprocess.run(
+                [git_program, *list(arguments)],
+                cwd=cwd,
+                capture_output=True,
+                check=False,
+                env=self._git_env(),
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {
+                "ok": False,
+                "stdout": "",
+                "stderr": str(exc),
+                "returncode": None,
+                "error": "start_failed",
+            }
+
+        return {
+            "ok": result.returncode == 0,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+            "returncode": result.returncode,
+            "error": "",
+        }
+
+    def _resolve_git_executable(self):
+        cached_program = str(self._git_executable or "").strip()
+        if cached_program and Path(cached_program).is_file():
+            return cached_program
+
+        git_program = shutil.which("git")
+        if git_program:
+            self._git_executable = git_program
+            return git_program
+
+        for candidate in self._windows_git_candidates():
+            if candidate.is_file():
+                self._git_executable = str(candidate)
+                return self._git_executable
+
+        self._git_executable = ""
+        return ""
+
+    def _windows_git_candidates(self):
+        if os.name != "nt":
+            return []
+
+        candidates = []
+        for env_name in ("ProgramFiles", "ProgramFiles(x86)", "LocalAppData"):
+            base_dir = str(os.environ.get(env_name) or "").strip()
+            if not base_dir:
+                continue
+            base_path = Path(base_dir)
+            candidates.extend(
+                [
+                    base_path / "Git" / "cmd" / "git.exe",
+                    base_path / "Git" / "bin" / "git.exe",
+                    base_path / "Programs" / "Git" / "cmd" / "git.exe",
+                    base_path / "Programs" / "Git" / "bin" / "git.exe",
+                ]
+            )
+
+        github_desktop_root = Path(str(os.environ.get("LocalAppData") or "").strip()) / "GitHubDesktop"
+        if github_desktop_root.is_dir():
+            for app_dir in sorted(github_desktop_root.glob("app-*"), reverse=True):
+                candidates.extend(
+                    [
+                        app_dir / "resources" / "app" / "git" / "cmd" / "git.exe",
+                        app_dir / "resources" / "app" / "git" / "bin" / "git.exe",
+                    ]
+                )
+
+        home_dir = Path.home()
+        candidates.extend(
+            [
+                home_dir / "scoop" / "shims" / "git.exe",
+                home_dir / "scoop" / "apps" / "git" / "current" / "cmd" / "git.exe",
+            ]
+        )
+        return candidates
