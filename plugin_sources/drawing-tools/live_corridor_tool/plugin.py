@@ -31,6 +31,7 @@ from qgis.core import (
     QgsProject,
     QgsUnitTypes,
     QgsVectorLayer,
+    QgsVectorLayerUtils,
     QgsWkbTypes,
 )
 from qgis.gui import QgsRubberBand
@@ -93,16 +94,8 @@ if QgsMapToolCapture:
             self.plugin._update_box_capture_preview(self.captured_points(), None)
 
         def lineCaptured(self, line):
-            geometry = None
-            if line is not None:
-                try:
-                    geometry = QgsGeometry(line.clone())
-                except Exception:
-                    geometry = None
-            self.plugin._handle_box_capture_finished(
-                geometry,
-                self.captured_points(),
-            )
+            del line
+            self.plugin._handle_box_capture_finished(self.captured_points())
             self.plugin._update_box_capture_preview([], None)
 
         def captured_points(self):
@@ -984,9 +977,9 @@ class LiveCorridorPlugin(QObject):
         if self.enabled and self._is_box_capture_tool_active():
             tool = self.box_capture_tool
             if tool:
-                self._refresh_preview(
+                self._update_box_capture_preview(
+                    tool.captured_points(),
                     self.last_mouse_map_point,
-                    points_override=tool.captured_points(),
                 )
                 return
 
@@ -998,21 +991,22 @@ class LiveCorridorPlugin(QObject):
 
     def _update_box_capture_preview(self, captured_points, moving_point=None):
         self.last_mouse_map_point = moving_point
-        if not captured_points:
+        preview_points = self._layer_points_to_map_points(captured_points)
+        if not preview_points:
             self._clear_preview_graphics()
             return
         self._refresh_preview(
             moving_point,
-            points_override=captured_points,
+            points_override=preview_points,
         )
 
-    def _handle_box_capture_finished(self, line_geom, captured_points):
+    def _handle_box_capture_finished(self, captured_points):
         self.segment_points = list(captured_points or [])
         self.segment_layer = self._active_line_layer(
             require_editable=self._requires_editable_source_layer()
         )
         self.last_mouse_map_point = None
-        self._finalize_active_segment(line_geom_override=line_geom)
+        self._finalize_active_segment()
 
     def _finalize_segment_and_reset_capture(self):
         if self.enabled:
@@ -1367,6 +1361,38 @@ class LiveCorridorPlugin(QObject):
         except Exception:
             return None
 
+    def _layer_points_to_map_points(self, points):
+        if not points:
+            return []
+
+        layer = self.segment_layer or self._active_line_layer(
+            require_editable=self._requires_editable_source_layer()
+        )
+        if not layer or not self.canvas:
+            return list(points)
+
+        source_crs = layer.crs()
+        target_crs = self.canvas.mapSettings().destinationCrs()
+        if (
+            not source_crs.isValid()
+            or not target_crs.isValid()
+            or source_crs.authid() == target_crs.authid()
+        ):
+            return list(points)
+
+        transform = QgsCoordinateTransform(
+            source_crs,
+            target_crs,
+            QgsProject.instance().transformContext(),
+        )
+        transformed = []
+        for point in points:
+            try:
+                transformed.append(transform.transform(QgsPointXY(point)))
+            except Exception:
+                return list(points)
+        return transformed
+
     def _ensure_box_capture_tool(self):
         if self.box_capture_tool is None and self._supports_box_only_capture():
             self.box_capture_tool = BoxOnlyCaptureTool(self)
@@ -1398,43 +1424,43 @@ class LiveCorridorPlugin(QObject):
         if not layer or not geometry or geometry.isEmpty():
             return False
 
-        vector_layer_tools = None
-        tools_getter = getattr(self.iface, "vectorLayerTools", None)
-        if callable(tools_getter):
-            try:
-                vector_layer_tools = tools_getter()
-            except Exception:
-                vector_layer_tools = None
-
-        if vector_layer_tools is not None:
-            try:
-                result = vector_layer_tools.addFeature(
-                    layer,
-                    {},
-                    QgsGeometry(geometry),
-                    self.iface.mainWindow(),
-                    False,
-                    False,
-                )
-                success = result[0] if isinstance(result, tuple) else bool(result)
-                if success:
-                    layer.updateExtents()
-                    layer.triggerRepaint()
-                    return True
-            except Exception:
-                pass
-
-        features = self._build_features(layer, [geometry])
-        if not features:
-            return False
-
-        if not self._add_features_to_layer(layer, features):
-            return False
+        self._ensure_layer_editable(layer)
 
         try:
-            self.iface.openFeatureForm(layer, features[0], False)
+            feature = QgsVectorLayerUtils.createFeature(layer, QgsGeometry(geometry))
         except Exception:
-            pass
+            feature = None
+
+        if feature is None or not feature.isValid():
+            features = self._build_features(layer, [geometry])
+            feature = features[0] if features else None
+
+        if feature is None or not feature.isValid():
+            return False
+
+        if not layer.addFeature(feature):
+            return False
+
+        layer.updateExtents()
+        layer.triggerRepaint()
+
+        feature_id = feature.id()
+        form_feature = layer.getFeature(feature_id) if feature_id >= 0 else feature
+
+        form_saved = True
+        try:
+            form_saved = bool(self.iface.openFeatureForm(layer, form_feature, True, True))
+        except Exception:
+            form_saved = True
+
+        if not form_saved and feature_id >= 0:
+            try:
+                layer.deleteFeature(feature_id)
+                layer.triggerRepaint()
+            except Exception:
+                pass
+            return False
+
         return True
 
     def _resolve_box_layer(self, source_line_layer):
