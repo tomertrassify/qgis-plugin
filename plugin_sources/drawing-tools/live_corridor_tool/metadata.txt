@@ -1,11 +1,11 @@
 [general]
 name=Schutzrohr
-description=Toggle kann mitten im normalen QGIS-Linienzeichnen an/aus; Nur-Box-Modus ohne Mittellinie, Temp-Layer (Linie/Polygon) ohne Attribute und Breite.
-version=0.8.6
+description=Schutzrohr-Boxen mit Live-Vorschau zeichnen; Nur-Box ist Standard, aktiver Layer oeffnet das definierte Attributformular, Temp-Layer optional.
+version=0.9.0
 qgisMinimumVersion=3.22
 author=Tomer + Codex
 email=
-about=Toggle für QGIS-Linienkontext mit Live-Vorschau und dynamischer Breite per Option/Alt (macOS) bzw. Alt/Strg+Mausrad (Windows/Linux) oder Eingabefeld; Aktivierung nur mit editierbarem Linienlayer. Ohne Nur-Box-Modus nur im Werkzeug Linienobjekt hinzufügen, mit Nur-Box-Modus als eigener Zeichenmodus ohne Mittellinie. Bei Werkzeugwechsel im Nur-Box-Modus wird der Toggle automatisch deaktiviert.
+about=Schutzrohr zeichnet standardmaessig Nur-Boxen in einem eigenen QGIS-Capture-Modus mit Live-Vorschau und dynamischer Breite per Option/Alt (macOS) bzw. Alt/Strg+Mausrad (Windows/Linux) oder Eingabefeld. Beim Speichern im aktiven Layer wird das definierte QGIS-Attributformular geoeffnet. Der alte Linienmodus ueber das Werkzeug Linienobjekt hinzufuegen bleibt optional erhalten.
 tracker=
 repository=
 category=Vector

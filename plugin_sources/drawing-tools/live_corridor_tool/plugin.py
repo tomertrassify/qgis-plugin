@@ -27,6 +27,7 @@ from qgis.core import (
     QgsCoordinateTransform,
     QgsFeature,
     QgsGeometry,
+    QgsPointXY,
     QgsProject,
     QgsUnitTypes,
     QgsVectorLayer,
@@ -38,6 +39,74 @@ try:
     from qgis.gui import QgsMapToolCapture
 except Exception:
     QgsMapToolCapture = None
+
+
+if QgsMapToolCapture:
+
+    class BoxOnlyCaptureTool(QgsMapToolCapture):
+        """Dedicated capture tool for native-feeling box-only digitizing."""
+
+        def __init__(self, plugin):
+            self.plugin = plugin
+            cad_dock_widget = None
+            cad_getter = getattr(plugin.iface, "cadDockWidget", None)
+            if callable(cad_getter):
+                try:
+                    cad_dock_widget = cad_getter()
+                except Exception:
+                    cad_dock_widget = None
+            super().__init__(
+                plugin.canvas,
+                cad_dock_widget,
+                QgsMapToolCapture.CaptureLine,
+            )
+
+        def activate(self):
+            super().activate()
+            self.plugin._update_box_capture_preview(self.captured_points(), None)
+
+        def deactivate(self):
+            self.plugin._clear_preview_graphics()
+            super().deactivate()
+
+        def cadCanvasMoveEvent(self, event):
+            super().cadCanvasMoveEvent(event)
+            moving_point = event.mapPoint() if event is not None else None
+            self.plugin._update_box_capture_preview(
+                self.captured_points(),
+                moving_point,
+            )
+
+        def cadCanvasReleaseEvent(self, event):
+            super().cadCanvasReleaseEvent(event)
+            if event is not None and event.button() == Qt.RightButton and not self.isCapturing():
+                self.plugin._update_box_capture_preview([], None)
+                return
+            self.plugin._update_box_capture_preview(self.captured_points(), None)
+
+        def keyPressEvent(self, event):
+            key = event.key() if event is not None else None
+            super().keyPressEvent(event)
+            if key in (Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter) and not self.isCapturing():
+                self.plugin._update_box_capture_preview([], None)
+                return
+            self.plugin._update_box_capture_preview(self.captured_points(), None)
+
+        def lineCaptured(self, line):
+            geometry = None
+            if line is not None:
+                try:
+                    geometry = QgsGeometry(line.clone())
+                except Exception:
+                    geometry = None
+            self.plugin._handle_box_capture_finished(
+                geometry,
+                self.captured_points(),
+            )
+            self.plugin._update_box_capture_preview([], None)
+
+        def captured_points(self):
+            return [QgsPointXY(point.x(), point.y()) for point in self.pointsZM()]
 
 
 class LiveCorridorPlugin(QObject):
@@ -78,6 +147,8 @@ class LiveCorridorPlugin(QObject):
         self._internal_map_tool_switch = False
         self._toggle_icon_enabled = None
         self._toggle_icon_disabled = None
+        self.box_capture_tool = None
+        self.previous_map_tool = None
 
         # Toggle state (ON/OFF)
         self.enabled = False
@@ -99,7 +170,7 @@ class LiveCorridorPlugin(QObject):
         self._wheel_delta_buffer = 0
 
         # Output behavior
-        self.box_only_mode = False
+        self.box_only_mode = True
         self.output_mode = self.OUTPUT_ACTIVE_LAYER
         self.temp_geom_mode = self.TEMP_GEOM_LINE
 
@@ -188,13 +259,15 @@ class LiveCorridorPlugin(QObject):
         width_status_label = self.width_status_label
         owns_toolbar = self.owns_toolbar
 
+        self._disable_listener(finalize_segment=False)
+
         self.toolbar = None
         self.owns_toolbar = False
         self.action = None
         self.settings_action = None
         self.width_status_label = None
-
-        self._disable_listener(finalize_segment=False)
+        self.box_capture_tool = None
+        self.previous_map_tool = None
 
         if self.canvas:
             try:
@@ -364,6 +437,12 @@ class LiveCorridorPlugin(QObject):
             )
             return False
 
+        if self.box_only_mode and not self._supports_box_only_capture():
+            self._reject_enable(
+                "Der Nur-Box-Modus braucht eine aktuelle QGIS-Capture-Umgebung."
+            )
+            return False
+
         self.enabled = True
         self.segment_layer = source_layer
 
@@ -389,8 +468,14 @@ class LiveCorridorPlugin(QObject):
             self._update_toggle_action_availability()
             return
 
+        if finalize_segment and self.box_only_mode:
+            self._sync_segment_points_from_box_tool()
+
         if finalize_segment:
             self._finalize_active_segment()
+
+        if self.box_only_mode:
+            self._deactivate_box_only_map_tool()
 
         self.enabled = False
         self.segment_points = []
@@ -407,9 +492,10 @@ class LiveCorridorPlugin(QObject):
 
     def _on_map_tool_set(self, *args):
         del args
+        current_tool = self.canvas.mapTool() if self.canvas else None
         if self._internal_map_tool_switch:
             self._internal_map_tool_switch = False
-        elif self.enabled and self.box_only_mode:
+        elif self.enabled and self.box_only_mode and current_tool != self.box_capture_tool:
             self._disable_listener(finalize_segment=True)
             self._set_toggle_checked(False)
         self._reset_capture_state()
@@ -424,6 +510,8 @@ class LiveCorridorPlugin(QObject):
         self._update_toggle_action_availability()
 
     def _handle_mouse_press(self, event):
+        if self._is_box_capture_tool_active():
+            return False
         if not self._is_line_capture_context_active():
             return False
 
@@ -457,6 +545,8 @@ class LiveCorridorPlugin(QObject):
         return False
 
     def _handle_mouse_move(self, event):
+        if self._is_box_capture_tool_active():
+            return
         if not self.enabled:
             return
         if not self.segment_points:
@@ -511,16 +601,48 @@ class LiveCorridorPlugin(QObject):
         return True
 
     def _activate_box_only_map_tool(self):
-        pan_getter = getattr(self.iface, "actionPan", None)
-        if not callable(pan_getter):
+        tool = self._ensure_box_capture_tool()
+        if not tool or not self.canvas:
             return
+
+        current_tool = self.canvas.mapTool()
+        if current_tool != tool:
+            self.previous_map_tool = current_tool
+
+        self._internal_map_tool_switch = True
         try:
-            pan_action = pan_getter()
-            if pan_action:
-                self._internal_map_tool_switch = True
-                pan_action.trigger()
+            self.canvas.setMapTool(tool)
         except Exception:
             pass
+
+    def _deactivate_box_only_map_tool(self):
+        tool = self.box_capture_tool
+        if not tool:
+            return
+
+        if self.canvas and self.canvas.mapTool() == tool:
+            restore_tool = self.previous_map_tool
+            self._internal_map_tool_switch = True
+            try:
+                if restore_tool and restore_tool != tool:
+                    self.canvas.setMapTool(restore_tool)
+                else:
+                    pan_getter = getattr(self.iface, "actionPan", None)
+                    pan_action = pan_getter() if callable(pan_getter) else None
+                    if pan_action:
+                        pan_action.trigger()
+            except Exception:
+                pass
+
+        self.previous_map_tool = None
+
+        try:
+            tool.clean()
+        except Exception:
+            try:
+                tool.clearCurve()
+            except Exception:
+                pass
 
     def _set_toggle_checked(self, checked):
         if not self.action:
@@ -546,14 +668,20 @@ class LiveCorridorPlugin(QObject):
             return
 
         layer_ok = self._active_line_layer(require_editable=True) is not None
-        tool_ok = self.box_only_mode or self._is_add_line_map_tool_active()
+        tool_ok = (
+            self._supports_box_only_capture()
+            if self.box_only_mode
+            else self._is_add_line_map_tool_active()
+        )
         allowed = layer_ok and tool_ok
         self._set_toggle_action_enabled(allowed)
 
         if not layer_ok:
             self.action.setStatusTip("Aktiver Linienlayer im Bearbeitungsmodus erforderlich.")
         elif not tool_ok:
-            self.action.setStatusTip("Nur im Werkzeug 'Linienobjekt hinzufügen' aktivierbar.")
+            self.action.setStatusTip(
+                "Nur-Box braucht den QGIS-Capture-Modus, Linienmodus das Werkzeug 'Linienobjekt hinzufügen'."
+            )
         else:
             self.action.setStatusTip("Schutzrohr-Toggle ein/aus")
 
@@ -645,8 +773,7 @@ class LiveCorridorPlugin(QObject):
         self.corridor_half_width_meters = new_half_width
         self._save_settings()
 
-        if self.segment_points:
-            self._refresh_preview(self.last_mouse_map_point)
+        self._refresh_active_preview()
 
         self._show_width_feedback()
 
@@ -731,7 +858,7 @@ class LiveCorridorPlugin(QObject):
         mode_layout.addLayout(temp_geom_form)
 
         hint_label = QLabel(
-            "Nur-Box-Modus blockiert während Toggle AN die native Linienerzeugung.",
+            "Nur-Box nutzt ein eigenes Capture-Werkzeug mit QGIS-Snapping und öffnet beim Speichern das Layer-Formular.",
             mode_group,
         )
         hint_label.setWordWrap(True)
@@ -774,10 +901,11 @@ class LiveCorridorPlugin(QObject):
         self._show_width_feedback()
         self._update_toggle_action_availability()
 
-        if self.segment_points:
-            self._refresh_preview(self.last_mouse_map_point)
+        self._refresh_active_preview()
 
     def _handle_key_press(self, event):
+        if self._is_box_capture_tool_active():
+            return False
         if not self._is_line_capture_context_active():
             return False
 
@@ -826,14 +954,17 @@ class LiveCorridorPlugin(QObject):
         if not self._same_point(self.segment_points[-1], point):
             self.segment_points.append(point)
 
-    def _refresh_preview(self, moving_point=None):
-        points = list(self.segment_points)
+    def _refresh_preview(self, moving_point=None, points_override=None):
+        points = list(points_override if points_override is not None else self.segment_points)
         if moving_point is not None:
             if not points or not self._same_point(points[-1], moving_point):
                 points.append(moving_point)
 
         self.preview_line_rubber.reset(QgsWkbTypes.LineGeometry)
-        if len(points) >= 2:
+        show_line_preview = not (
+            self.enabled and self.box_only_mode and self._is_box_capture_tool_active()
+        )
+        if show_line_preview and len(points) >= 2:
             line_geom = QgsGeometry.fromPolylineXY(points)
             self.preview_line_rubber.setToGeometry(line_geom, None)
             self.preview_line_rubber.show()
@@ -849,13 +980,48 @@ class LiveCorridorPlugin(QObject):
             self.preview_corridor_rubber.setToGeometry(corridor_polygon, None)
             self.preview_corridor_rubber.show()
 
+    def _refresh_active_preview(self):
+        if self.enabled and self._is_box_capture_tool_active():
+            tool = self.box_capture_tool
+            if tool:
+                self._refresh_preview(
+                    self.last_mouse_map_point,
+                    points_override=tool.captured_points(),
+                )
+                return
+
+        if self.segment_points:
+            self._refresh_preview(self.last_mouse_map_point)
+            return
+
+        self._clear_preview_graphics()
+
+    def _update_box_capture_preview(self, captured_points, moving_point=None):
+        self.last_mouse_map_point = moving_point
+        if not captured_points:
+            self._clear_preview_graphics()
+            return
+        self._refresh_preview(
+            moving_point,
+            points_override=captured_points,
+        )
+
+    def _handle_box_capture_finished(self, line_geom, captured_points):
+        self.segment_points = list(captured_points or [])
+        self.segment_layer = self._active_line_layer(
+            require_editable=self._requires_editable_source_layer()
+        )
+        self.last_mouse_map_point = None
+        self._finalize_active_segment(line_geom_override=line_geom)
+
     def _finalize_segment_and_reset_capture(self):
         if self.enabled:
             self._finalize_active_segment()
         self._reset_capture_state()
 
-    def _finalize_active_segment(self):
-        if len(self.segment_points) < 2:
+    def _finalize_active_segment(self, line_geom_override=None):
+        has_line_override = bool(line_geom_override and not line_geom_override.isEmpty())
+        if len(self.segment_points) < 2 and not has_line_override:
             self.segment_points = []
             self.segment_layer = None
             self._clear_preview_graphics()
@@ -881,7 +1047,11 @@ class LiveCorridorPlugin(QObject):
             self._clear_preview_graphics()
             return
 
-        line_geom = QgsGeometry.fromPolylineXY(self.segment_points)
+        line_geom = (
+            QgsGeometry(line_geom_override)
+            if has_line_override
+            else QgsGeometry.fromPolylineXY(self.segment_points)
+        )
         corridor_polygon = self._build_corridor_polygon(line_geom, source_line_layer.crs())
         if not corridor_polygon or corridor_polygon.isEmpty():
             self.iface.messageBar().pushWarning(
@@ -913,19 +1083,28 @@ class LiveCorridorPlugin(QObject):
             return
 
         any_saved = False
-        box_features = self._build_features(box_layer, box_geometries)
-        if box_features:
-            if self._add_features_to_layer(box_layer, box_features):
+        if self.output_mode == self.OUTPUT_ACTIVE_LAYER:
+            for geometry in box_geometries:
+                if self._add_active_layer_geometry(box_layer, geometry):
+                    any_saved = True
+                else:
+                    self.iface.messageBar().pushWarning(
+                        "Schutzrohr",
+                        "Box konnte nicht gespeichert werden. Prüfe den Ziellayer auf Pflichtfelder oder Constraints.",
+                    )
+        else:
+            box_features = self._build_features(box_layer, box_geometries)
+            if box_features and self._add_features_to_layer(box_layer, box_features):
                 any_saved = True
-            else:
+            elif box_features:
                 self.iface.messageBar().pushWarning(
                     "Schutzrohr",
                     "Box konnte nicht gespeichert werden. Prüfe den Ziellayer auf Pflichtfelder oder Constraints.",
                 )
-        else:
-            self.iface.messageBar().pushWarning(
-                "Schutzrohr", "Keine gültige Box-Geometrie zum Speichern vorhanden."
-            )
+            else:
+                self.iface.messageBar().pushWarning(
+                    "Schutzrohr", "Keine gültige Box-Geometrie zum Speichern vorhanden."
+                )
 
         if not any_saved:
             self.iface.messageBar().pushWarning(
@@ -963,7 +1142,7 @@ class LiveCorridorPlugin(QObject):
             return False
 
         if self.enabled and self.box_only_mode:
-            return True
+            return self._is_box_capture_tool_active()
 
         return self._is_add_line_map_tool_active()
 
@@ -1188,6 +1367,76 @@ class LiveCorridorPlugin(QObject):
         except Exception:
             return None
 
+    def _ensure_box_capture_tool(self):
+        if self.box_capture_tool is None and self._supports_box_only_capture():
+            self.box_capture_tool = BoxOnlyCaptureTool(self)
+        return self.box_capture_tool
+
+    @staticmethod
+    def _supports_box_only_capture():
+        return QgsMapToolCapture is not None
+
+    def _is_box_capture_tool_active(self):
+        return bool(
+            self.canvas
+            and self.box_capture_tool
+            and self.canvas.mapTool() == self.box_capture_tool
+        )
+
+    def _sync_segment_points_from_box_tool(self):
+        if not self.box_only_mode:
+            return
+        tool = self.box_capture_tool
+        if not tool:
+            return
+        self.segment_points = list(tool.captured_points())
+        self.segment_layer = self._active_line_layer(
+            require_editable=self._requires_editable_source_layer()
+        )
+
+    def _add_active_layer_geometry(self, layer, geometry):
+        if not layer or not geometry or geometry.isEmpty():
+            return False
+
+        vector_layer_tools = None
+        tools_getter = getattr(self.iface, "vectorLayerTools", None)
+        if callable(tools_getter):
+            try:
+                vector_layer_tools = tools_getter()
+            except Exception:
+                vector_layer_tools = None
+
+        if vector_layer_tools is not None:
+            try:
+                result = vector_layer_tools.addFeature(
+                    layer,
+                    {},
+                    QgsGeometry(geometry),
+                    self.iface.mainWindow(),
+                    False,
+                    False,
+                )
+                success = result[0] if isinstance(result, tuple) else bool(result)
+                if success:
+                    layer.updateExtents()
+                    layer.triggerRepaint()
+                    return True
+            except Exception:
+                pass
+
+        features = self._build_features(layer, [geometry])
+        if not features:
+            return False
+
+        if not self._add_features_to_layer(layer, features):
+            return False
+
+        try:
+            self.iface.openFeatureForm(layer, features[0], False)
+        except Exception:
+            pass
+        return True
+
     def _resolve_box_layer(self, source_line_layer):
         if self.output_mode == self.OUTPUT_ACTIVE_LAYER:
             return source_line_layer
@@ -1350,17 +1599,15 @@ class LiveCorridorPlugin(QObject):
             )
         )
 
-        legacy_centerline_value = settings.value(
-            self._settings_key("include_centerline"),
-            False,
-        )
-        self.box_only_mode = self._to_bool(
-            settings.value(
-                self._settings_key(self.SETTINGS_BOX_ONLY_MODE),
-                legacy_centerline_value,
-            ),
-            default=False,
-        )
+        box_only_key = self._settings_key(self.SETTINGS_BOX_ONLY_MODE)
+        legacy_key = self._settings_key("include_centerline")
+        if settings.contains(box_only_key):
+            box_only_value = settings.value(box_only_key, True)
+        elif settings.contains(legacy_key):
+            box_only_value = settings.value(legacy_key, True)
+        else:
+            box_only_value = True
+        self.box_only_mode = self._to_bool(box_only_value, default=True)
 
         output_mode = settings.value(
             self._settings_key(self.SETTINGS_OUTPUT_MODE),
