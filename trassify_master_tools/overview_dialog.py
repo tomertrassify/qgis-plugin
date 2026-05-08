@@ -53,8 +53,8 @@ class MasterOverviewDialog(QDialog):
         self.setObjectName("masterOverviewDialog")
         self.setWindowTitle("Erweiterungen | Katalog")
         self.setWindowIcon(QIcon(str(plugin_controller.plugin_dir / "icon.svg")))
-        self.resize(1320, 820)
-        self.setMinimumSize(1180, 720)
+        self.resize(1260, 780)
+        self.setMinimumSize(1080, 680)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -62,48 +62,17 @@ class MasterOverviewDialog(QDialog):
 
         sidebar_frame = QFrame(self)
         sidebar_frame.setObjectName("sidebarFrame")
-        sidebar_frame.setFixedWidth(250)
+        sidebar_frame.setFixedWidth(190)
         sidebar_layout = QVBoxLayout(sidebar_frame)
-        sidebar_layout.setContentsMargins(18, 22, 18, 22)
-        sidebar_layout.setSpacing(16)
-
-        sidebar_brand_layout = QHBoxLayout()
-        sidebar_brand_layout.setSpacing(12)
-        sidebar_layout.addLayout(sidebar_brand_layout)
-
-        sidebar_icon = QLabel(sidebar_frame)
-        sidebar_icon.setFixedSize(42, 42)
-        sidebar_icon.setPixmap(
-            QIcon(str(plugin_controller.plugin_dir / "icon.svg")).pixmap(42, 42)
-        )
-        sidebar_brand_layout.addWidget(sidebar_icon, 0, Qt.AlignTop)
-
-        sidebar_title_layout = QVBoxLayout()
-        sidebar_title_layout.setSpacing(2)
-        sidebar_brand_layout.addLayout(sidebar_title_layout, 1)
-
-        sidebar_eyebrow = QLabel("Trassify", sidebar_frame)
-        sidebar_eyebrow.setObjectName("sidebarEyebrowLabel")
-        sidebar_title_layout.addWidget(sidebar_eyebrow)
-
-        sidebar_title = QLabel("Master-Katalog", sidebar_frame)
-        sidebar_title.setObjectName("sidebarTitleLabel")
-        sidebar_title_layout.addWidget(sidebar_title)
-
-        sidebar_hint = QLabel(
-            "Links wechselst du zwischen den Katalogansichten, aehnlich wie im QuickOSM-Menue.",
-            sidebar_frame,
-        )
-        sidebar_hint.setObjectName("sidebarHintLabel")
-        sidebar_hint.setWordWrap(True)
-        sidebar_layout.addWidget(sidebar_hint)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setSpacing(0)
 
         self.filter_list = QListWidget(sidebar_frame)
         self.filter_list.setObjectName("filterList")
-        self.filter_list.setFixedWidth(190)
-        self.filter_list.setFrameShape(QFrame.NoFrame)
-        self.filter_list.setSpacing(4)
-        self.filter_list.setIconSize(QSize(22, 22))
+        self.filter_list.setFrameShape(QFrame.Box)
+        self.filter_list.setLineWidth(0)
+        self.filter_list.setSpacing(0)
+        self.filter_list.setIconSize(QSize(32, 32))
         self.filter_list.setUniformItemSizes(True)
         self.filter_list.currentItemChanged.connect(self._apply_filters)
         sidebar_layout.addWidget(self.filter_list, 1)
@@ -112,15 +81,15 @@ class MasterOverviewDialog(QDialog):
         workspace_frame = QFrame(self)
         workspace_frame.setObjectName("workspaceFrame")
         workspace_layout = QVBoxLayout(workspace_frame)
-        workspace_layout.setContentsMargins(22, 22, 22, 22)
-        workspace_layout.setSpacing(14)
+        workspace_layout.setContentsMargins(12, 12, 12, 12)
+        workspace_layout.setSpacing(10)
         layout.addWidget(workspace_frame, 1)
 
         header_frame = QFrame(workspace_frame)
         header_frame.setObjectName("headerFrame")
         header_layout = QVBoxLayout(header_frame)
-        header_layout.setContentsMargins(18, 18, 18, 18)
-        header_layout.setSpacing(14)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(10)
         workspace_layout.addWidget(header_frame)
 
         header_top_layout = QHBoxLayout()
@@ -135,10 +104,7 @@ class MasterOverviewDialog(QDialog):
         workspace_title.setObjectName("workspaceTitleLabel")
         header_text_layout.addWidget(workspace_title)
 
-        workspace_subtitle = QLabel(
-            "Installieren, aktualisieren und verwalten direkt aus dem Mastertool heraus.",
-            header_frame,
-        )
+        workspace_subtitle = QLabel("Verwalten direkt aus dem Mastertool.", header_frame)
         workspace_subtitle.setObjectName("workspaceSubtitleLabel")
         workspace_subtitle.setWordWrap(True)
         header_text_layout.addWidget(workspace_subtitle)
@@ -180,8 +146,8 @@ class MasterOverviewDialog(QDialog):
         module_panel = QFrame(self.content_splitter)
         module_panel.setObjectName("modulePanel")
         module_layout = QVBoxLayout(module_panel)
-        module_layout.setContentsMargins(16, 16, 16, 16)
-        module_layout.setSpacing(12)
+        module_layout.setContentsMargins(0, 0, 0, 0)
+        module_layout.setSpacing(8)
 
         module_header_layout = QHBoxLayout()
         module_header_layout.setSpacing(10)
@@ -219,7 +185,7 @@ class MasterOverviewDialog(QDialog):
         detail_panel.setObjectName("detailPanel")
         detail_panel.setMinimumWidth(420)
         detail_layout = QVBoxLayout(detail_panel)
-        detail_layout.setContentsMargins(18, 18, 18, 18)
+        detail_layout.setContentsMargins(12, 12, 12, 12)
         detail_layout.setSpacing(12)
 
         header_layout = QHBoxLayout()
@@ -304,7 +270,7 @@ class MasterOverviewDialog(QDialog):
         footer_frame = QFrame(workspace_frame)
         footer_frame.setObjectName("footerFrame")
         actions_layout = QHBoxLayout(footer_frame)
-        actions_layout.setContentsMargins(18, 14, 18, 14)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(8)
         workspace_layout.addWidget(footer_frame)
 
@@ -372,47 +338,30 @@ class MasterOverviewDialog(QDialog):
         self.setStyleSheet(
             """
             QDialog#masterOverviewDialog {
-                background: #ebe6dc;
-                color: #253024;
+                background: palette(window);
+                color: palette(window-text);
             }
             QFrame#sidebarFrame {
-                background: #687362;
-            }
-            QLabel#sidebarEyebrowLabel {
-                color: rgba(255, 255, 255, 0.72);
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 0.12em;
-                text-transform: uppercase;
-            }
-            QLabel#sidebarTitleLabel {
-                color: #fbf8f1;
-                font-size: 23px;
-                font-weight: 700;
-            }
-            QLabel#sidebarHintLabel {
-                color: rgba(255, 255, 255, 0.88);
-                line-height: 1.35em;
+                background: #8f8f8f;
+                border-right: 1px solid palette(mid);
             }
             QListWidget#filterList {
-                background: transparent;
+                background: #8f8f8f;
                 border: none;
                 outline: 0;
-                color: #f9f5ec;
+                color: white;
                 padding: 0;
             }
             QListWidget#filterList::item {
-                border-radius: 12px;
-                padding: 10px 12px;
-                margin: 2px 0;
+                padding: 8px 6px;
+                margin: 0;
             }
             QListWidget#filterList::item:hover {
-                background: rgba(255, 255, 255, 0.12);
+                background: #9a9a9a;
             }
             QListWidget#filterList::item:selected {
-                background: #fbf8f1;
-                color: #253024;
-                padding-right: 12px;
+                background: palette(window);
+                color: palette(window-text);
             }
             QFrame#workspaceFrame {
                 background: transparent;
@@ -421,120 +370,42 @@ class MasterOverviewDialog(QDialog):
             QFrame#modulePanel,
             QFrame#detailPanel,
             QFrame#footerFrame {
-                background: #fffdf8;
-                border: 1px solid #d8cfbf;
-                border-radius: 18px;
+                background: transparent;
+                border: none;
             }
             QLabel#workspaceTitleLabel {
-                color: #253024;
-                font-size: 25px;
+                color: palette(window-text);
+                font-size: 17px;
                 font-weight: 700;
             }
             QLabel#workspaceSubtitleLabel,
             QLabel#resultsSummaryLabel,
             QLabel#statusFilterLabel,
             QLabel#detailAboutLabel {
-                color: #617060;
+                color: palette(mid);
             }
             QLabel#catalogCountBadge {
-                min-width: 90px;
-                padding: 8px 12px;
-                background: #e8e0d2;
-                color: #3f4d3e;
-                border: 1px solid #d6ccb9;
-                border-radius: 999px;
+                color: palette(mid);
                 font-weight: 700;
             }
             QLabel#sectionTitleLabel,
             QLabel#detailDescriptionLabel {
-                color: #314030;
-                font-size: 16px;
+                color: palette(window-text);
+                font-size: 13px;
                 font-weight: 700;
             }
             QLabel#detailTitleLabel {
-                color: #253024;
+                color: palette(window-text);
             }
             QLabel#detailStatusLabel {
-                color: #3c493b;
-                background: #f5f0e6;
-                border: 1px solid #dfd3bf;
-                border-radius: 12px;
-                padding: 10px 12px;
-            }
-            QLineEdit#searchField,
-            QComboBox#statusFilter {
-                background: #f8f3ea;
-                color: #253024;
-                border: 1px solid #d8cfbf;
-                border-radius: 10px;
-                padding: 8px 12px;
-            }
-            QLineEdit#searchField:focus,
-            QComboBox#statusFilter:focus {
-                border-color: #8a9a82;
-            }
-            QComboBox#statusFilter::drop-down {
-                border: none;
-                width: 24px;
-            }
-            QTreeWidget#moduleList {
-                background: transparent;
-                border: none;
-                outline: 0;
-                alternate-background-color: #faf5ec;
-            }
-            QTreeWidget#moduleList::item {
-                border-bottom: 1px solid #efe6d8;
-                padding: 10px 8px;
-            }
-            QTreeWidget#moduleList::item:hover {
-                background: #f5efe4;
-            }
-            QTreeWidget#moduleList::item:selected {
-                background: #ece4d5;
-                color: #253024;
+                color: palette(window-text);
             }
             QHeaderView::section {
                 background: transparent;
                 border: none;
             }
             QSplitter::handle {
-                background: #ddd5c7;
-            }
-            QPushButton,
-            QDialogButtonBox QPushButton,
-            QToolButton#favoriteButton {
-                background: #f8f3ea;
-                color: #253024;
-                border: 1px solid #d8cfbf;
-                border-radius: 10px;
-                padding: 8px 14px;
-            }
-            QPushButton:hover,
-            QDialogButtonBox QPushButton:hover,
-            QToolButton#favoriteButton:hover {
-                background: #f0e7d8;
-            }
-            QPushButton#primaryButton {
-                background: #4f634c;
-                color: #fffdf8;
-                border-color: #4f634c;
-                font-weight: 700;
-            }
-            QPushButton#primaryButton:hover {
-                background: #42553f;
-            }
-            QPushButton#secondaryButton {
-                background: #fffdf8;
-                color: #8a4f1e;
-                border-color: #d8c3ad;
-                font-weight: 700;
-            }
-            QPushButton#secondaryButton:hover {
-                background: #fbf4ea;
-            }
-            QToolButton#favoriteButton {
-                padding: 0;
+                background: palette(midlight);
             }
             """
         )
@@ -560,9 +431,10 @@ class MasterOverviewDialog(QDialog):
         fallback_item = None
 
         for filter_key, label, icon_role in self.FILTERS:
-            item = QListWidgetItem(style.standardIcon(icon_role), f"{label} ({counts[filter_key]})")
+            item = QListWidgetItem(style.standardIcon(icon_role), label)
             item.setData(Qt.UserRole, filter_key)
-            item.setSizeHint(QSize(0, 44))
+            item.setToolTip(f"{label}: {counts[filter_key]} Module")
+            item.setSizeHint(QSize(0, 54))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
                 fallback_item = item
