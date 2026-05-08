@@ -50,54 +50,161 @@ class MasterOverviewDialog(QDialog):
         self._rows_by_key = {}
         self._all_rows = []
 
+        self.setObjectName("masterOverviewDialog")
         self.setWindowTitle("Erweiterungen | Katalog")
         self.setWindowIcon(QIcon(str(plugin_controller.plugin_dir / "icon.svg")))
-        self.resize(1240, 760)
+        self.resize(1320, 820)
+        self.setMinimumSize(1180, 720)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        sidebar_frame = QFrame(self)
+        sidebar_frame.setObjectName("sidebarFrame")
+        sidebar_frame.setFixedWidth(250)
+        sidebar_layout = QVBoxLayout(sidebar_frame)
+        sidebar_layout.setContentsMargins(18, 22, 18, 22)
+        sidebar_layout.setSpacing(16)
+
+        sidebar_brand_layout = QHBoxLayout()
+        sidebar_brand_layout.setSpacing(12)
+        sidebar_layout.addLayout(sidebar_brand_layout)
+
+        sidebar_icon = QLabel(sidebar_frame)
+        sidebar_icon.setFixedSize(42, 42)
+        sidebar_icon.setPixmap(
+            QIcon(str(plugin_controller.plugin_dir / "icon.svg")).pixmap(42, 42)
+        )
+        sidebar_brand_layout.addWidget(sidebar_icon, 0, Qt.AlignTop)
+
+        sidebar_title_layout = QVBoxLayout()
+        sidebar_title_layout.setSpacing(2)
+        sidebar_brand_layout.addLayout(sidebar_title_layout, 1)
+
+        sidebar_eyebrow = QLabel("Trassify", sidebar_frame)
+        sidebar_eyebrow.setObjectName("sidebarEyebrowLabel")
+        sidebar_title_layout.addWidget(sidebar_eyebrow)
+
+        sidebar_title = QLabel("Master-Katalog", sidebar_frame)
+        sidebar_title.setObjectName("sidebarTitleLabel")
+        sidebar_title_layout.addWidget(sidebar_title)
+
+        sidebar_hint = QLabel(
+            "Links wechselst du zwischen den Katalogansichten, aehnlich wie im QuickOSM-Menue.",
+            sidebar_frame,
+        )
+        sidebar_hint.setObjectName("sidebarHintLabel")
+        sidebar_hint.setWordWrap(True)
+        sidebar_layout.addWidget(sidebar_hint)
+
+        self.filter_list = QListWidget(sidebar_frame)
+        self.filter_list.setObjectName("filterList")
+        self.filter_list.setFixedWidth(190)
+        self.filter_list.setFrameShape(QFrame.NoFrame)
+        self.filter_list.setSpacing(4)
+        self.filter_list.setIconSize(QSize(22, 22))
+        self.filter_list.setUniformItemSizes(True)
+        self.filter_list.currentItemChanged.connect(self._apply_filters)
+        sidebar_layout.addWidget(self.filter_list, 1)
+        layout.addWidget(sidebar_frame)
+
+        workspace_frame = QFrame(self)
+        workspace_frame.setObjectName("workspaceFrame")
+        workspace_layout = QVBoxLayout(workspace_frame)
+        workspace_layout.setContentsMargins(22, 22, 22, 22)
+        workspace_layout.setSpacing(14)
+        layout.addWidget(workspace_frame, 1)
+
+        header_frame = QFrame(workspace_frame)
+        header_frame.setObjectName("headerFrame")
+        header_layout = QVBoxLayout(header_frame)
+        header_layout.setContentsMargins(18, 18, 18, 18)
+        header_layout.setSpacing(14)
+        workspace_layout.addWidget(header_frame)
+
+        header_top_layout = QHBoxLayout()
+        header_top_layout.setSpacing(12)
+        header_layout.addLayout(header_top_layout)
+
+        header_text_layout = QVBoxLayout()
+        header_text_layout.setSpacing(4)
+        header_top_layout.addLayout(header_text_layout, 1)
+
+        workspace_title = QLabel("Plugin-Katalog", header_frame)
+        workspace_title.setObjectName("workspaceTitleLabel")
+        header_text_layout.addWidget(workspace_title)
+
+        workspace_subtitle = QLabel(
+            "Installieren, aktualisieren und verwalten direkt aus dem Mastertool heraus.",
+            header_frame,
+        )
+        workspace_subtitle.setObjectName("workspaceSubtitleLabel")
+        workspace_subtitle.setWordWrap(True)
+        header_text_layout.addWidget(workspace_subtitle)
+
+        self.catalog_count_badge = QLabel("", header_frame)
+        self.catalog_count_badge.setObjectName("catalogCountBadge")
+        self.catalog_count_badge.setAlignment(Qt.AlignCenter)
+        header_top_layout.addWidget(self.catalog_count_badge, 0, Qt.AlignTop)
 
         controls_layout = QHBoxLayout()
         controls_layout.setSpacing(8)
-        layout.addLayout(controls_layout)
+        header_layout.addLayout(controls_layout)
 
-        self.search_field = QLineEdit(self)
-        self.search_field.setPlaceholderText("Suchen...")
+        self.search_field = QLineEdit(header_frame)
+        self.search_field.setObjectName("searchField")
+        self.search_field.setPlaceholderText("Plugins durchsuchen...")
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self._apply_filters)
         controls_layout.addWidget(self.search_field, 1)
 
-        status_label = QLabel("Status", self)
+        status_label = QLabel("Status", header_frame)
+        status_label.setObjectName("statusFilterLabel")
         controls_layout.addWidget(status_label)
 
-        self.status_filter = QComboBox(self)
-        self.status_filter.setMinimumWidth(170)
+        self.status_filter = QComboBox(header_frame)
+        self.status_filter.setObjectName("statusFilter")
+        self.status_filter.setMinimumWidth(190)
         for filter_key, label in self.STATUS_FILTERS:
             self.status_filter.addItem(label, filter_key)
         self.status_filter.currentIndexChanged.connect(self._apply_filters)
         controls_layout.addWidget(self.status_filter)
 
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(8)
-        layout.addLayout(content_layout, 1)
-
-        self.filter_list = QListWidget(self)
-        self.filter_list.setFixedWidth(190)
-        self.filter_list.currentItemChanged.connect(self._apply_filters)
-        content_layout.addWidget(self.filter_list)
-
-        self.content_splitter = QSplitter(Qt.Horizontal, self)
+        self.content_splitter = QSplitter(Qt.Horizontal, workspace_frame)
+        self.content_splitter.setObjectName("contentSplitter")
         self.content_splitter.setChildrenCollapsible(False)
-        content_layout.addWidget(self.content_splitter, 1)
+        self.content_splitter.setHandleWidth(1)
+        workspace_layout.addWidget(self.content_splitter, 1)
 
-        self.module_list = QTreeWidget(self)
+        module_panel = QFrame(self.content_splitter)
+        module_panel.setObjectName("modulePanel")
+        module_layout = QVBoxLayout(module_panel)
+        module_layout.setContentsMargins(16, 16, 16, 16)
+        module_layout.setSpacing(12)
+
+        module_header_layout = QHBoxLayout()
+        module_header_layout.setSpacing(10)
+        module_layout.addLayout(module_header_layout)
+
+        self.module_section_label = QLabel("Alle Module", module_panel)
+        self.module_section_label.setObjectName("sectionTitleLabel")
+        module_header_layout.addWidget(self.module_section_label, 1)
+
+        self.results_summary_label = QLabel("", module_panel)
+        self.results_summary_label.setObjectName("resultsSummaryLabel")
+        self.results_summary_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        module_header_layout.addWidget(self.results_summary_label)
+
+        self.module_list = QTreeWidget(module_panel)
+        self.module_list.setObjectName("moduleList")
         self.module_list.setColumnCount(2)
         self.module_list.setHeaderHidden(True)
         self.module_list.setRootIsDecorated(False)
         self.module_list.setIndentation(0)
         self.module_list.setAlternatingRowColors(True)
         self.module_list.setUniformRowHeights(True)
+        self.module_list.setFrameShape(QFrame.NoFrame)
         self.module_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.module_list.setIconSize(QSize(20, 20))
         self.module_list.header().setStretchLastSection(False)
@@ -105,11 +212,14 @@ class MasterOverviewDialog(QDialog):
         self.module_list.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.module_list.itemSelectionChanged.connect(self._sync_details)
         self.module_list.itemDoubleClicked.connect(self._handle_item_double_click)
-        self.content_splitter.addWidget(self.module_list)
+        module_layout.addWidget(self.module_list, 1)
+        self.content_splitter.addWidget(module_panel)
 
-        detail_panel = QWidget(self)
+        detail_panel = QFrame(self.content_splitter)
+        detail_panel.setObjectName("detailPanel")
+        detail_panel.setMinimumWidth(420)
         detail_layout = QVBoxLayout(detail_panel)
-        detail_layout.setContentsMargins(14, 14, 14, 14)
+        detail_layout.setContentsMargins(18, 18, 18, 18)
         detail_layout.setSpacing(12)
 
         header_layout = QHBoxLayout()
@@ -121,6 +231,7 @@ class MasterOverviewDialog(QDialog):
         header_layout.addLayout(title_layout, 1)
 
         self.title_label = QLabel(detail_panel)
+        self.title_label.setObjectName("detailTitleLabel")
         title_font = QFont(self.font())
         title_font.setPointSize(title_font.pointSize() + 12)
         title_font.setBold(True)
@@ -129,6 +240,7 @@ class MasterOverviewDialog(QDialog):
         title_layout.addWidget(self.title_label)
 
         self.description_label = QLabel(detail_panel)
+        self.description_label.setObjectName("detailDescriptionLabel")
         description_font = QFont(self.font())
         description_font.setPointSize(description_font.pointSize() + 3)
         description_font.setBold(True)
@@ -137,6 +249,7 @@ class MasterOverviewDialog(QDialog):
         title_layout.addWidget(self.description_label)
 
         self.status_label = QLabel(detail_panel)
+        self.status_label.setObjectName("detailStatusLabel")
         self.status_label.setWordWrap(True)
         title_layout.addWidget(self.status_label)
 
@@ -146,6 +259,7 @@ class MasterOverviewDialog(QDialog):
         header_layout.addWidget(self.icon_label, 0, Qt.AlignTop)
 
         self.about_label = QLabel(detail_panel)
+        self.about_label.setObjectName("detailAboutLabel")
         self.about_label.setWordWrap(True)
         self.about_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         detail_layout.addWidget(self.about_label)
@@ -184,24 +298,30 @@ class MasterOverviewDialog(QDialog):
 
         detail_layout.addStretch(1)
         self.content_splitter.addWidget(detail_panel)
-        self.content_splitter.setStretchFactor(0, 4)
-        self.content_splitter.setStretchFactor(1, 7)
+        self.content_splitter.setStretchFactor(0, 5)
+        self.content_splitter.setStretchFactor(1, 6)
 
-        actions_layout = QHBoxLayout()
+        footer_frame = QFrame(workspace_frame)
+        footer_frame.setObjectName("footerFrame")
+        actions_layout = QHBoxLayout(footer_frame)
+        actions_layout.setContentsMargins(18, 14, 18, 14)
         actions_layout.setSpacing(8)
-        layout.addLayout(actions_layout)
+        workspace_layout.addWidget(footer_frame)
 
-        self.refresh_button = QPushButton("Aktualisieren", self)
+        self.refresh_button = QPushButton("Katalog neu laden", footer_frame)
+        self.refresh_button.setObjectName("subtleButton")
         self.refresh_button.clicked.connect(self._refresh_catalog_and_view)
         actions_layout.addWidget(self.refresh_button)
 
-        self.settings_button = QPushButton("Einstellungen", self)
+        self.settings_button = QPushButton("Einstellungen", footer_frame)
+        self.settings_button.setObjectName("subtleButton")
         self.settings_button.clicked.connect(self.plugin_controller.show_settings)
         actions_layout.addWidget(self.settings_button)
 
         actions_layout.addStretch(1)
 
-        self.favorite_button = QToolButton(self)
+        self.favorite_button = QToolButton(footer_frame)
+        self.favorite_button.setObjectName("favoriteButton")
         self.favorite_button.setText("")
         self.favorite_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
         self.favorite_button.setIconSize(QSize(20, 20))
@@ -209,18 +329,25 @@ class MasterOverviewDialog(QDialog):
         self.favorite_button.clicked.connect(self._toggle_selected_favorite)
         actions_layout.addWidget(self.favorite_button)
 
-        self.primary_button = QPushButton("Installieren", self)
+        self.primary_button = QPushButton("Installieren", footer_frame)
+        self.primary_button.setObjectName("primaryButton")
         self.primary_button.clicked.connect(self._run_primary_action)
         actions_layout.addWidget(self.primary_button)
 
-        self.secondary_button = QPushButton("Entfernen", self)
+        self.secondary_button = QPushButton("Entfernen", footer_frame)
+        self.secondary_button.setObjectName("secondaryButton")
         self.secondary_button.clicked.connect(self._run_secondary_action)
         actions_layout.addWidget(self.secondary_button)
 
-        button_box = QDialogButtonBox(QDialogButtonBox.Close, self)
+        button_box = QDialogButtonBox(QDialogButtonBox.Close, footer_frame)
+        button_box.setObjectName("dialogButtonBox")
         button_box.rejected.connect(self.reject)
+        close_button = button_box.button(QDialogButtonBox.Close)
+        if close_button is not None:
+            close_button.setObjectName("subtleButton")
         actions_layout.addWidget(button_box)
 
+        self._apply_window_styling()
         self.refresh()
 
     def refresh(self):
@@ -236,8 +363,180 @@ class MasterOverviewDialog(QDialog):
 
         self._populate_filters()
         self._apply_filters(preferred_key=current_key)
+        self.catalog_count_badge.setText(f"{len(self._all_rows)} Module")
         self.setWindowTitle(
             f"Erweiterungen | Katalog ({len(self._all_rows)})"
+        )
+
+    def _apply_window_styling(self):
+        self.setStyleSheet(
+            """
+            QDialog#masterOverviewDialog {
+                background: #ebe6dc;
+                color: #253024;
+            }
+            QFrame#sidebarFrame {
+                background: #687362;
+            }
+            QLabel#sidebarEyebrowLabel {
+                color: rgba(255, 255, 255, 0.72);
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+            }
+            QLabel#sidebarTitleLabel {
+                color: #fbf8f1;
+                font-size: 23px;
+                font-weight: 700;
+            }
+            QLabel#sidebarHintLabel {
+                color: rgba(255, 255, 255, 0.88);
+                line-height: 1.35em;
+            }
+            QListWidget#filterList {
+                background: transparent;
+                border: none;
+                outline: 0;
+                color: #f9f5ec;
+                padding: 0;
+            }
+            QListWidget#filterList::item {
+                border-radius: 12px;
+                padding: 10px 12px;
+                margin: 2px 0;
+            }
+            QListWidget#filterList::item:hover {
+                background: rgba(255, 255, 255, 0.12);
+            }
+            QListWidget#filterList::item:selected {
+                background: #fbf8f1;
+                color: #253024;
+                padding-right: 12px;
+            }
+            QFrame#workspaceFrame {
+                background: transparent;
+            }
+            QFrame#headerFrame,
+            QFrame#modulePanel,
+            QFrame#detailPanel,
+            QFrame#footerFrame {
+                background: #fffdf8;
+                border: 1px solid #d8cfbf;
+                border-radius: 18px;
+            }
+            QLabel#workspaceTitleLabel {
+                color: #253024;
+                font-size: 25px;
+                font-weight: 700;
+            }
+            QLabel#workspaceSubtitleLabel,
+            QLabel#resultsSummaryLabel,
+            QLabel#statusFilterLabel,
+            QLabel#detailAboutLabel {
+                color: #617060;
+            }
+            QLabel#catalogCountBadge {
+                min-width: 90px;
+                padding: 8px 12px;
+                background: #e8e0d2;
+                color: #3f4d3e;
+                border: 1px solid #d6ccb9;
+                border-radius: 999px;
+                font-weight: 700;
+            }
+            QLabel#sectionTitleLabel,
+            QLabel#detailDescriptionLabel {
+                color: #314030;
+                font-size: 16px;
+                font-weight: 700;
+            }
+            QLabel#detailTitleLabel {
+                color: #253024;
+            }
+            QLabel#detailStatusLabel {
+                color: #3c493b;
+                background: #f5f0e6;
+                border: 1px solid #dfd3bf;
+                border-radius: 12px;
+                padding: 10px 12px;
+            }
+            QLineEdit#searchField,
+            QComboBox#statusFilter {
+                background: #f8f3ea;
+                color: #253024;
+                border: 1px solid #d8cfbf;
+                border-radius: 10px;
+                padding: 8px 12px;
+            }
+            QLineEdit#searchField:focus,
+            QComboBox#statusFilter:focus {
+                border-color: #8a9a82;
+            }
+            QComboBox#statusFilter::drop-down {
+                border: none;
+                width: 24px;
+            }
+            QTreeWidget#moduleList {
+                background: transparent;
+                border: none;
+                outline: 0;
+                alternate-background-color: #faf5ec;
+            }
+            QTreeWidget#moduleList::item {
+                border-bottom: 1px solid #efe6d8;
+                padding: 10px 8px;
+            }
+            QTreeWidget#moduleList::item:hover {
+                background: #f5efe4;
+            }
+            QTreeWidget#moduleList::item:selected {
+                background: #ece4d5;
+                color: #253024;
+            }
+            QHeaderView::section {
+                background: transparent;
+                border: none;
+            }
+            QSplitter::handle {
+                background: #ddd5c7;
+            }
+            QPushButton,
+            QDialogButtonBox QPushButton,
+            QToolButton#favoriteButton {
+                background: #f8f3ea;
+                color: #253024;
+                border: 1px solid #d8cfbf;
+                border-radius: 10px;
+                padding: 8px 14px;
+            }
+            QPushButton:hover,
+            QDialogButtonBox QPushButton:hover,
+            QToolButton#favoriteButton:hover {
+                background: #f0e7d8;
+            }
+            QPushButton#primaryButton {
+                background: #4f634c;
+                color: #fffdf8;
+                border-color: #4f634c;
+                font-weight: 700;
+            }
+            QPushButton#primaryButton:hover {
+                background: #42553f;
+            }
+            QPushButton#secondaryButton {
+                background: #fffdf8;
+                color: #8a4f1e;
+                border-color: #d8c3ad;
+                font-weight: 700;
+            }
+            QPushButton#secondaryButton:hover {
+                background: #fbf4ea;
+            }
+            QToolButton#favoriteButton {
+                padding: 0;
+            }
+            """
         )
 
     def _populate_filters(self):
@@ -263,6 +562,7 @@ class MasterOverviewDialog(QDialog):
         for filter_key, label, icon_role in self.FILTERS:
             item = QListWidgetItem(style.standardIcon(icon_role), f"{label} ({counts[filter_key]})")
             item.setData(Qt.UserRole, filter_key)
+            item.setSizeHint(QSize(0, 44))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
                 fallback_item = item
@@ -299,6 +599,11 @@ class MasterOverviewDialog(QDialog):
             if search_term and not self._matches_search(row, search_term):
                 continue
             visible_rows.append(row)
+
+        self.module_section_label.setText(self._filter_label(filter_key))
+        self.results_summary_label.setText(
+            self._results_summary_text(len(visible_rows), filter_key, status_filter_key)
+        )
 
         for row in visible_rows:
             item = QTreeWidgetItem([row["label"], ""])
@@ -347,6 +652,25 @@ class MasterOverviewDialog(QDialog):
         if filter_key == "all":
             return True
         return row["status_code"] == filter_key
+
+    def _filter_label(self, filter_key):
+        for candidate_key, label, _icon_role in self.FILTERS:
+            if candidate_key == filter_key:
+                return label
+        return "Alle"
+
+    def _status_label(self, status_filter_key):
+        for candidate_key, label in self.STATUS_FILTERS:
+            if candidate_key == status_filter_key:
+                return label
+        return "Alle Stati"
+
+    def _results_summary_text(self, result_count, filter_key, status_filter_key):
+        filter_label = self._filter_label(filter_key)
+        status_label = self._status_label(status_filter_key)
+        if status_filter_key == "all":
+            return f"{result_count} Module | {filter_label}"
+        return f"{result_count} Module | {filter_label} | {status_label}"
 
     def _matches_search(self, row, search_term):
         search_haystack = " ".join(
