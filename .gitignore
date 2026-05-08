@@ -2,6 +2,5 @@
 __pycache__/
 *.py[cod]
 *.zip
-!trassify_master_tools.zip
+!/*.zip
 dist/.build/
-trassify_master_tools/bundled_plugins/

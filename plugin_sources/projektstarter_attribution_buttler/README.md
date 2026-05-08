@@ -11,5 +11,5 @@ Dieses Plugin kombiniert den Projektstarter mit dem AttributionButler in einem e
 Release-Hinweis:
 
 - Die veroeffentlichte QGIS-Installation laeuft ueber `trassify_master_tools`.
-- Fuer Butler-Aenderungen synchronisiert `python3 tools/release_projektstarter_butler.py` die Butler- und Bundle-Version und erzeugt `plugins.xml` plus `trassify_master_tools.zip` neu.
+- Fuer Butler-Aenderungen synchronisiert `python3 tools/release_projektstarter_butler.py` die Butler- und Master-Katalog-Version und erzeugt `plugins.xml` plus die Release-ZIPs neu.
 - Auf GitHub erledigt `.github/workflows/release-projektstarter-butler.yml` diesen Schritt automatisch nach einem Push auf `main`.

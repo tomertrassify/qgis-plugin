@@ -37,9 +37,10 @@ class MasterOverviewDialog(QDialog):
     )
     STATUS_FILTERS = (
         ("all", "Alle Stati"),
-        ("ready", "Bereit"),
-        ("loaded", "Geladen"),
-        ("conflict", "Blockiert"),
+        ("available", "Nicht installiert"),
+        ("installed", "Installiert"),
+        ("active", "Aktiv"),
+        ("update", "Update"),
         ("error", "Fehler"),
     )
 
@@ -49,7 +50,7 @@ class MasterOverviewDialog(QDialog):
         self._rows_by_key = {}
         self._all_rows = []
 
-        self.setWindowTitle("Erweiterungen | Installiert")
+        self.setWindowTitle("Erweiterungen | Katalog")
         self.setWindowIcon(QIcon(str(plugin_controller.plugin_dir / "icon.svg")))
         self.resize(1240, 760)
 
@@ -189,7 +190,7 @@ class MasterOverviewDialog(QDialog):
         layout.addLayout(actions_layout)
 
         self.refresh_button = QPushButton("Aktualisieren", self)
-        self.refresh_button.clicked.connect(self.refresh)
+        self.refresh_button.clicked.connect(self._refresh_catalog_and_view)
         actions_layout.addWidget(self.refresh_button)
 
         self.settings_button = QPushButton("Einstellungen", self)
@@ -206,9 +207,13 @@ class MasterOverviewDialog(QDialog):
         self.favorite_button.clicked.connect(self._toggle_selected_favorite)
         actions_layout.addWidget(self.favorite_button)
 
-        self.load_button = QPushButton("Ausgewaehltes Modul laden", self)
-        self.load_button.clicked.connect(self._load_selected_module)
-        actions_layout.addWidget(self.load_button)
+        self.primary_button = QPushButton("Installieren", self)
+        self.primary_button.clicked.connect(self._run_primary_action)
+        actions_layout.addWidget(self.primary_button)
+
+        self.secondary_button = QPushButton("Entfernen", self)
+        self.secondary_button.clicked.connect(self._run_secondary_action)
+        actions_layout.addWidget(self.secondary_button)
 
         button_box = QDialogButtonBox(QDialogButtonBox.Close, self)
         button_box.rejected.connect(self.reject)
@@ -230,7 +235,7 @@ class MasterOverviewDialog(QDialog):
         self._populate_filters()
         self._apply_filters(preferred_key=current_key)
         self.setWindowTitle(
-            f"Erweiterungen | Installiert ({len(self._all_rows)})"
+            f"Erweiterungen | Katalog ({len(self._all_rows)})"
         )
 
     def _populate_filters(self):
@@ -306,7 +311,7 @@ class MasterOverviewDialog(QDialog):
                 item.setIcon(1, status_icon)
 
             font = item.font(0)
-            if row["status_code"] == "loaded":
+            if row["status_code"] in {"active", "update"}:
                 font.setBold(True)
                 item.setFont(0, font)
 
@@ -369,21 +374,34 @@ class MasterOverviewDialog(QDialog):
         item = self.module_list.currentItem()
         if item is None:
             self._update_favorite_button(None)
-            self.load_button.setEnabled(False)
+            self.primary_button.setEnabled(False)
+            self.secondary_button.setEnabled(False)
+            self.primary_button.setText("Installieren")
+            self.secondary_button.setText("Entfernen")
             return
 
         row = self._rows_by_key.get(item.data(0, Qt.UserRole))
         if row is None:
             self._update_favorite_button(None)
-            self.load_button.setEnabled(False)
+            self.primary_button.setEnabled(False)
+            self.secondary_button.setEnabled(False)
+            self.primary_button.setText("Installieren")
+            self.secondary_button.setText("Entfernen")
             return
 
         self._update_favorite_button(row)
-        self.load_button.setEnabled(row["status_code"] == "ready")
-        if row["tool_type"] == "background":
-            self.load_button.setText("Hintergrundtool laden")
-        else:
-            self.load_button.setText("Ausgewaehltes Modul laden")
+        self.primary_button.setEnabled(
+            self.plugin_controller.can_run_primary_action(row)
+        )
+        self.primary_button.setText(
+            self.plugin_controller.get_primary_action_label(row) or "Aktion"
+        )
+        self.secondary_button.setEnabled(
+            self.plugin_controller.can_run_secondary_action(row)
+        )
+        self.secondary_button.setText(
+            self.plugin_controller.get_secondary_action_label(row) or "Entfernen"
+        )
         self._render_module_details(row)
 
     def _render_empty_state(self, search_term):
@@ -396,7 +414,7 @@ class MasterOverviewDialog(QDialog):
             self.description_label.setText("Der aktuelle Filter enthaelt keine Module.")
         self.status_label.setText("Passe Suche oder Filter an.")
         self.about_label.setText(
-            "Die Trassify-Masteransicht orientiert sich an der nativen QGIS-Erweiterungsliste."
+            "Der Trassify-Masterkatalog orientiert sich an der nativen QGIS-Erweiterungsliste."
         )
         self.category_value.setText("-")
         self.type_value.setText("-")
@@ -428,22 +446,21 @@ class MasterOverviewDialog(QDialog):
             )
         elif row["is_favorite"]:
             favorite_hint = (
-                " Dieses Tool ist als Favorit gespeichert und wird beim Start automatisch geladen, "
-                "damit es in der gemeinsamen Master-Toolbar direkt verfuegbar ist."
+                " Dieses Tool ist als Favorit gespeichert und bleibt als Merkliste im Master-Katalog sichtbar."
             )
 
         if about_text and about_text != row["description"]:
             self.about_label.setText(about_text + favorite_hint)
         elif row["tool_type"] == "background":
             self.about_label.setText(
-                "Dieses Modul ist als Hintergrundtool vorgesehen und wird automatisch geladen, "
-                "damit Kontextmenues oder stille Hilfsfunktionen ohne zusaetzlichen Button verfuegbar sind."
+                "Dieses Modul ist als Hintergrundtool vorgesehen. Nach der Installation kann es bei Bedarf aktiviert werden, "
+                "um Kontextmenues oder stille Hilfsfunktionen bereitzustellen."
                 + favorite_hint
             )
         else:
             self.about_label.setText(
-                "Dieses Modul ist im Master-Plugin enthalten und kann bei Bedarf geladen werden. "
-                "Als Favorit markierte Module werden beim Start automatisch geladen und in die gemeinsame Master-Toolbar eingehaengt."
+                "Dieses Modul wird bei Bedarf separat installiert und erst danach in QGIS aktiviert. "
+                "Nicht installierte Tools bleiben komplett ausserhalb des lokalen Plugin-Ordners."
                 + favorite_hint
             )
 
@@ -490,7 +507,7 @@ class MasterOverviewDialog(QDialog):
             label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         return label
 
-    def _load_selected_module(self):
+    def _run_primary_action(self):
         item = self.module_list.currentItem()
         if item is None:
             return
@@ -499,13 +516,30 @@ class MasterOverviewDialog(QDialog):
         if key is None:
             return
 
-        self.plugin_controller.load_module_by_key(key)
+        self.plugin_controller.run_primary_action_by_key(key)
+        self.refresh()
+
+    def _run_secondary_action(self):
+        item = self.module_list.currentItem()
+        if item is None:
+            return
+
+        key = item.data(0, Qt.UserRole)
+        if key is None:
+            return
+
+        self.plugin_controller.run_secondary_action_by_key(key)
         self.refresh()
 
     def _handle_item_double_click(self, item, _column):
-        if item.data(0, Qt.UserRole + 1) != "ready":
+        row = self._rows_by_key.get(item.data(0, Qt.UserRole))
+        if row is None or not self.plugin_controller.can_run_primary_action(row):
             return
-        self._load_selected_module()
+        self._run_primary_action()
+
+    def _refresh_catalog_and_view(self):
+        self.plugin_controller.refresh_catalog()
+        self.refresh()
 
     def _toggle_selected_favorite(self):
         item = self.module_list.currentItem()
@@ -528,10 +562,8 @@ class MasterOverviewDialog(QDialog):
         )
 
     def _status_icon(self, row):
-        if row["status_code"] != "loaded":
+        if row["status_code"] not in {"active", "update"}:
             return None
-        if row["tool_type"] == "background":
-            return QIcon(row["icon_path"])
         return self._loaded_icon()
 
     def _decorated_module_icon(self, row, size, badge_size):

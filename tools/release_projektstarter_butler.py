@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Synchronisiert die Version von Projektstarter Butler und dem "
-            "veroeffentlichten Master-Bundle und erzeugt die Repository-Artefakte neu."
+            "veroeffentlichten Master-Katalog und erzeugt die Repository-Artefakte neu."
         )
     )
     parser.add_argument(

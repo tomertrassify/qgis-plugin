@@ -2,15 +2,24 @@ from __future__ import annotations
 
 import configparser
 import importlib
+import json
+import re
+import shutil
 import sys
+import tempfile
 import traceback
+import urllib.request
+import xml.etree.ElementTree as ET
+from itertools import zip_longest
 from pathlib import Path
+from zipfile import ZipFile
 
+import qgis.utils as qgis_utils
 from qgis.PyQt import sip
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import QSettings, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar, QToolButton
-from qgis.core import Qgis, QgsMessageLog
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar
+from qgis.core import Qgis, QgsApplication, QgsMessageLog
 
 from .manifest import BACKGROUND_TOOL, BUNDLED_PLUGINS, INTERACTIVE_TOOL
 from .overview_dialog import MasterOverviewDialog
@@ -29,47 +38,28 @@ from .shared_settings import (
 class TrassifyMasterToolsPlugin:
     MENU_TITLE = "Trassify Master Tools"
     OVERVIEW_ACTION_TEXT = "Master-Uebersicht oeffnen"
-    LOAD_ACTION_PREFIX = "Modul laden: "
     TOOLBAR_OBJECT_NAME = "TrassifyMasterToolsToolbar"
-    BUNDLE_MISSING_MESSAGE = (
-        "Gebuendelte Module fehlen in diesem Quell-Checkout. "
-        "Installiere das gebaute ZIP; ./trassify_master_tools/build_zip.sh erstellt es."
-    )
     LOG_TAG = "Trassify Master Tools"
     TOOL_TYPE_LABELS = {
         INTERACTIVE_TOOL: "Normales Tool",
         BACKGROUND_TOOL: "Hintergrundtool",
     }
-    FALLBACK_TOOLBAR_ATTRS_BY_KEY = {
-        "attribution_buttler": ("action_bind",),
-        "export_pro": ("action",),
-        "freehand_raster_georeferencer": ("actionAddLayer", "actionGeoref2PRaster"),
-        "geobasis_loader": ("main_menu",),
-        "layer_fuser": ("action",),
-        "projektstarter": ("action",),
-        "quick_map_services": ("menu", "qms_search_action"),
-        "schutzrohr": ("action",),
-    }
+    CATALOG_RELATIVE_PATH = Path("catalog") / "plugins.json"
+    CATALOG_USER_AGENT = "TrassifyMasterTools/2.0"
 
     def __init__(self, iface):
         self.iface = iface
         self.plugin_dir = Path(__file__).resolve().parent
-        self.bundled_plugins_root = self.plugin_dir / "bundled_plugins"
-        self.interactive_bundled_root = self.bundled_plugins_root / INTERACTIVE_TOOL
-        self.background_bundled_root = self.bundled_plugins_root / BACKGROUND_TOOL
         self.toolbar = None
         self._toolbar_created = False
         self.overview_action = None
         self.overview_dialog = None
-        self.loaded_plugins = []
-        self.load_errors = []
-        self.conflicts = []
-        self.load_actions = {}
-        self.module_toolbar_actions = {}
-        self.toolbar_separator_action = None
-        self._registry_keys = []
-        self._added_import_paths = []
-        self._module_metadata_cache = {}
+        self.module_action_errors: dict[str, str] = {}
+        self.catalog_entries: list[dict] = []
+        self.catalog_entries_by_key: dict[str, dict] = {}
+        self.remote_catalog_by_zip_name: dict[str, dict] = {}
+        self.catalog_plugins_xml_url = ""
+        self.catalog_refresh_error = ""
         stored_favorite_keys = load_favorite_module_keys()
         self.favorite_module_keys = self._sanitize_favorite_module_keys(
             stored_favorite_keys
@@ -83,6 +73,7 @@ class TrassifyMasterToolsPlugin:
     def initGui(self):
         if has_saved_shared_settings():
             self._sync_shared_settings()
+
         self._ensure_toolbar()
 
         self.overview_action = QAction(
@@ -91,94 +82,37 @@ class TrassifyMasterToolsPlugin:
             self.iface.mainWindow(),
         )
         self.overview_action.triggered.connect(self.show_overview)
+        self.iface.addPluginToMenu(self.MENU_TITLE, self.overview_action)
         if self.toolbar is not None:
             self.toolbar.addAction(self.overview_action)
 
-        if not self.bundled_plugins_root.is_dir():
-            self.iface.messageBar().pushMessage(
-                self.MENU_TITLE,
-                self.BUNDLE_MISSING_MESSAGE,
-                level=Qgis.Warning,
-                duration=8,
-            )
-            return
-
-        self._ensure_bundle_import_path()
-        self._create_load_actions()
-        self._refresh_conflicts()
-        background_summary = self._load_background_modules()
-        favorite_summary = self._load_favorite_modules()
-        self._refresh_conflicts()
-        self._rebuild_master_toolbar_actions()
-        self._show_startup_message(background_summary, favorite_summary)
+        self._load_catalog_snapshot()
+        self.refresh_catalog(announce=False)
+        self._show_startup_message()
 
     def unload(self):
         if self._unloaded:
             return
 
         self._unloaded = True
-        try:
-            self._unload_impl()
-        except BaseException as exc:
-            self._log_unload_failure("Master-Plugin", exc)
 
-    def _unload_impl(self):
-        toolbar_ref = self.toolbar
-        toolbar = self._find_master_toolbar() or toolbar_ref
-        overview_dialog = self.overview_dialog
-        overview_action = self.overview_action
-        load_actions = list(self.load_actions.values())
-        loaded_plugins = list(self.loaded_plugins)
-        toolbar_separator_action = self.toolbar_separator_action
-        toolbar_created = self._toolbar_created
+        toolbar = self._find_master_toolbar() or self.toolbar
 
-        self._clear_master_toolbar_actions(toolbar)
-        self.module_toolbar_actions = {}
-        self.toolbar_separator_action = None
+        if self._is_qt_object_alive(self.overview_dialog):
+            self._safe_qt_call(self.overview_dialog.close)
+            self._safe_qt_call(self.overview_dialog.deleteLater)
 
-        for spec, plugin in reversed(loaded_plugins):
-            try:
-                plugin.unload()
-            except Exception:
-                self._log_exception(spec["label"], "Fehler beim Entladen")
+        if self._is_qt_object_alive(self.overview_action):
+            self._safe_qt_call(self.iface.removePluginMenu, self.MENU_TITLE, self.overview_action)
+            if self._is_qt_object_alive(toolbar):
+                self._safe_qt_call(toolbar.removeAction, self.overview_action)
+            self._safe_qt_call(self.overview_action.deleteLater)
 
-        self._unregister_bundled_plugins()
-
-        if self._is_qt_object_alive(overview_dialog):
-            self._safe_qt_call(overview_dialog.close)
-            self._safe_qt_call(overview_dialog.deleteLater)
-
-        if self._is_qt_object_alive(toolbar) and self._is_qt_object_alive(overview_action):
-            self._safe_qt_call(toolbar.removeAction, overview_action)
-        if self._is_qt_object_alive(overview_action):
-            self._safe_qt_call(overview_action.deleteLater)
-
-        if self._is_qt_object_alive(toolbar) and self._is_qt_object_alive(toolbar_separator_action):
-            self._safe_qt_call(toolbar.removeAction, toolbar_separator_action)
-
-        for action in load_actions:
-            if self._is_qt_object_alive(action):
-                self._safe_qt_call(self.iface.removePluginMenu, self.MENU_TITLE, action)
-                self._safe_qt_call(action.deleteLater)
-        self.conflicts.clear()
-
-        if self._is_qt_object_alive(toolbar) and toolbar_created:
+        if self._is_qt_object_alive(toolbar) and self._toolbar_created:
             self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
             self._safe_qt_call(toolbar.deleteLater)
 
-        for path_text in reversed(self._added_import_paths):
-            if path_text in sys.path:
-                sys.path.remove(path_text)
-
     def show_overview(self):
-        if not self.bundled_plugins_root.is_dir():
-            QMessageBox.information(
-                self.iface.mainWindow(),
-                self.MENU_TITLE,
-                self.BUNDLE_MISSING_MESSAGE,
-            )
-            return
-
         if self.overview_dialog is None:
             self.overview_dialog = MasterOverviewDialog(
                 self, self.iface.mainWindow()
@@ -199,7 +133,7 @@ class TrassifyMasterToolsPlugin:
         has_database_uri = bool(build_postgres_ogr_uri(settings))
         message = "Zentrale Einstellungen gespeichert."
         if has_database_uri:
-            message += " Datenbank-URI fuer Master-Module ist verfuegbar."
+            message += " Datenbank-URI fuer kompatible Plugins ist verfuegbar."
 
         self.iface.messageBar().pushMessage(
             self.MENU_TITLE,
@@ -208,120 +142,34 @@ class TrassifyMasterToolsPlugin:
             duration=5,
         )
 
-    def _ensure_bundle_import_path(self):
-        for bundle_root in (
-            self.background_bundled_root,
-            self.interactive_bundled_root,
-        ):
-            if not bundle_root.is_dir():
-                continue
+    def refresh_catalog(self, announce=True):
+        self._load_catalog_snapshot()
+        self._refresh_remote_catalog()
+        self._refresh_ui_state()
 
-            bundle_root_str = str(bundle_root)
-            if bundle_root_str not in sys.path:
-                sys.path.insert(0, bundle_root_str)
-                self._added_import_paths.append(bundle_root_str)
-
-    def _create_load_actions(self):
-        for spec in self._interactive_specs():
-            action = QAction(
-                f"{self.LOAD_ACTION_PREFIX}{spec['label']}",
-                self.iface.mainWindow(),
-            )
-            action.triggered.connect(
-                lambda _checked=False, spec=spec: self._load_single_module(spec)
-            )
-            self.iface.addPluginToMenu(self.MENU_TITLE, action)
-            self.load_actions[spec["key"]] = action
-
-    def _load_background_modules(self):
-        summary = {
-            "loaded": [],
-            "conflicts": [],
-            "errors": [],
-        }
-
-        for spec in self._background_specs():
-            if self._load_single_module(spec, announce=False):
-                summary["loaded"].append(spec["label"])
-                continue
-
-            if self._get_conflict_message(spec):
-                summary["conflicts"].append(spec["label"])
+        if announce:
+            if self.catalog_refresh_error:
+                self.iface.messageBar().pushMessage(
+                    self.MENU_TITLE,
+                    "Katalog aktualisiert, Online-Index ist derzeit nicht erreichbar.",
+                    level=Qgis.Warning,
+                    duration=6,
+                )
             else:
-                summary["errors"].append(spec["label"])
+                self.iface.messageBar().pushMessage(
+                    self.MENU_TITLE,
+                    "Katalog aktualisiert.",
+                    level=Qgis.Info,
+                    duration=4,
+                )
 
-        return summary
+    def get_shared_settings(self):
+        return self._enriched_shared_settings(load_shared_settings())
 
-    def _show_startup_message(self, background_summary, favorite_summary=None):
-        favorite_summary = favorite_summary or {
-            "loaded": [],
-            "conflicts": [],
-            "errors": [],
-        }
-        message_parts = ["Master-Toolbar aktiv."]
-
-        loaded_count = len(background_summary["loaded"])
-        if loaded_count:
-            message_parts.append(
-                f"{loaded_count} Hintergrundtool(s) automatisch aktiv."
-            )
-
-        conflict_count = len(background_summary["conflicts"])
-        if conflict_count:
-            message_parts.append(
-                f"{conflict_count} Hintergrundtool(s) blockiert."
-            )
-
-        error_count = len(background_summary["errors"])
-        if error_count:
-            message_parts.append(
-                f"{error_count} Hintergrundtool(s) mit Fehler."
-            )
-
-        favorite_loaded_count = len(favorite_summary["loaded"])
-        if favorite_loaded_count:
-            message_parts.append(
-                f"{favorite_loaded_count} Favorit(en) automatisch geladen."
-            )
-
-        favorite_conflict_count = len(favorite_summary["conflicts"])
-        if favorite_conflict_count:
-            message_parts.append(
-                f"{favorite_conflict_count} Favorit(en) blockiert."
-            )
-
-        favorite_error_count = len(favorite_summary["errors"])
-        if favorite_error_count:
-            message_parts.append(
-                f"{favorite_error_count} Favorit(en) mit Fehler."
-            )
-
-        has_issues = (
-            conflict_count
-            or error_count
-            or favorite_conflict_count
-            or favorite_error_count
-        )
-        has_activity = (
-            loaded_count
-            or conflict_count
-            or error_count
-            or favorite_loaded_count
-            or favorite_conflict_count
-            or favorite_error_count
-        )
-
-        if not has_activity:
-            message_parts.append(
-                "Einstellungen ueber die Uebersicht oeffnen."
-            )
-
-        self.iface.messageBar().pushMessage(
-            self.MENU_TITLE,
-            " ".join(message_parts),
-            level=Qgis.Warning if has_issues else Qgis.Info,
-            duration=6 if has_issues else 5,
-        )
+    def save_shared_settings(self, config):
+        normalized = self._enriched_shared_settings(save_shared_settings(config))
+        self._sync_shared_settings(normalized)
+        return normalized
 
     def is_favorite(self, key):
         return key in self.favorite_module_keys
@@ -342,694 +190,661 @@ class TrassifyMasterToolsPlugin:
             favorite_keys.append(key)
 
         self.favorite_module_keys = save_favorite_module_keys(favorite_keys)
-        is_now_favorite = key in self.favorite_module_keys
+        self._refresh_ui_state()
+        return key in self.favorite_module_keys
+
+    def get_module_rows(self):
+        self._refresh_available_plugins()
+        return sorted(
+            (self._build_module_row(spec) for spec in BUNDLED_PLUGINS),
+            key=lambda row: row["label"].lower(),
+        )
+
+    def get_primary_action_label(self, row):
+        status_code = row["status_code"]
+        if status_code == "available":
+            return "Installieren"
+        if status_code == "installed":
+            return "Aktivieren"
+        if status_code == "active":
+            return "Deaktivieren"
+        if status_code == "update":
+            return "Aktualisieren"
+        if status_code == "error":
+            return "Erneut versuchen"
+        return ""
+
+    def can_run_primary_action(self, row):
+        return row["status_code"] in {"available", "installed", "active", "update", "error"}
+
+    def get_secondary_action_label(self, row):
+        return "Entfernen" if row.get("can_uninstall") else ""
+
+    def can_run_secondary_action(self, row):
+        return bool(row.get("can_uninstall"))
+
+    def load_module_by_key(self, key):
+        return self.run_primary_action_by_key(key)
+
+    def run_primary_action_by_key(self, key):
         spec = self._spec_by_key(key)
+        if spec is None:
+            return False
 
-        if (
-            is_now_favorite
-            and spec is not None
-            and spec.get("tool_type", INTERACTIVE_TOOL) == INTERACTIVE_TOOL
-            and not self._is_loaded(spec)
-        ):
-            self._load_single_module(spec)
-        else:
-            self._refresh_ui_state()
+        row = self._build_module_row(spec)
+        status_code = row["status_code"]
 
-        return is_now_favorite
+        if status_code in {"available", "error"}:
+            return self._install_or_update_module(spec, activate_after_install=True)
+        if status_code == "installed":
+            return self._activate_installed_module(spec)
+        if status_code == "active":
+            return self._deactivate_installed_module(spec)
+        if status_code == "update":
+            return self._install_or_update_module(
+                spec,
+                activate_after_install=row["is_active"],
+            )
 
-    def _load_single_module(self, spec, announce=True):
-        if self._is_loaded(spec):
-            return True
+        return False
 
-        self._refresh_conflicts()
-        conflict_message = self._get_conflict_message(spec)
-        if conflict_message:
-            self._record_error(spec, conflict_message)
-            if announce:
-                self.iface.messageBar().pushMessage(
-                    self.MENU_TITLE,
-                    f"{spec['label']} ist bereits extern aktiv.",
-                    level=Qgis.Warning,
-                    duration=6,
+    def run_secondary_action_by_key(self, key):
+        spec = self._spec_by_key(key)
+        if spec is None:
+            return False
+
+        row = self._build_module_row(spec)
+        if not row.get("can_uninstall"):
+            return False
+
+        question = QMessageBox.question(
+            self.iface.mainWindow(),
+            self.MENU_TITLE,
+            f"{row['label']} wirklich aus dem lokalen QGIS-Profil entfernen?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if question != QMessageBox.Yes:
+            return False
+
+        return self._uninstall_managed_module(spec)
+
+    def _build_module_row(self, spec):
+        catalog_entry = self._catalog_entry(spec)
+        metadata = catalog_entry.get("metadata", {})
+        local_info = self._inspect_local_plugin(spec)
+
+        label = metadata.get("name") or spec["label"]
+        description = metadata.get("description") or metadata.get("about") or ""
+        about = metadata.get("about") or description
+        catalog_version = (
+            catalog_entry.get("remote_version")
+            or metadata.get("version")
+            or ""
+        )
+        installed_version = local_info["installed_version"]
+        update_available = (
+            local_info["is_managed"]
+            and bool(installed_version and catalog_version)
+            and self._compare_versions(installed_version, catalog_version) < 0
+        )
+
+        status_code = "available"
+        status_text = "Nicht installiert"
+        detail = (
+            f"{label} ist noch nicht installiert und wird erst bei Bedarf heruntergeladen."
+        )
+
+        if local_info["is_installed"]:
+            if update_available:
+                status_code = "update"
+                status_text = "Update verfuegbar"
+                detail = (
+                    f"Installiert: {installed_version or '?'} | "
+                    f"Verfuegbar: {catalog_version or '?'}."
                 )
+                if local_info["is_active"]:
+                    detail += " Das Plugin ist aktuell in QGIS aktiv."
+            elif local_info["is_active"]:
+                status_code = "active"
+                status_text = "Aktiv"
+                detail = (
+                    f"{label} ist installiert und aktuell in QGIS aktiv."
+                )
+            else:
+                status_code = "installed"
+                status_text = "Installiert"
+                detail = (
+                    f"{label} ist installiert, aber aktuell nicht aktiv."
+                )
+
+            if local_info["is_installed"] and not local_info["is_managed"]:
+                detail += " Die Installation liegt ausserhalb des Master-Katalogs."
+
+        error_message = self.module_action_errors.get(spec["key"], "").strip()
+        if error_message:
+            if not local_info["is_installed"]:
+                status_code = "error"
+                status_text = "Fehler"
+                detail = error_message
+            else:
+                detail = f"{detail} Letzter Fehler: {error_message}"
+
+        version_text = catalog_version or "-"
+        if installed_version and installed_version != catalog_version:
+            version_text = f"{installed_version} -> {catalog_version or '?'}"
+        elif installed_version:
+            version_text = installed_version
+
+        return {
+            "key": spec["key"],
+            "label": label,
+            "package": spec["package"],
+            "tool_type": spec.get("tool_type", INTERACTIVE_TOOL),
+            "tool_type_label": self.TOOL_TYPE_LABELS.get(
+                spec.get("tool_type", INTERACTIVE_TOOL),
+                "Tool",
+            ),
+            "status_code": status_code,
+            "status_text": status_text,
+            "detail": detail,
+            "description": description,
+            "about": about,
+            "author": metadata.get("author") or "",
+            "version": version_text,
+            "category": metadata.get("category") or "Plugins",
+            "tags": self._split_tags(metadata.get("tags")),
+            "homepage": metadata.get("homepage") or "",
+            "tracker": metadata.get("tracker") or "",
+            "repository": metadata.get("repository") or "",
+            "is_favorite": self.is_favorite(spec["key"]),
+            "icon_path": self._resolve_module_icon_path(spec, catalog_entry),
+            "is_active": local_info["is_active"],
+            "is_installed": local_info["is_installed"],
+            "is_managed": local_info["is_managed"],
+            "installed_version": installed_version,
+            "catalog_version": catalog_version,
+            "download_url": catalog_entry.get("download_url", ""),
+            "can_uninstall": local_info["is_managed"],
+        }
+
+    def _load_catalog_snapshot(self):
+        snapshot_path = self.plugin_dir / self.CATALOG_RELATIVE_PATH
+        if snapshot_path.is_file():
+            try:
+                payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                modules = payload.get("modules") or []
+                self.catalog_plugins_xml_url = str(payload.get("plugins_xml_url") or "").strip()
+                self.catalog_entries = [
+                    self._normalized_catalog_entry(entry)
+                    for entry in modules
+                ]
+                self.catalog_entries_by_key = {
+                    entry["key"]: entry for entry in self.catalog_entries
+                }
+                return
+            except Exception:
+                QgsMessageLog.logMessage(
+                    f"Katalog-Snapshot konnte nicht gelesen werden:\n{traceback.format_exc().rstrip()}",
+                    self.LOG_TAG,
+                    Qgis.Warning,
+                )
+
+        self.catalog_entries = self._build_dev_catalog_entries()
+        self.catalog_entries_by_key = {
+            entry["key"]: entry for entry in self.catalog_entries
+        }
+        if self.catalog_entries:
+            self.catalog_plugins_xml_url = str(
+                self.catalog_entries[0].get("plugins_xml_url") or ""
+            ).strip()
+
+    def _build_dev_catalog_entries(self):
+        raw_base_url = self._resolve_raw_base_url_from_metadata()
+        plugins_xml_url = f"{raw_base_url}/plugins.xml" if raw_base_url else ""
+        entries = []
+
+        for spec in BUNDLED_PLUGINS:
+            metadata = self._get_module_metadata(spec)
+            entries.append(
+                {
+                    "key": spec["key"],
+                    "label": spec["label"],
+                    "package": spec["package"],
+                    "source_path": spec["source_path"],
+                    "tool_type": spec.get("tool_type", INTERACTIVE_TOOL),
+                    "zip_name": f"{spec['package']}.zip",
+                    "download_url": (
+                        f"{raw_base_url}/{spec['package']}.zip" if raw_base_url else ""
+                    ),
+                    "plugins_xml_url": plugins_xml_url,
+                    "icon_relative_path": "",
+                    "icon_url": "",
+                    "metadata": metadata,
+                }
+            )
+
+        return entries
+
+    def _normalized_catalog_entry(self, entry):
+        return {
+            "key": str(entry.get("key") or "").strip(),
+            "label": str(entry.get("label") or "").strip(),
+            "package": str(entry.get("package") or "").strip(),
+            "source_path": str(entry.get("source_path") or "").strip(),
+            "tool_type": str(entry.get("tool_type") or INTERACTIVE_TOOL).strip(),
+            "zip_name": str(entry.get("zip_name") or "").strip(),
+            "download_url": str(entry.get("download_url") or "").strip(),
+            "plugins_xml_url": str(entry.get("plugins_xml_url") or "").strip(),
+            "icon_relative_path": str(entry.get("icon_relative_path") or "").strip(),
+            "icon_url": str(entry.get("icon_url") or "").strip(),
+            "metadata": dict(entry.get("metadata") or {}),
+        }
+
+    def _catalog_entry(self, spec):
+        entry = dict(self.catalog_entries_by_key.get(spec["key"]) or {})
+        metadata = dict(entry.get("metadata") or {})
+        if not metadata:
+            metadata = self._get_module_metadata(spec)
+            entry["metadata"] = metadata
+
+        remote_entry = self.remote_catalog_by_zip_name.get(entry.get("zip_name", ""))
+        if remote_entry:
+            entry["download_url"] = remote_entry.get("download_url") or entry.get("download_url", "")
+            entry["remote_version"] = remote_entry.get("version", "")
+            entry["remote_icon_url"] = remote_entry.get("icon", "")
+        else:
+            entry["remote_version"] = ""
+            entry["remote_icon_url"] = ""
+
+        return entry
+
+    def _refresh_remote_catalog(self):
+        url = str(self.catalog_plugins_xml_url or "").strip()
+        if not url:
+            self.remote_catalog_by_zip_name = {}
+            self.catalog_refresh_error = ""
+            return
+
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": self.CATALOG_USER_AGENT},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                payload = response.read()
+            self.remote_catalog_by_zip_name = self._parse_remote_plugins_xml(payload)
+            self.catalog_refresh_error = ""
+        except Exception as exc:
+            self.catalog_refresh_error = f"{type(exc).__name__}: {exc}"
+
+    def _parse_remote_plugins_xml(self, payload: bytes):
+        root = ET.fromstring(payload)
+        entries = {}
+
+        for plugin_element in root.findall("pyqgis_plugin"):
+            file_name = self._xml_text(plugin_element, "file_name")
+            if not file_name:
+                continue
+
+            entries[file_name] = {
+                "version": self._xml_text(plugin_element, "version"),
+                "download_url": self._xml_text(plugin_element, "download_url"),
+                "icon": self._xml_text(plugin_element, "icon"),
+                "name": plugin_element.attrib.get("name", ""),
+            }
+
+        return entries
+
+    def _inspect_local_plugin(self, spec):
+        plugin_dir = self._find_installed_plugin_dir(spec["package"])
+        is_managed = False
+        if plugin_dir is not None:
+            try:
+                is_managed = plugin_dir.resolve() == self._managed_plugins_dir().resolve() / spec["package"]
+            except Exception:
+                is_managed = False
+
+        active_plugins = getattr(qgis_utils, "active_plugins", []) or []
+        is_active = spec["package"] in active_plugins
+        if not is_active:
+            checker = getattr(qgis_utils, "isPluginLoaded", None)
+            if callable(checker):
+                try:
+                    is_active = bool(checker(spec["package"]))
+                except Exception:
+                    is_active = False
+
+        installed_version = ""
+        if plugin_dir is not None:
+            installed_version = self._metadata_value(plugin_dir / "metadata.txt", "version")
+
+        return {
+            "plugin_dir": plugin_dir,
+            "is_installed": plugin_dir is not None,
+            "is_managed": is_managed,
+            "is_active": is_active,
+            "installed_version": installed_version,
+        }
+
+    def _install_or_update_module(self, spec, activate_after_install):
+        row = self._build_module_row(spec)
+        if row["is_installed"] and not row["is_managed"]:
+            self._record_error(
+                spec,
+                "Plugin wird ausserhalb des Master-Katalogs verwaltet und wird nicht ueberschrieben.",
+            )
             self._refresh_ui_state()
             return False
 
-        self._purge_bundled_package(spec["package"])
-        plugin = None
-        toolbar_state_before_load = self._capture_toolbar_state()
-        try:
-            module = importlib.import_module(spec["package"])
-            self._inject_master_context(module)
-            factory = getattr(module, "classFactory", None)
-            if factory is None:
-                raise AttributeError(
-                    f"classFactory fehlt in Paket '{spec['package']}'"
-                )
+        download_url = row.get("download_url", "").strip()
+        if not download_url:
+            self._record_error(spec, "Keine Download-URL fuer dieses Plugin verfuegbar.")
+            self._refresh_ui_state()
+            return False
 
-            plugin = factory(self.iface)
-            self._inject_master_context(module, plugin)
-            self._register_bundled_plugin(spec["package"], plugin)
-            plugin.initGui()
-            self._apply_shared_settings_to_plugin(spec, plugin, module)
-            self.module_toolbar_actions[spec["key"]] = self._collect_module_toolbar_actions(
-                spec,
-                plugin,
-                toolbar_state_before_load,
-            )
-            self.loaded_plugins.append((spec, plugin))
+        was_active = bool(row["is_active"])
+
+        try:
+            if was_active:
+                self._deactivate_installed_module(spec, announce=False)
+
+            with tempfile.TemporaryDirectory(prefix="trassify-master-") as temp_dir_text:
+                temp_dir = Path(temp_dir_text)
+                archive_path = temp_dir / "plugin.zip"
+                extract_root = temp_dir / "extract"
+
+                self._download_archive(download_url, archive_path)
+                extracted_plugin_dir = self._extract_plugin_archive(
+                    archive_path,
+                    spec["package"],
+                    extract_root,
+                )
+                self._replace_managed_plugin_dir(spec["package"], extracted_plugin_dir)
+
+            self._set_plugin_enabled_setting(spec["package"], activate_after_install)
+            self._refresh_available_plugins()
+            self._purge_plugin_module_cache(spec["package"])
             self._clear_error(spec)
-            self._disable_load_action(spec)
+
+            if activate_after_install:
+                if not self._activate_installed_module(spec, announce=False):
+                    raise RuntimeError("Plugin wurde installiert, konnte aber nicht aktiviert werden.")
+
+            action_label = "aktualisiert" if row["is_installed"] else "installiert"
+            message = f"{row['label']} wurde {action_label}."
+            if activate_after_install:
+                message += " Das Plugin ist jetzt aktiv."
+
+            self.iface.messageBar().pushMessage(
+                self.MENU_TITLE,
+                message,
+                level=Qgis.Success,
+                duration=5,
+            )
+            self._refresh_ui_state()
+            return True
+        except Exception as exc:
+            if was_active:
+                self._set_plugin_enabled_setting(spec["package"], True)
+                self._activate_installed_module(spec, announce=False)
+
+            self._record_error(spec, f"{type(exc).__name__}: {exc}")
+            self.iface.messageBar().pushMessage(
+                self.MENU_TITLE,
+                f"{row['label']} konnte nicht installiert werden.",
+                level=Qgis.Warning,
+                duration=6,
+            )
+            self._refresh_ui_state()
+            return False
+
+    def _activate_installed_module(self, spec, announce=True):
+        row = self._build_module_row(spec)
+        if row["is_active"]:
+            return True
+        if not row["is_installed"]:
+            return False
+
+        try:
+            self._set_plugin_enabled_setting(spec["package"], True)
+            self._refresh_available_plugins()
+            self._purge_plugin_module_cache(spec["package"])
+
+            if not qgis_utils.loadPlugin(spec["package"]):
+                raise RuntimeError("loadPlugin() hat False geliefert.")
+            if not qgis_utils.startPlugin(spec["package"]):
+                raise RuntimeError("startPlugin() hat False geliefert.")
+
+            self._clear_error(spec)
             if announce:
                 self.iface.messageBar().pushMessage(
                     self.MENU_TITLE,
-                    f"{spec['label']} wurde geladen.",
+                    f"{row['label']} ist jetzt aktiv.",
                     level=Qgis.Info,
                     duration=4,
                 )
             self._refresh_ui_state()
             return True
-        except Exception:
-            self._unregister_bundled_plugin(spec["package"])
-            self._purge_bundled_package(spec["package"])
-            self.module_toolbar_actions.pop(spec["key"], None)
-            self._log_exception(spec["label"], "Fehler beim Laden")
-            self._record_error(spec, self._short_exception_message())
+        except Exception as exc:
+            self._record_error(spec, f"{type(exc).__name__}: {exc}")
             if announce:
                 self.iface.messageBar().pushMessage(
                     self.MENU_TITLE,
-                    f"{spec['label']} konnte nicht geladen werden.",
+                    f"{row['label']} konnte nicht aktiviert werden.",
                     level=Qgis.Warning,
                     duration=6,
                 )
             self._refresh_ui_state()
             return False
 
-    def _register_bundled_plugin(self, package_name, plugin):
+    def _deactivate_installed_module(self, spec, announce=True):
+        row = self._build_module_row(spec)
+        if not row["is_active"]:
+            self._set_plugin_enabled_setting(spec["package"], False)
+            self._refresh_ui_state()
+            return True
+
         try:
-            import qgis.utils as qgis_utils
-        except Exception:
-            return
+            self._set_plugin_enabled_setting(spec["package"], False)
+            if not qgis_utils.unloadPlugin(spec["package"]):
+                raise RuntimeError("unloadPlugin() hat False geliefert.")
+            self._clear_error(spec)
+            if announce:
+                self.iface.messageBar().pushMessage(
+                    self.MENU_TITLE,
+                    f"{row['label']} wurde deaktiviert.",
+                    level=Qgis.Info,
+                    duration=4,
+                )
+            self._refresh_ui_state()
+            return True
+        except Exception as exc:
+            self._record_error(spec, f"{type(exc).__name__}: {exc}")
+            self._set_plugin_enabled_setting(spec["package"], True)
+            if announce:
+                self.iface.messageBar().pushMessage(
+                    self.MENU_TITLE,
+                    f"{row['label']} konnte nicht deaktiviert werden.",
+                    level=Qgis.Warning,
+                    duration=6,
+                )
+            self._refresh_ui_state()
+            return False
 
-        registry = getattr(qgis_utils, "plugins", None)
-        if not isinstance(registry, dict):
-            return
+    def _uninstall_managed_module(self, spec):
+        row = self._build_module_row(spec)
+        if not row["can_uninstall"]:
+            return False
 
-        registry_key = f"bundled:{package_name}"
-        registry[registry_key] = plugin
-        self._registry_keys.append(registry_key)
-
-    def _unregister_bundled_plugin(self, package_name):
-        registry_key = f"bundled:{package_name}"
         try:
-            import qgis.utils as qgis_utils
-        except Exception:
-            return
+            if row["is_active"]:
+                self._deactivate_installed_module(spec, announce=False)
 
-        registry = getattr(qgis_utils, "plugins", None)
-        if isinstance(registry, dict):
-            registry.pop(registry_key, None)
+            plugin_dir = self._managed_plugins_dir() / spec["package"]
+            if plugin_dir.is_dir():
+                shutil.rmtree(plugin_dir)
 
-        if registry_key in self._registry_keys:
-            self._registry_keys.remove(registry_key)
+            self._set_plugin_enabled_setting(spec["package"], False)
+            self._purge_plugin_module_cache(spec["package"])
+            self._refresh_available_plugins()
+            self._clear_error(spec)
 
-    def _unregister_bundled_plugins(self):
+            self.iface.messageBar().pushMessage(
+                self.MENU_TITLE,
+                f"{row['label']} wurde aus dem lokalen Profil entfernt.",
+                level=Qgis.Info,
+                duration=5,
+            )
+            self._refresh_ui_state()
+            return True
+        except Exception as exc:
+            self._record_error(spec, f"{type(exc).__name__}: {exc}")
+            self.iface.messageBar().pushMessage(
+                self.MENU_TITLE,
+                f"{row['label']} konnte nicht entfernt werden.",
+                level=Qgis.Warning,
+                duration=6,
+            )
+            self._refresh_ui_state()
+            return False
+
+    def _download_archive(self, download_url, destination_path):
+        request = urllib.request.Request(
+            download_url,
+            headers={"User-Agent": self.CATALOG_USER_AGENT},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            destination_path.write_bytes(response.read())
+
+    def _extract_plugin_archive(self, archive_path, package_name, extract_root):
+        extract_root.mkdir(parents=True, exist_ok=True)
+
+        with ZipFile(archive_path) as archive:
+            top_level_entries = []
+            for member_name in archive.namelist():
+                member_path = Path(member_name)
+                if member_path.is_absolute() or ".." in member_path.parts:
+                    raise RuntimeError("ZIP enthaelt ungueltige Pfade.")
+                if member_path.parts:
+                    top_level_entries.append(member_path.parts[0])
+
+            archive.extractall(extract_root)
+
+        candidate = extract_root / package_name
+        if candidate.is_dir():
+            return candidate
+
+        unique_roots = [
+            entry
+            for entry in sorted(set(top_level_entries))
+            if entry and entry != "__MACOSX"
+        ]
+        if len(unique_roots) == 1:
+            fallback_candidate = extract_root / unique_roots[0]
+            if fallback_candidate.is_dir():
+                return fallback_candidate
+
+        raise RuntimeError(
+            f"ZIP enthaelt kein Plugin-Verzeichnis fuer {package_name}."
+        )
+
+    def _replace_managed_plugin_dir(self, package_name, source_dir):
+        managed_plugins_dir = self._managed_plugins_dir()
+        managed_plugins_dir.mkdir(parents=True, exist_ok=True)
+
+        target_dir = managed_plugins_dir / package_name
+        staged_dir = managed_plugins_dir / f".{package_name}.staged"
+        backup_dir = managed_plugins_dir / f".{package_name}.backup"
+
+        shutil.rmtree(staged_dir, ignore_errors=True)
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        shutil.copytree(source_dir, staged_dir)
+
         try:
-            import qgis.utils as qgis_utils
+            if target_dir.exists():
+                target_dir.replace(backup_dir)
+            staged_dir.replace(target_dir)
+            shutil.rmtree(backup_dir, ignore_errors=True)
         except Exception:
-            self._registry_keys.clear()
-            return
+            shutil.rmtree(staged_dir, ignore_errors=True)
+            if backup_dir.exists() and not target_dir.exists():
+                backup_dir.replace(target_dir)
+            raise
 
-        registry = getattr(qgis_utils, "plugins", None)
-        if isinstance(registry, dict):
-            for key in self._registry_keys:
-                registry.pop(key, None)
+    def _set_plugin_enabled_setting(self, package_name, enabled):
+        settings = QSettings()
+        settings.setValue(f"PythonPlugins/{package_name}", bool(enabled))
 
-        self._registry_keys.clear()
+    def _managed_plugins_dir(self):
+        home_plugin_path = getattr(qgis_utils, "HOME_PLUGIN_PATH", None)
+        if home_plugin_path:
+            return Path(home_plugin_path)
+        return Path(QgsApplication.qgisSettingsDirPath()) / "python" / "plugins"
 
-    def _is_loaded(self, wanted_spec):
-        return any(spec["key"] == wanted_spec["key"] for spec, _ in self.loaded_plugins)
+    def _find_installed_plugin_dir(self, package_name):
+        plugin_paths = [str(self._managed_plugins_dir())]
+        plugin_paths.extend(list(getattr(qgis_utils, "plugin_paths", []) or []))
+        if not plugin_paths:
+            plugin_paths = [str(self._managed_plugins_dir())]
 
-    def _refresh_conflicts(self):
-        self.conflicts = []
-
-        for spec in BUNDLED_PLUGINS:
-            action = self.load_actions.get(spec["key"])
-            if self._is_loaded(spec):
+        seen_paths = set()
+        for plugin_path in plugin_paths:
+            normalized_path = str(plugin_path or "").strip()
+            if not normalized_path or normalized_path in seen_paths:
                 continue
-
-            message = self._external_conflict_message(spec)
-            if message is not None:
-                self.conflicts.append((spec, message))
-                if action is not None:
-                    action.setEnabled(False)
-                    action.setText(f"Extern aktiv: {spec['label']}")
-                continue
-
-            if action is not None:
-                action.setEnabled(True)
-                action.setText(f"{self.LOAD_ACTION_PREFIX}{spec['label']}")
-
-    def _external_conflict_message(self, spec):
-        package_name = spec["package"]
-
-        try:
-            import qgis.utils as qgis_utils
-        except Exception:
-            qgis_utils = None
-
-        if qgis_utils is not None:
-            registry = getattr(qgis_utils, "plugins", None)
-            if isinstance(registry, dict) and package_name in registry:
-                return "separat installiertes Plugin ist bereits in QGIS aktiv"
-
-        module = sys.modules.get(package_name)
-        if module is not None and not self._module_belongs_to_bundle(module):
-            return "Paket ist bereits ausserhalb des Bundles importiert"
-
+            seen_paths.add(normalized_path)
+            candidate = Path(plugin_path) / package_name
+            if candidate.is_dir():
+                return candidate
         return None
 
-    def _has_conflict(self, wanted_spec):
-        return any(spec["key"] == wanted_spec["key"] for spec, _ in self.conflicts)
+    def _refresh_available_plugins(self):
+        updater = getattr(qgis_utils, "updateAvailablePlugins", None)
+        if callable(updater):
+            try:
+                updater()
+            except Exception:
+                pass
 
-    def _get_conflict_message(self, wanted_spec):
-        for spec, message in self.conflicts:
-            if spec["key"] == wanted_spec["key"]:
-                return message
-        return None
+    def _purge_plugin_module_cache(self, package_name):
+        removable_names = [
+            module_name
+            for module_name in list(sys.modules)
+            if module_name == package_name or module_name.startswith(f"{package_name}.")
+        ]
+        for module_name in removable_names:
+            sys.modules.pop(module_name, None)
+        importlib.invalidate_caches()
 
     def _record_error(self, spec, message):
-        self.load_errors = [
-            (existing_spec, existing_message)
-            for existing_spec, existing_message in self.load_errors
-            if existing_spec["key"] != spec["key"]
-        ]
-        self.load_errors.append((spec, message))
+        self.module_action_errors[spec["key"]] = str(message or "").strip()
 
     def _clear_error(self, spec):
-        self.load_errors = [
-            (existing_spec, existing_message)
-            for existing_spec, existing_message in self.load_errors
-            if existing_spec["key"] != spec["key"]
-        ]
+        self.module_action_errors.pop(spec["key"], None)
 
-    def _disable_load_action(self, spec):
-        action = self.load_actions.get(spec["key"])
-        if action is not None:
-            action.setEnabled(False)
-            action.setText(f"Geladen: {spec['label']}")
+    def _show_startup_message(self):
+        message = "Master-Katalog aktiv."
+        if self.catalog_refresh_error:
+            message += " Online-Index derzeit nicht erreichbar, lokaler Snapshot wird verwendet."
+
+        self.iface.messageBar().pushMessage(
+            self.MENU_TITLE,
+            message,
+            level=Qgis.Warning if self.catalog_refresh_error else Qgis.Info,
+            duration=6 if self.catalog_refresh_error else 4,
+        )
 
     def _refresh_overview_dialog(self):
         if self.overview_dialog is not None:
             self.overview_dialog.refresh()
 
     def _refresh_ui_state(self):
-        self._rebuild_master_toolbar_actions()
         self._refresh_overview_dialog()
-
-    def get_module_rows(self):
-        self._refresh_conflicts()
-
-        error_by_key = {
-            spec["key"]: message for spec, message in self.load_errors
-        }
-        conflict_by_key = {
-            spec["key"]: message for spec, message in self.conflicts
-        }
-
-        rows = []
-        for spec in BUNDLED_PLUGINS:
-            metadata = self._get_module_metadata(spec)
-            label = metadata.get("name") or spec["label"]
-            description = metadata.get("description") or metadata.get("about") or ""
-            about = metadata.get("about") or description
-            detail = label
-            status_code = "ready"
-            status_text = "Bereit"
-            tool_type = spec.get("tool_type", INTERACTIVE_TOOL)
-            tool_type_label = self.TOOL_TYPE_LABELS.get(tool_type, "Tool")
-
-            if self._is_loaded(spec):
-                status_code = "loaded"
-                status_text = "Geladen"
-                if tool_type == BACKGROUND_TOOL:
-                    status_text = "Im Hintergrund aktiv"
-                    detail = f"{label} laeuft bereits im Hintergrund ueber das Master-Plugin."
-                else:
-                    detail = (
-                        f"{label} ist bereits geladen und in der gemeinsamen Master-Toolbar verfuegbar."
-                    )
-            elif spec["key"] in conflict_by_key:
-                status_code = "conflict"
-                status_text = "Blockiert"
-                detail = conflict_by_key[spec["key"]]
-            elif spec["key"] in error_by_key:
-                status_code = "error"
-                status_text = "Fehler"
-                detail = error_by_key[spec["key"]]
-            else:
-                if tool_type == BACKGROUND_TOOL:
-                    detail = f"{label} wird beim Start automatisch als Hintergrundtool geladen."
-                elif self.is_favorite(spec["key"]):
-                    detail = (
-                        f"{label} ist als Favorit gespeichert und wird beim Start automatisch geladen."
-                    )
-                else:
-                    detail = f"{label} kann jetzt ueber das Master-Plugin geladen werden."
-
-            rows.append(
-                {
-                    "key": spec["key"],
-                    "label": label,
-                    "package": spec["package"],
-                    "tool_type": tool_type,
-                    "tool_type_label": tool_type_label,
-                    "status_code": status_code,
-                    "status_text": status_text,
-                    "detail": detail,
-                    "description": description,
-                    "about": about,
-                    "author": metadata.get("author") or "",
-                    "version": metadata.get("version") or "",
-                    "category": metadata.get("category") or "Plugins",
-                    "tags": self._split_tags(metadata.get("tags")),
-                    "homepage": metadata.get("homepage") or "",
-                    "tracker": metadata.get("tracker") or "",
-                    "repository": metadata.get("repository") or "",
-                    "is_favorite": self.is_favorite(spec["key"]),
-                    "icon_path": self._resolve_module_icon_path(
-                        spec, metadata.get("icon") or ""
-                    ),
-                }
-            )
-
-        return rows
-
-    def load_module_by_key(self, key):
-        spec = self._spec_by_key(key)
-        if spec is not None:
-            return self._load_single_module(spec)
-        return False
-
-    def _load_favorite_modules(self):
-        summary = {
-            "loaded": [],
-            "conflicts": [],
-            "errors": [],
-        }
-
-        for spec in self._favorite_specs():
-            if spec.get("tool_type", INTERACTIVE_TOOL) != INTERACTIVE_TOOL:
-                continue
-            if self._is_loaded(spec):
-                continue
-
-            if self._load_single_module(spec, announce=False):
-                summary["loaded"].append(spec["label"])
-                continue
-
-            if self._get_conflict_message(spec):
-                summary["conflicts"].append(spec["label"])
-            else:
-                summary["errors"].append(spec["label"])
-
-        return summary
-
-    def _favorite_specs(self):
-        specs_by_key = {
-            spec["key"]: spec for spec in BUNDLED_PLUGINS
-        }
-        return [
-            specs_by_key[key]
-            for key in self.favorite_module_keys
-            if key in specs_by_key
-        ]
-
-    def _spec_by_key(self, key):
-        for spec in BUNDLED_PLUGINS:
-            if spec["key"] == key:
-                return spec
-        return None
-
-    def _capture_toolbar_state(self):
-        state = {}
-
-        try:
-            main_window = self.iface.mainWindow()
-        except Exception:
-            return state
-
-        if main_window is None:
-            return state
-
-        try:
-            toolbars = main_window.findChildren(QToolBar)
-        except Exception:
-            return state
-
-        for toolbar in toolbars:
-            if not self._is_qt_object_alive(toolbar):
-                continue
-
-            state[id(toolbar)] = {
-                "toolbar": toolbar,
-                "actions": list(toolbar.actions()),
-            }
-
-        return state
-
-    def _collect_module_toolbar_actions(self, spec, plugin, toolbar_state_before_load):
-        if spec.get("tool_type", INTERACTIVE_TOOL) != INTERACTIVE_TOOL:
-            return []
-
-        collected_actions = []
-        toolbar_state_after_load = self._capture_toolbar_state()
-        master_toolbar = self._find_master_toolbar() or self.toolbar
-
-        for toolbar_id, entry in toolbar_state_after_load.items():
-            toolbar = entry["toolbar"]
-            if not self._is_qt_object_alive(toolbar):
-                continue
-            if toolbar is master_toolbar:
-                continue
-
-            if toolbar_id not in toolbar_state_before_load:
-                for action in entry["actions"]:
-                    self._append_unique_action(collected_actions, action)
-                    self._remove_action_from_toolbar(toolbar, action)
-                self._safe_qt_call(toolbar.setVisible, False)
-                continue
-
-            existing_actions = toolbar_state_before_load[toolbar_id]["actions"]
-            for action in entry["actions"]:
-                if action in existing_actions:
-                    continue
-                self._append_unique_action(collected_actions, action)
-                self._remove_action_from_toolbar(toolbar, action)
-
-        if not collected_actions:
-            for action in self._fallback_module_toolbar_actions(spec, plugin):
-                self._append_unique_action(collected_actions, action)
-
-        return self._normalize_module_toolbar_actions(spec, collected_actions)
-
-    def _append_unique_action(self, actions, action):
-        if action is None:
-            return
-        if action in actions:
-            return
-        actions.append(action)
-
-    def _remove_action_from_toolbar(self, toolbar, action):
-        if not self._is_qt_object_alive(toolbar):
-            return
-        if not self._is_qt_object_alive(action):
-            return
-        self._safe_qt_call(toolbar.removeAction, action)
-
-    def _fallback_module_toolbar_actions(self, spec, plugin):
-        attr_names = self.FALLBACK_TOOLBAR_ATTRS_BY_KEY.get(spec["key"], ())
-        generic_attr_names = (
-            "action",
-            "action_bind",
-            "actionAddLayer",
-            "actionGeoref2PRaster",
-            "main_menu",
-            "menu",
-        )
-        seen_attr_names = []
-
-        for attr_name in attr_names + generic_attr_names:
-            if attr_name in seen_attr_names:
-                continue
-            seen_attr_names.append(attr_name)
-            action = self._toolbar_action_from_candidate(
-                getattr(plugin, attr_name, None)
-            )
-            if action is not None:
-                yield action
-
-    def _toolbar_action_from_candidate(self, candidate):
-        if isinstance(candidate, QAction):
-            return candidate if self._is_qt_object_alive(candidate) else None
-
-        menu_action_getter = getattr(candidate, "menuAction", None)
-        if not callable(menu_action_getter):
-            return None
-        try:
-            action = menu_action_getter()
-        except Exception:
-            return None
-
-        return action if self._is_qt_object_alive(action) else None
-
-    def _normalize_module_toolbar_actions(self, spec, actions):
-        normalized = []
-        previous_was_separator = True
-
-        for action in actions:
-            if not self._is_qt_object_alive(action):
-                continue
-
-            if action.isSeparator():
-                if previous_was_separator:
-                    continue
-                normalized.append(action)
-                previous_was_separator = True
-                continue
-
-            self._ensure_module_toolbar_action_presentation(spec, action)
-            normalized.append(action)
-            previous_was_separator = False
-
-        while normalized and normalized[-1].isSeparator():
-            normalized.pop()
-
-        return normalized
-
-    def _ensure_module_toolbar_action_presentation(self, spec, action):
-        icon = action.icon()
-        if icon.isNull():
-            icon = QIcon(self._resolve_module_icon_path(spec, ""))
-            action.setIcon(icon)
-
-        if not str(action.toolTip() or "").strip():
-            action.setToolTip(spec["label"])
-        if not str(action.statusTip() or "").strip():
-            action.setStatusTip(action.toolTip())
-
-    def _rebuild_master_toolbar_actions(self):
-        toolbar = self._find_master_toolbar() or self.toolbar
-        if not self._is_qt_object_alive(toolbar):
-            return
-        if not self._is_qt_object_alive(self.overview_action):
-            return
-
-        self._clear_master_toolbar_actions(toolbar)
-
-        inserted_actions = []
-        ordered_actions = []
-        for spec in self._ordered_toolbar_specs():
-            for action in self.module_toolbar_actions.get(spec["key"], ()):
-                if not self._is_qt_object_alive(action):
-                    continue
-                if action in inserted_actions:
-                    continue
-                ordered_actions.append(action)
-                inserted_actions.append(action)
-
-        if ordered_actions:
-            self.toolbar_separator_action = self._safe_qt_call(toolbar.addSeparator)
-            for action in ordered_actions:
-                self._safe_qt_call(toolbar.addAction, action)
-                self._configure_toolbar_widget(action)
-        else:
-            self.toolbar_separator_action = None
-
-    def _clear_master_toolbar_actions(self, toolbar=None):
-        resolved_toolbar = toolbar or self._find_master_toolbar() or self.toolbar
-        if not self._is_qt_object_alive(resolved_toolbar):
-            return
-
-        for actions in self.module_toolbar_actions.values():
-            for action in actions:
-                if self._is_qt_object_alive(action):
-                    self._safe_qt_call(resolved_toolbar.removeAction, action)
-
-        if self._is_qt_object_alive(self.toolbar_separator_action):
-            self._safe_qt_call(resolved_toolbar.removeAction, self.toolbar_separator_action)
-
-    def _ordered_toolbar_specs(self):
-        loaded_specs = [
-            spec
-            for spec, _plugin in self.loaded_plugins
-            if spec.get("tool_type", INTERACTIVE_TOOL) == INTERACTIVE_TOOL
-        ]
-        loaded_by_key = {
-            spec["key"]: spec for spec in loaded_specs
-        }
-
-        non_favorite_specs = [
-            spec
-            for spec in loaded_specs
-            if spec["key"] not in self.favorite_module_keys
-        ]
-        favorite_specs = [
-            loaded_by_key[key]
-            for key in self.favorite_module_keys
-            if key in loaded_by_key
-        ]
-
-        return favorite_specs + non_favorite_specs
-
-    def _configure_toolbar_widget(self, action):
-        toolbar = self._find_master_toolbar() or self.toolbar
-        if not self._is_qt_object_alive(toolbar):
-            return
-        if not self._is_qt_object_alive(action):
-            return
-        if action.menu() is None:
-            return
-
-        widget = self._safe_qt_call(toolbar.widgetForAction, action)
-        if isinstance(widget, QToolButton):
-            widget.setPopupMode(QToolButton.InstantPopup)
-            widget.setToolButtonStyle(Qt.ToolButtonIconOnly)
-
-    def _purge_bundled_package(self, package_name):
-        removable_modules = []
-        prefix = f"{package_name}."
-
-        for module_name, module in list(sys.modules.items()):
-            if module_name != package_name and not module_name.startswith(prefix):
-                continue
-            if self._module_belongs_to_bundle(module):
-                removable_modules.append(module_name)
-
-        for module_name in removable_modules:
-            sys.modules.pop(module_name, None)
-
-    def _module_belongs_to_bundle(self, module):
-        if module is None:
-            return False
-
-        candidate_paths = []
-        module_file = getattr(module, "__file__", None)
-        if module_file:
-            candidate_paths.append(module_file)
-
-        module_spec = getattr(module, "__spec__", None)
-        spec_origin = getattr(module_spec, "origin", None)
-        if spec_origin and spec_origin not in {"built-in", "frozen"}:
-            candidate_paths.append(spec_origin)
-
-        module_path = getattr(module, "__path__", None)
-        if module_path:
-            candidate_paths.extend(list(module_path))
-
-        return any(self._path_belongs_to_bundle(path) for path in candidate_paths)
-
-    def _path_belongs_to_bundle(self, value):
-        try:
-            Path(value).resolve().relative_to(self.bundled_plugins_root.resolve())
-        except Exception:
-            return False
-        return True
-
-    def _log_exception(self, label, prefix):
-        message = traceback.format_exc().rstrip()
-        QgsMessageLog.logMessage(
-            f"{prefix}: {label}\n{message}",
-            self.LOG_TAG,
-            Qgis.Critical,
-        )
-
-    def _log_unload_failure(self, label, exc):
-        try:
-            QgsMessageLog.logMessage(
-                f"Fehler beim Entladen: {label}\n{type(exc).__name__}: {exc}",
-                self.LOG_TAG,
-                Qgis.Warning,
-            )
-        except Exception:
-            pass
-
-    def _short_exception_message(self):
-        exc_type, exc_value, _tb = sys.exc_info()
-        if exc_type is None:
-            return "Unbekannter Fehler"
-        if exc_value is None:
-            return exc_type.__name__
-        return f"{exc_type.__name__}: {exc_value}"
-
-    def get_shared_settings(self):
-        return self._enriched_shared_settings(load_shared_settings())
-
-    def save_shared_settings(self, config):
-        normalized = self._enriched_shared_settings(save_shared_settings(config))
-        self._sync_shared_settings(normalized)
-        self._apply_shared_settings_to_loaded_plugins(normalized)
-        return normalized
 
     def _sync_shared_settings(self, config=None):
         settings = config or self.get_shared_settings()
         sync_attribution_butler_settings(settings)
-
-    def _apply_shared_settings_to_loaded_plugins(self, settings):
-        for spec, plugin in self.loaded_plugins:
-            module = sys.modules.get(spec["package"])
-            self._apply_shared_settings_to_plugin(spec, plugin, module, settings)
-
-    def _apply_shared_settings_to_plugin(
-        self,
-        spec,
-        plugin,
-        module=None,
-        settings=None,
-    ):
-        shared_settings = dict(settings or self.get_shared_settings())
-
-        self._inject_master_context(module, plugin, shared_settings)
-
-        for handler_name, argument_variants in (
-            ("apply_master_settings", ((shared_settings,), ())),
-            ("set_master_settings", ((shared_settings,), ())),
-            ("set_master_context", ((self, shared_settings), (shared_settings,), (self,))),
-            ("reload_master_settings", ((),)),
-        ):
-            handler = getattr(plugin, handler_name, None)
-            if not callable(handler):
-                continue
-
-            for args in argument_variants:
-                try:
-                    handler(*args)
-                    return
-                except TypeError:
-                    continue
-                except Exception:
-                    self._log_exception(
-                        spec["label"],
-                        f"Fehler beim Anwenden von Master-Settings via {handler_name}",
-                    )
-                    return
-
-    def _inject_master_context(self, module=None, plugin=None, settings=None):
-        shared_settings = dict(settings or self.get_shared_settings())
-
-        if module is not None:
-            try:
-                setattr(module, "TRASSIFY_MASTER_PLUGIN", self)
-                setattr(module, "TRASSIFY_MASTER_SETTINGS", shared_settings)
-            except Exception:
-                pass
-
-        if plugin is not None:
-            try:
-                setattr(plugin, "trassify_master_plugin", self)
-                setattr(plugin, "trassify_master_settings", shared_settings)
-            except Exception:
-                pass
 
     def _enriched_shared_settings(self, settings):
         enriched = dict(settings or {})
@@ -1049,49 +864,112 @@ class TrassifyMasterToolsPlugin:
         toolbar.setVisible(True)
         self.toolbar = toolbar
 
+    def _spec_by_key(self, key):
+        for spec in BUNDLED_PLUGINS:
+            if spec["key"] == key:
+                return spec
+        return None
+
     def _get_module_metadata(self, spec):
-        cached = self._module_metadata_cache.get(spec["key"])
-        if cached is not None:
-            return cached
-
-        metadata = {}
-        metadata_path = self._resolve_module_metadata_path(spec)
-        if metadata_path is not None and metadata_path.is_file():
+        metadata_path = (
+            self.plugin_dir.parent
+            / "plugin_sources"
+            / spec["source_path"]
+            / "metadata.txt"
+        )
+        if metadata_path.is_file():
             parser = configparser.ConfigParser(interpolation=None)
-            try:
-                parser.read(metadata_path, encoding="utf-8")
-            except UnicodeDecodeError:
-                parser.read(metadata_path, encoding="latin-1")
-
+            parser.optionxform = str
+            for encoding in ("utf-8", "latin-1"):
+                try:
+                    with metadata_path.open(encoding=encoding) as handle:
+                        parser.read_file(handle)
+                    break
+                except UnicodeDecodeError:
+                    parser = configparser.ConfigParser(interpolation=None)
+                    parser.optionxform = str
+                    continue
             if parser.has_section("general"):
-                metadata = {
+                return {
                     key: value.strip()
                     for key, value in parser.items("general")
                 }
+        return {}
 
-        self._module_metadata_cache[spec["key"]] = metadata
-        return metadata
+    def _resolve_module_icon_path(self, spec, catalog_entry):
+        icon_relative_path = str(catalog_entry.get("icon_relative_path") or "").strip()
+        if icon_relative_path:
+            candidate = self.plugin_dir / "catalog" / icon_relative_path
+            if candidate.is_file():
+                return str(candidate)
 
-    def _resolve_module_metadata_path(self, spec):
-        for candidate_dir in self._module_directory_candidates(spec):
-            candidate_path = candidate_dir / "metadata.txt"
-            if candidate_path.is_file():
-                return candidate_path
-        return None
+        source_dir = self.plugin_dir.parent / "plugin_sources" / spec["source_path"]
+        metadata = catalog_entry.get("metadata", {})
+        explicit_icon = source_dir / str(metadata.get("icon") or "").strip()
+        if explicit_icon.is_file():
+            return str(explicit_icon)
 
-    def _resolve_module_icon_path(self, spec, icon_name):
-        for candidate_dir in self._module_directory_candidates(spec):
-            if icon_name:
-                explicit_path = candidate_dir / icon_name
-                if explicit_path.is_file():
-                    return str(explicit_path)
-
-            for fallback_name in ("icon.svg", "icon.png", "icon.ico"):
-                fallback_path = candidate_dir / fallback_name
-                if fallback_path.is_file():
-                    return str(fallback_path)
+        for fallback_name in ("icon.svg", "icon.png", "icon.ico"):
+            fallback_icon = source_dir / fallback_name
+            if fallback_icon.is_file():
+                return str(fallback_icon)
 
         return str(self.plugin_dir / "icon.svg")
+
+    def _resolve_raw_base_url_from_metadata(self):
+        metadata = self._master_metadata()
+        repository_url = (
+            metadata.get("repository")
+            or metadata.get("homepage")
+            or ""
+        )
+        match = re.search(
+            r"github\.com[:/](?P<slug>[^/]+/[^/.]+)(?:\.git)?/?$",
+            str(repository_url),
+        )
+        if not match:
+            return ""
+        return f"https://raw.githubusercontent.com/{match.group('slug')}/main"
+
+    def _master_metadata(self):
+        metadata_path = self.plugin_dir / "metadata.txt"
+        if not metadata_path.is_file():
+            return {}
+
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.optionxform = str
+        with metadata_path.open(encoding="utf-8") as handle:
+            parser.read_file(handle)
+        if not parser.has_section("general"):
+            return {}
+        return {
+            key: value.strip()
+            for key, value in parser.items("general")
+        }
+
+    def _metadata_value(self, metadata_path, key):
+        if not metadata_path.is_file():
+            return ""
+
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.optionxform = str
+        for encoding in ("utf-8", "latin-1"):
+            try:
+                with metadata_path.open(encoding=encoding) as handle:
+                    parser.read_file(handle)
+                break
+            except UnicodeDecodeError:
+                parser = configparser.ConfigParser(interpolation=None)
+                parser.optionxform = str
+                continue
+
+        if not parser.has_section("general"):
+            return ""
+
+        try:
+            return parser.get("general", key).strip()
+        except Exception:
+            return ""
 
     def _sanitize_favorite_module_keys(self, keys):
         valid_keys = {spec["key"] for spec in BUNDLED_PLUGINS}
@@ -1107,37 +985,45 @@ class TrassifyMasterToolsPlugin:
 
         return normalized
 
-    def _module_directory_candidates(self, spec):
-        yield self._bundled_plugin_dir(spec)
-
-        source_root = self.plugin_dir.parent / "plugin_sources" / spec["source_path"]
-        if source_root.is_dir():
-            yield source_root
-
-    def _bundled_plugin_dir(self, spec):
-        return self.bundled_plugins_root / spec.get("tool_type", INTERACTIVE_TOOL) / spec["package"]
-
-    def _interactive_specs(self):
-        return [
-            spec for spec in BUNDLED_PLUGINS
-            if spec.get("tool_type", INTERACTIVE_TOOL) == INTERACTIVE_TOOL
-        ]
-
-    def _background_specs(self):
-        return [
-            spec for spec in BUNDLED_PLUGINS
-            if spec.get("tool_type", INTERACTIVE_TOOL) == BACKGROUND_TOOL
-        ]
-
     def _split_tags(self, raw_tags):
         if not raw_tags:
             return []
 
         return [
             tag.strip()
-            for tag in raw_tags.replace(";", ",").split(",")
+            for tag in str(raw_tags).replace(";", ",").split(",")
             if tag.strip()
         ]
+
+    def _compare_versions(self, left, right):
+        left_key = self._version_key(left)
+        right_key = self._version_key(right)
+
+        for left_part, right_part in zip_longest(left_key, right_key, fillvalue=(0, 0)):
+            if left_part < right_part:
+                return -1
+            if left_part > right_part:
+                return 1
+        return 0
+
+    def _version_key(self, value):
+        tokens = re.findall(r"\d+|[A-Za-z]+", str(value or ""))
+        if not tokens:
+            return [(0, 0)]
+
+        key = []
+        for token in tokens:
+            if token.isdigit():
+                key.append((0, int(token)))
+            else:
+                key.append((1, token.lower()))
+        return key
+
+    def _xml_text(self, element, tag_name):
+        child = element.find(tag_name)
+        if child is None or child.text is None:
+            return ""
+        return child.text.strip()
 
     def _is_qt_object_alive(self, obj):
         if obj is None:

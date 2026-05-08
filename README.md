@@ -3,27 +3,23 @@
 Repository-Struktur:
 
 - `trassify_master_tools/`
-  Das installierbare Master-Plugin. Diese Struktur steht bewusst direkt auf Repo-Ebene im Vordergrund.
+  Das installierbare Master-Plugin. Es zeigt den Trassify-Katalog an und installiert Einzelplugins bei Bedarf.
 - `plugin_sources/`
   Die einzige Quellablage fuer die Einzelplugins. Das ist die Quelle der Wahrheit, nicht das installierbare Master-Plugin.
   Hintergrundtools koennen dort separat unter `plugin_sources/background-tools/` liegen.
 - `dist/`
-  Gebaute ZIP-Artefakte.
+  Gebaute ZIP-Artefakte mit versionsbezogenen Dateinamen.
 - `plugins.xml`
-  Die QGIS-Repository-Datei fuer die direkte Einbindung per URL.
-- `trassify_master_tools.zip`
-  Das Root-ZIP fuer das einfache GitHub-Repo-Schema `plugins.xml + plugin.zip`.
+  Die QGIS-Repository-Datei fuer die direkte Einbindung per URL. Sie enthaelt den Master-Katalog und alle separat installierbaren Plugins.
+- `*.zip` im Repo-Root
+  Die stabilen Download-Dateien fuer das GitHub-Repo-Schema `plugins.xml + plugin.zip`.
 
 Wichtig:
 
-- Wenn du nur ein Plugin in QGIS installieren willst, nutze das Bundle aus `trassify_master_tools/`.
-- Die eingebetteten Modulkopien fuer das Bundle werden beim Build aus `plugin_sources/` erzeugt und liegen nicht mehr doppelt im Git-Repo.
 - Die Originalquellen bleiben unter `plugin_sources/`, damit jede Plugin-Datei nur noch einmal im Repository gepflegt wird.
-- Nicht mehr verwendete Tool-Kopien und alte Plugin-ZIPs werden aus `plugin_sources/` entfernt, damit der Source-Baum dem aktiven Bundle entspricht.
-- In QGIS oeffnet das Master-Plugin ueber sein Toolbar-Icon eine Uebersicht aller enthaltenen Module.
-- Das Master-Plugin unterscheidet jetzt zwischen normalen Tools und Hintergrundtools.
-- Normale Tools koennen ueber die Master-Uebersicht geladen werden; als Favorit markierte Tools werden beim Start automatisch mitgeladen.
-- Hintergrundtools werden beim Start automatisch aktiviert und sind fuer Kontextmenues oder unauffaellige Hilfsfunktionen gedacht.
-- Fuer das GitHub-Setup kannst du `./prepare_plugin_repository.sh` ausfuehren. Das aktualisiert `plugins.xml` und `trassify_master_tools.zip`.
+- In QGIS oeffnet das Master-Plugin ueber sein Toolbar-Icon eine Uebersicht aller bekannten Module.
+- Plugins werden aus dem Master heraus erst bei Bedarf heruntergeladen, separat installiert und anschliessend aktiviert.
+- Hintergrundtools sind ebenfalls optional und werden nicht mehr ungefragt mit dem Master mitgeliefert.
+- Fuer das GitHub-Setup kannst du `./prepare_plugin_repository.sh` ausfuehren. Das aktualisiert `plugins.xml`, `trassify_master_tools.zip` und alle root-level Plugin-ZIPs.
 - Fuer Projektstarter-Butler-Aenderungen gibt es zusaetzlich `python3 tools/release_projektstarter_butler.py`. Das synchronisiert die Version von `plugin_sources/projektstarter_attribution_buttler/metadata.txt` und `trassify_master_tools/metadata.txt` und baut anschliessend die GitHub-QGIS-Artefakte neu.
 - Nach dem Push auf `main` uebernimmt `.github/workflows/release-projektstarter-butler.yml` denselben Ablauf automatisch und committed die aktualisierten Release-Dateien zurueck ins Repository. Damit reicht kuenftig ein Push, damit QGIS ein neues Update angeboten bekommt.

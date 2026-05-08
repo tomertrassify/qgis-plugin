@@ -1,6 +1,6 @@
 # Trassify Master Tools
 
-Ein einzelnes QGIS-Plugin, das mehrere vorhandene Tools als eingebettete Module gemeinsam ausliefert.
+Ein einzelnes QGIS-Plugin, das als Katalog und Installer fuer die Trassify-Tools dient.
 
 Enthaltene Module:
 - AttributionButler
@@ -17,15 +17,12 @@ Enthaltene Module:
 - Export Pro
 
 Hinweise:
-- Das Git-Repo enthaelt nur die Master-Struktur. Die eingebetteten Modulpakete werden erst beim Build in das ZIP unter `bundled_plugins/` erzeugt.
-- Normale Tools landen im Bundle unter `bundled_plugins/interactive/`, Hintergrundtools unter `bundled_plugins/background/`.
-- Fuer `Coordinatify` ist die erweiterte Variante aus `plugin_sources/background-tools/coordinatify` gebuendelt.
-- Doppelte Temp-Kopien aus `plugin_sources/googlemaps/` und `plugin_sources/max-wild/funktionen-temp/` wurden bewusst nicht mehrfach eingebunden.
-- In QGIS erscheint das Master-Plugin mit eigenem Icon in der Toolbar. Ein Klick oeffnet eine Uebersicht aller enthaltenen Module mit Status und Ladefunktion.
-- Das Master-Plugin unterscheidet zwischen normalen Tools und Hintergrundtools.
-- Normale Tools koennen ueber die Master-Uebersicht geladen werden; als Favorit markierte Tools werden beim Start automatisch mitgeladen.
-- Hintergrundtools werden beim Start automatisch aktiviert, damit Kontextmenues und unauffaellige Hilfsfunktionen sofort verfuegbar sind.
-- Wenn ein gleichnamiges Einzelplugin bereits separat in QGIS aktiv ist, blockiert das Master-Plugin das Nachladen bewusst, damit keine doppelten Menueeintraege oder Paketkonflikte entstehen.
+- Das Master-Plugin enthaelt nur Katalog-Metadaten und Vorschaubilder, aber keinen eingebetteten Plugin-Code mehr.
+- In QGIS erscheint das Master-Plugin mit eigenem Icon in der Toolbar. Ein Klick oeffnet eine Uebersicht aller bekannten Module mit Status, Installier-, Aktivier- und Entfernen-Aktionen.
+- Nicht installierte Tools bleiben komplett ausserhalb des lokalen QGIS-Pluginordners.
+- Favoriten dienen nur noch als Merkliste im Katalog; sie fuehren kein automatisches Laden mehr aus.
+- Fuer Updates und Installationen liest das Master-Plugin denselben `plugins.xml`-Index, der auch fuer das QGIS-Repository bereitgestellt wird.
+- Hintergrundtools bleiben im Katalog sichtbar, werden aber ebenfalls erst bei Bedarf installiert und aktiviert.
 
 Build:
 - `./build_zip.sh`

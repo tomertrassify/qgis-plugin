@@ -6,15 +6,15 @@ PLUGIN_DIR="trassify_master_tools"
 DIST_DIR="${ROOT_DIR}/dist"
 BUILD_ROOT="${DIST_DIR}/.build"
 STAGING_PLUGIN_DIR="${BUILD_ROOT}/${PLUGIN_DIR}"
-ASSEMBLER="${ROOT_DIR}/tools/assemble_master_plugin.py"
+CATALOG_BUILDER="${ROOT_DIR}/tools/build_master_catalog.py"
 
 if [[ ! -d "${ROOT_DIR}/${PLUGIN_DIR}" ]]; then
   echo "Plugin-Ordner ${PLUGIN_DIR} nicht gefunden." >&2
   exit 1
 fi
 
-if [[ ! -f "${ASSEMBLER}" ]]; then
-  echo "Assembler-Skript ${ASSEMBLER} nicht gefunden." >&2
+if [[ ! -f "${CATALOG_BUILDER}" ]]; then
+  echo "Katalog-Skript ${CATALOG_BUILDER} nicht gefunden." >&2
   exit 1
 fi
 
@@ -32,16 +32,16 @@ mkdir -p "${STAGING_PLUGIN_DIR}"
 trap 'rm -rf "${BUILD_ROOT}"' EXIT
 
 rsync -a \
-  --exclude "bundled_plugins" \
+  --exclude "catalog" \
   --exclude "__pycache__" \
   --exclude "*.pyc" \
   --exclude "*.pyo" \
   --exclude ".DS_Store" \
   "${ROOT_DIR}/${PLUGIN_DIR}/" "${STAGING_PLUGIN_DIR}/"
 
-python3 "${ASSEMBLER}" \
+python3 "${CATALOG_BUILDER}" \
   --root-dir "${ROOT_DIR}" \
-  --output-dir "${STAGING_PLUGIN_DIR}/bundled_plugins"
+  --output-dir "${STAGING_PLUGIN_DIR}/catalog"
 
 (
   cd "${BUILD_ROOT}"

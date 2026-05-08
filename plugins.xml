@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <plugins>
-  <pyqgis_plugin name="Trassify Master Tools" version="1.0.39">
-    <description><![CDATA[Ein Bundle-Plugin, das die enthaltenen Trassify-Tools in einer einzigen Installation laedt.]]></description>
-    <about><![CDATA[Installiere ein Plugin und aktiviere AttributionButler, Schutzrohr, GeoBasis Loader, Coordinatify, Sparte Betreiber Regeln, Projektstarter, Max Wild Projekt Status, Export Pro, Quickrule und weitere eingebettete Tools zusammen.]]></about>
-    <version>1.0.39</version>
+  <pyqgis_plugin name="Trassify Master Tools" version="1.0.0">
+    <description><![CDATA[Ein Katalog-Plugin, das Trassify-Tools bei Bedarf herunterlaedt, installiert und aktiviert.]]></description>
+    <about><![CDATA[Oeffnet einen Trassify-Katalog im Stil des QGIS-Erweiterungsfensters. Plugins werden erst bei Bedarf heruntergeladen, separat installiert und koennen direkt aus dem Master heraus aktiviert oder entfernt werden.]]></about>
+    <version>1.0.0</version>
     <qgis_minimum_version>3.28</qgis_minimum_version>
     <qgis_maximum_version>3.99</qgis_maximum_version>
     <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
@@ -12,13 +12,361 @@
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/trassify_master_tools.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-04</create_date>
-    <update_date>2026-05-04</update_date>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
     <repository><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></repository>
-    <tags><![CDATA[trassify,bundle,suite,tools,qgis]]></tags>
+    <tags><![CDATA[trassify,katalog,repository,plugins,tools,qgis]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="AttributionButler" version="0.10.50">
+    <description><![CDATA[Bindet eine Nextcloud-Link-Automatik als form_open-Funktion an den aktiven Layer.]]></description>
+    <about><![CDATA[Konfiguriert Layer-Felder und Nextcloud-Zugangsdaten als Layer-Properties und setzt die Python-Init-Funktion auf form_open.]]></about>
+    <version>0.10.50</version>
+    <qgis_minimum_version>3.28</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>attribution_buttler.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/attribution-buttler/icon-512.png]]></icon>
+    <author_name><![CDATA[Tomer Maith]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/attribution_buttler.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Schutzrohr" version="0.9.1">
+    <description><![CDATA[Schutzrohr-Boxen mit Live-Vorschau zeichnen; Nur-Box ist Standard, aktiver Layer oeffnet das definierte Attributformular, Temp-Layer optional.]]></description>
+    <about><![CDATA[Schutzrohr zeichnet standardmaessig Nur-Boxen in einem eigenen QGIS-Capture-Modus mit Live-Vorschau und dynamischer Breite per Option/Alt (macOS) bzw. Alt/Strg+Mausrad (Windows/Linux) oder Eingabefeld. Beim Speichern im aktiven Layer wird das definierte QGIS-Attributformular geoeffnet. Der alte Linienmodus ueber das Werkzeug Linienobjekt hinzufuegen bleibt optional erhalten.]]></about>
+    <version>0.9.1</version>
+    <qgis_minimum_version>3.22</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>live_corridor_tool.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/drawing-tools/live_corridor_tool/icon.svg]]></icon>
+    <author_name><![CDATA[Tomer + Codex]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/live_corridor_tool.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer + Codex]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Freehand raster georeferencer" version="0.8.3">
+    <description><![CDATA[Interactive georeferencing of rasters]]></description>
+    <about><![CDATA[Tools to georeference a raster interactively (move, rotate, scale, export...)]]></about>
+    <version>0.8.3</version>
+    <qgis_minimum_version>3.0</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[http://gvellut.github.io/FreehandRasterGeoreferencer/]]></homepage>
+    <file_name>FreehandGeoreferencer.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/freehand2/FreehandGeoreferencer/icons/TablerHandStop.svg]]></icon>
+    <author_name><![CDATA[Guilhem Vellut]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/FreehandGeoreferencer.zip]]></download_url>
+    <uploaded_by><![CDATA[Guilhem Vellut]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[https://github.com/gvellut/FreehandRasterGeoreferencer/issues]]></tracker>
+    <repository><![CDATA[https://github.com/gvellut/FreehandRasterGeoreferencer]]></repository>
+    <tags><![CDATA[raster,georeferencing]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="GeoBasis_Loader" version="1.4.2">
+    <description><![CDATA[GeoBasis_Loader: Das Plugin vereinfacht das Finden und Einfügen ausgewählter WMS-, WMTS-, WFS-, WCS-, XYZ- und VectorTiles-Dienste aus den Open Data Portalen der Landesvermessungsämter und des Bundes sowie von Hintergrundkarten (OSM, Basemap.de, USGS, Google, ...) zum aktuellen View. Danke an Anton May für die Unterstützung. / The plugin simplifies finding and inserting selected WMS, WMTS, WFS, WCS, XYZ, and VectorTiles services from the open data portals of state surveying offices and the federal government, as well as background maps (OSM, Basemap.de, USGS, Google, etc.) into the current view. Thanks to Anton May for his support.]]></description>
+    <about><![CDATA[(09.12.2025)
+Das Plugin vereinfacht das Finden und Einfügen ausgewählter WMS-, WMTS-, WFS-, WCS-, XYZ- und VectorTiles-Dienste aus den Open Data Portalen der Landesvermessungsämter und des Bundes sowie von Hintergrundkarten (OSM, Basemap.de, USGS, Google, ...) zum aktuellen View. Ziel ist es, eine deutschlandweite Sammlung der GeoBasisdaten mit aktuellen Links anzubieten. Mehr Informationen zum GeoBasis_Loader inkl. Status, Versionshistorie und FAQs auf https://geoObserver.de zu finden.
+Danke an Anton May für die Unterstützung.
+Hinweis:
+Die Verfügbarkeit, die Symbolisierung der Inhalte sowie die Sichtbarkeit nach Maßstäben hängen ausschließlich vom Datenanbieter ab. Es gelten die vom Anbieter beschriebenen Nutzungsbedingungen. Bei einigen Themen wird die Sichtbarkeit nach Maßstäben zusätzlich über das Plugin eingestellt und kann bei Bedarf mit QGIS-Bordmitteln geändert werden. Die vom Diensteanbieter festgelegten Maßstabsgrenzen sind davon unbetroffen. </br>Die in diesem Plugin genutzten Links (URLs) auf die Dienste der Anbieter werden mit größtmöglicher Sorgfalt recherchiert und implementiert. Fehler im Bearbeitungsvorgang sind dennoch nicht auszuschließen. Hinweise und Korrekturen senden Sie bitte an news@geoobserver.de
+Eine Haftung für die Verfügbarkeit, Richtigkeit, Vollständigkeit und Aktualität dieser Links kann trotz sorgfältiger Prüfung nicht übernommen werden. Das gilt auch für eventuelle Schäden oder Konsequenzen, die durch die direkte oder indirekte Nutzung der angebotenen Inhalte entstehen.
+--------------------------
+The plugin makes it easier to find and insert selected WMS-, WMTS-, WFS-, WCS-, XYZ- and VectorTiles services from the open data portals of the state surveying offices and background maps (OSM, Basemap.de USGS, Google, ...) for the current view. The aim is to provide a Germany-wide collection of geodata with up-to-date links. More information about GeoBasis_Loader incl. status, version history and FAQs on https://geoObserver.de
+Thanks to Anton May for his support.
+Note:
+The availability, the symbolisation of the content and the visibility according to standards depend exclusively on the data provider. The terms of use described by the provider apply. For some themes, the visibility by scale is also set via the plugin and can be changed using QGIS on-board resources if required. The scale limits set by the service provider are not affected by this.
+The links (URLs) to the providers' services used in this plugin are researched and implemented with the greatest possible care. However, errors in the editing process cannot be ruled out. Please send any comments and corrections to news@geoobserver.de
+Despite careful checking, no liability can be accepted for the availability, accuracy, completeness and topicality of these links. This also applies to any damage or consequences arising from the direct or indirect use of the content provided.]]></about>
+    <version>1.4.2</version>
+    <qgis_minimum_version>3.0</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[https://geobasisloader.de/]]></homepage>
+    <file_name>GeoBasis_pro.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/geobasis-pro/GeoBasis_pro/GeoBasis_Loader_icon.png]]></icon>
+    <author_name><![CDATA[Anton May, Mike Elstermann (#geoObserver)]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/GeoBasis_pro.zip]]></download_url>
+    <uploaded_by><![CDATA[Anton May, Mike Elstermann (#geoObserver)]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[https://github.com/geoObserver/geobasis_loader/issues/]]></tracker>
+    <repository><![CDATA[https://github.com/geoObserver/geobasis_loader/]]></repository>
+    <tags><![CDATA[]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Coordinatify" version="1.3.0">
+    <description><![CDATA[Fügt im Karten-Rechtsklickmenü Aktionen für Google Maps und Street View im QGIS-Fenster sowie Adresse kopieren hinzu.]]></description>
+    <about><![CDATA[Rechtsklick auf die Karte: Google Maps und Street View im QGIS-Fenster öffnen, Adresse kopieren und Bundesland anzeigen.]]></about>
+    <version>1.3.0</version>
+    <qgis_minimum_version>3.16</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>coordinatify.zip</file_name>
+    <icon><![CDATA[]]></icon>
+    <author_name><![CDATA[Codex]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/coordinatify.zip]]></download_url>
+    <uploaded_by><![CDATA[Codex]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Sparte Betreiber Regeln" version="1.0.0">
+    <description><![CDATA[Pflegt rule-based Renderer fuer den aktiven Layer automatisch aus Sparte und Betreiber.]]></description>
+    <about><![CDATA[Ein checkbarer Toggle, der auf dem aktiven Vektor-Layer mit den Feldern Sparte und Betreiber verschachtelte Regeln erzeugt: oben Sparte, darunter Betreiber.]]></about>
+    <version>1.0.0</version>
+    <qgis_minimum_version>3.28</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
+    <file_name>sparte_betreiber_regeln.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/background-tools/sparte_betreiber_regeln/icon.svg]]></icon>
+    <author_name><![CDATA[Tomer Maith]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/sparte_betreiber_regeln.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
+    <repository><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></repository>
+    <tags><![CDATA[regel,renderer,sparte,betreiber,style,layer]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="QuickMapServices" version="1.1.0">
+    <description><![CDATA[Easy to add basemaps and geoservices]]></description>
+    <about><![CDATA[Easy to use list of services and search for finding datasets and basemaps. Please contribute new services via https://qms.nextgis.com. Developed by NextGIS. Any feedback is welcome at https://nextgis.com/contact]]></about>
+    <version>1.1.0</version>
+    <qgis_minimum_version>3.22</qgis_minimum_version>
+    <qgis_maximum_version>4.99</qgis_maximum_version>
+    <homepage><![CDATA[https://nextgis.com/blog/quickmapservices/]]></homepage>
+    <file_name>quick_map_services.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/max-wild/funktionen-temp/quick_map_services/icons/qms_logo.svg]]></icon>
+    <author_name><![CDATA[NextGIS]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/quick_map_services.zip]]></download_url>
+    <uploaded_by><![CDATA[NextGIS]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[https://github.com/nextgis/quickmapservices/issues]]></tracker>
+    <repository><![CDATA[https://github.com/nextgis/quickmapservices]]></repository>
+    <tags><![CDATA[service, internet, tms, wms, qms, wfs, geojson, openstreetmap, osm, basemap]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Grid Quick GeoJSON Export" version="1.0.2">
+    <description><![CDATA[Fuegt im Karten-Rechtsklick-Menue die Aktion "Schnellexport GeoJSON" hinzu und exportiert das geklickte Feature als einzelne GeoJSON-Datei.]]></description>
+    <about><![CDATA[Rechtsklick auf ein Feature und es direkt als einzelnes GeoJSON speichern.]]></about>
+    <version>1.0.2</version>
+    <qgis_minimum_version>3.10</qgis_minimum_version>
+    <qgis_maximum_version>3.99</qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>grid_quick_geojson_export.zip</file_name>
+    <icon><![CDATA[]]></icon>
+    <author_name><![CDATA[Tomer + Codex]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/grid_quick_geojson_export.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer + Codex]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[geojson,export,context menu,quick export]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Layer Fuser" version="1.0.0">
+    <description><![CDATA[Uebernimmt Geometrien und gemappte Attribute aus einer Shapefile oder GeoPackage-Layer in den ausgewaehlten Ziellayer.]]></description>
+    <about><![CDATA[Fuegt einem bestehenden Vektorlayer die Features eines importierten Layers hinzu. Gleich benannte Felder werden erkannt, abweichende Felder koennen manuell zugeordnet oder ignoriert werden.]]></about>
+    <version>1.0.0</version>
+    <qgis_minimum_version>3.22</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>layer_fuser.zip</file_name>
+    <icon><![CDATA[]]></icon>
+    <author_name><![CDATA[Tomer Maith]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/layer_fuser.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[vector,merge,attributes,geopackage,shapefile]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Projektstarter" version="1.5.1">
+    <description><![CDATA[Waehlt einen Projektordner, erstellt ein projektbezogenes GeoPackage in 003_Ergebnis, styled das Projektgebiet, baut die Layerstruktur mit OSM und ALKIS auf und synchronisiert Zusatzexporte beim Speichern.]]></description>
+    <about><![CDATA[Startet ein Projekt auf Basis der festen Ordnerstruktur 001_Projektinfos, 002_Leitungsauskunft und 003_Ergebnis.]]></about>
+    <version>1.5.1</version>
+    <qgis_minimum_version>3.22</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>max_wild_project_starter.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/max-wild/max_wild_project_starter/assets/projektstarter-favicon.svg]]></icon>
+    <author_name><![CDATA[Tomer Maith]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/max_wild_project_starter.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[projekt,kml,startordner,gpkg,vorlage,alkis,osm,export]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Max Wild Projekt Status" version="1.4.0">
+    <description><![CDATA[Listet Max-Wild-Projekte aus _projekte auf und bearbeitet deren status.json-Dateien zentral.]]></description>
+    <about><![CDATA[Zeigt alle Projektordner unter /Users/tomermaith/Documents/repo-webmap/max-wild/_projekte mit status.json in einer Tabelle und schreibt Aenderungen direkt zurueck.]]></about>
+    <version>1.4.0</version>
+    <qgis_minimum_version>3.28</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
+    <file_name>max_wild_project_status_manager.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/max-wild/max_wild_project_status_manager/max-wild-favicon.svg]]></icon>
+    <author_name><![CDATA[Tomer Maith]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/max_wild_project_status_manager.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
+    <repository><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></repository>
+    <tags><![CDATA[projekt,status,json,max-wild,butler]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Projektstarter Butler" version="1.0.0">
+    <description><![CDATA[Kombiniert Projektstarter und AttributionButler in einem Plugin fuer Projektanlage und Betreiberattribute.]]></description>
+    <about><![CDATA[Waehlt einen Projektordner, erstellt die Projektstruktur und oeffnet aus demselben Plugin die Betreiber-/Layer-Konfiguration fuer den aktiven Layer.]]></about>
+    <version>1.0.0</version>
+    <qgis_minimum_version>3.28</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>projektstarter_attribution_buttler.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/projektstarter_attribution_buttler/assets/projektstarter-butler.svg]]></icon>
+    <author_name><![CDATA[Tomer Maith]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/projektstarter_attribution_buttler.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[projektstarter,attribution,butler,betreiber,projekt,gpkg]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Trassify Github" version="1.1.4">
+    <description><![CDATA[Speichert ein Git-Repository und fuehrt Git Pull oder Git Push direkt ueber drei Toolbar-Icons aus.]]></description>
+    <about><![CDATA[Das GitHub-Symbol verbindet und speichert ein lokales Git-Repository. Rechts daneben fuehren eigene Pull- und Push-Icons die Shell-Befehle fuer das gespeicherte Repository aus.]]></about>
+    <version>1.1.4</version>
+    <qgis_minimum_version>3.16</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>trassify_github.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/trassify-github/trassify_github/SimpleIconsGithub.svg]]></icon>
+    <author_name><![CDATA[Trassify]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/trassify_github.zip]]></download_url>
+    <uploaded_by><![CDATA[Trassify]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Webmap Export" version="1.0.2">
+    <description><![CDATA[Exportiert sichtbare Vektorlayer als Leaflet/Webmap-Daten inklusive GeoJSON, SVGs und optionalen ZIP-Exporten.]]></description>
+    <about><![CDATA[Eigenstaendiges Webmap-Export-Tool auf Basis des alten Trassify-Toolbox-Leaflet-Exports. Schreibt GeoJSON nach Gruppen, kopiert SVG-Symbole und kann Shapefile-, GPKG-, DXF- und KML-ZIPs erzeugen.]]></about>
+    <version>1.0.2</version>
+    <qgis_minimum_version>3.28</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
+    <file_name>webmap_export.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/webmap-export/webmap_export/icon.svg]]></icon>
+    <author_name><![CDATA[Trassify]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/webmap_export.zip]]></download_url>
+    <uploaded_by><![CDATA[Trassify]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
+    <repository><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></repository>
+    <tags><![CDATA[leaflet,webmap,export,geojson,web]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Quickrule" version="1.1.0">
+    <description><![CDATA[Preset-driven rule styling and layer filters with alias-based field mapping.]]></description>
+    <about><![CDATA[Adds a Quickrule layer context action with presets (Betreiber/Sparte), configurable field aliases, value selection overlay, rule-based styling, and automatic save+exit edit mode before applying layer filters.]]></about>
+    <version>1.1.0</version>
+    <qgis_minimum_version>3.22</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>quickrule.zip</file_name>
+    <icon><![CDATA[]]></icon>
+    <author_name><![CDATA[Tomer + Codex]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/quickrule.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer + Codex]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[]]></tags>
+    <server>False</server>
+  </pyqgis_plugin>
+  <pyqgis_plugin name="Export Pro" version="1.1.1">
+    <description><![CDATA[Exportiert ausgewaehlte Layer per Rechtsklick schnell als GeoPackage, DXF, Shapefile-Ordner, KML oder GeoJSON.]]></description>
+    <about><![CDATA[Schneller Mehrformat-Export fuer ausgewaehlte Layer aus der Layerliste, inklusive GeoPackage, DXF, Shapefile, KML und GeoJSON.]]></about>
+    <version>1.1.1</version>
+    <qgis_minimum_version>3.22</qgis_minimum_version>
+    <qgis_maximum_version></qgis_maximum_version>
+    <homepage><![CDATA[]]></homepage>
+    <file_name>verpacken_pro.zip</file_name>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/verpacken-pro/verpacken_pro/icon.svg]]></icon>
+    <author_name><![CDATA[Tomer Maith]]></author_name>
+    <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/verpacken_pro.zip]]></download_url>
+    <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
+    <create_date>2026-05-08</create_date>
+    <update_date>2026-05-08</update_date>
+    <experimental>false</experimental>
+    <deprecated>false</deprecated>
+    <tracker><![CDATA[]]></tracker>
+    <repository><![CDATA[]]></repository>
+    <tags><![CDATA[export,geopackage,dxf,shapefile,kml,geojson,layer]]></tags>
     <server>False</server>
   </pyqgis_plugin>
 </plugins>

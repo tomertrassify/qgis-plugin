@@ -34,7 +34,7 @@ class MasterSettingsDialog(QDialog):
         layout.setSpacing(10)
 
         intro = QLabel(
-            "Zentrale Master-Einstellungen fuer gebuendelte Module. "
+            "Zentrale Master-Einstellungen fuer separat installierbare Module. "
             "Nextcloud-Werte werden direkt fuer kompatible Plugins gespiegelt."
         )
         intro.setWordWrap(True)
