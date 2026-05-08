@@ -2,7 +2,7 @@
 name=Max Wild Projekt Status
 qgisMinimumVersion=3.28
 description=Listet Max-Wild-Projekte aus _projekte auf und bearbeitet deren status.json-Dateien zentral.
-version=1.4.0
+version=1.4.1
 author=Tomer Maith
 email=
 about=Zeigt alle Projektordner unter /Users/tomermaith/Documents/repo-webmap/max-wild/_projekte mit status.json in einer Tabelle und schreibt Aenderungen direkt zurueck.
@@ -12,6 +12,6 @@ tags=projekt,status,json,max-wild,butler
 homepage=https://github.com/tomertrassify/qgis-plugin
 tracker=https://github.com/tomertrassify/qgis-plugin/issues
 repository=https://github.com/tomertrassify/qgis-plugin
-experimental=False
+experimental=True
 deprecated=False
 hasProcessingProvider=no

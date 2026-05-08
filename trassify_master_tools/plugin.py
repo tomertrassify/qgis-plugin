@@ -277,6 +277,13 @@ class TrassifyMasterToolsPlugin:
         label = metadata.get("name") or spec["label"]
         description = metadata.get("description") or metadata.get("about") or ""
         about = metadata.get("about") or description
+        is_experimental = self._metadata_bool(metadata, "experimental")
+        release_state_label = "Experimental" if is_experimental else "Nutzbar"
+        release_state_note = (
+            "Dieses Plugin ist bereits nutzbar."
+            if not is_experimental
+            else "Dieses Plugin ist noch als Experimental markiert."
+        )
         catalog_version = (
             catalog_entry.get("remote_version")
             or metadata.get("version")
@@ -364,6 +371,9 @@ class TrassifyMasterToolsPlugin:
             "about": about,
             "author": metadata.get("author") or "",
             "version": version_text,
+            "release_state_label": release_state_label,
+            "release_state_note": release_state_note,
+            "is_experimental": is_experimental,
             "category": metadata.get("category") or "Plugins",
             "tags": self._split_tags(metadata.get("tags")),
             "homepage": metadata.get("homepage") or "",
@@ -1047,6 +1057,10 @@ class TrassifyMasterToolsPlugin:
             for tag in str(raw_tags).replace(";", ",").split(",")
             if tag.strip()
         ]
+
+    def _metadata_bool(self, metadata, key):
+        value = str((metadata or {}).get(key, "")).strip().lower()
+        return value in {"1", "true", "yes", "on"}
 
     def _compare_versions(self, left, right):
         left_key = self._version_key(left)

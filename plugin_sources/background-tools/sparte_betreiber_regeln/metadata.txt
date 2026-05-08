@@ -1,7 +1,7 @@
 [general]
 name=Sparte Betreiber Regeln
 description=Pflegt rule-based Renderer fuer den aktiven Layer automatisch aus Sparte und Betreiber.
-version=1.0.0
+version=1.0.1
 qgisMinimumVersion=3.28
 author=Tomer Maith
 email=
@@ -14,5 +14,5 @@ tracker=https://github.com/tomertrassify/qgis-plugin/issues
 repository=https://github.com/tomertrassify/qgis-plugin
 homepage=https://github.com/tomertrassify/qgis-plugin
 tags=regel,renderer,sparte,betreiber,style,layer
-experimental=False
+experimental=True
 deprecated=False

@@ -247,6 +247,7 @@ class MasterOverviewDialog(QDialog):
         self.favorite_value = self._create_value_label(detail_panel)
         self.package_value = self._create_value_label(detail_panel)
         self.management_value = self._create_value_label(detail_panel)
+        self.release_value = self._create_value_label(detail_panel)
         self.tags_value = self._create_value_label(detail_panel)
         self.author_value = self._create_value_label(detail_panel)
         self.version_value = self._create_value_label(detail_panel)
@@ -257,6 +258,7 @@ class MasterOverviewDialog(QDialog):
         self.metadata_form.addRow("Favorit", self.favorite_value)
         self.metadata_form.addRow("Paket", self.package_value)
         self.metadata_form.addRow("Verwaltung", self.management_value)
+        self.metadata_form.addRow("Freigabe", self.release_value)
         self.metadata_form.addRow("Tags", self.tags_value)
         self.metadata_form.addRow("Autor", self.author_value)
         self.metadata_form.addRow("Version", self.version_value)
@@ -273,14 +275,17 @@ class MasterOverviewDialog(QDialog):
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(8)
         workspace_layout.addWidget(footer_frame)
+        button_height = 30
 
         self.refresh_button = QPushButton("Katalog neu laden", footer_frame)
         self.refresh_button.setObjectName("subtleButton")
+        self.refresh_button.setFixedHeight(button_height)
         self.refresh_button.clicked.connect(self._refresh_catalog_and_view)
         actions_layout.addWidget(self.refresh_button)
 
         self.settings_button = QPushButton("Einstellungen", footer_frame)
         self.settings_button.setObjectName("subtleButton")
+        self.settings_button.setFixedHeight(button_height)
         self.settings_button.clicked.connect(self.plugin_controller.show_settings)
         actions_layout.addWidget(self.settings_button)
 
@@ -290,18 +295,20 @@ class MasterOverviewDialog(QDialog):
         self.favorite_button.setObjectName("favoriteButton")
         self.favorite_button.setText("")
         self.favorite_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        self.favorite_button.setIconSize(QSize(20, 20))
-        self.favorite_button.setFixedSize(32, 32)
+        self.favorite_button.setIconSize(QSize(18, 18))
+        self.favorite_button.setFixedSize(button_height, button_height)
         self.favorite_button.clicked.connect(self._toggle_selected_favorite)
         actions_layout.addWidget(self.favorite_button)
 
         self.primary_button = QPushButton("Installieren", footer_frame)
         self.primary_button.setObjectName("primaryButton")
+        self.primary_button.setFixedHeight(button_height)
         self.primary_button.clicked.connect(self._run_primary_action)
         actions_layout.addWidget(self.primary_button)
 
         self.secondary_button = QPushButton("Entfernen", footer_frame)
         self.secondary_button.setObjectName("secondaryButton")
+        self.secondary_button.setFixedHeight(button_height)
         self.secondary_button.clicked.connect(self._run_secondary_action)
         actions_layout.addWidget(self.secondary_button)
 
@@ -311,6 +318,7 @@ class MasterOverviewDialog(QDialog):
         close_button = button_box.button(QDialogButtonBox.Close)
         if close_button is not None:
             close_button.setObjectName("subtleButton")
+            close_button.setFixedHeight(button_height)
         actions_layout.addWidget(button_box)
 
         self._apply_window_styling()
@@ -353,7 +361,7 @@ class MasterOverviewDialog(QDialog):
                 padding: 0;
             }
             QListWidget#filterList::item {
-                padding: 8px 6px;
+                padding: 8px 8px 8px 14px;
                 margin: 0;
             }
             QListWidget#filterList::item:hover {
@@ -434,7 +442,7 @@ class MasterOverviewDialog(QDialog):
             item = QListWidgetItem(style.standardIcon(icon_role), label)
             item.setData(Qt.UserRole, filter_key)
             item.setToolTip(f"{label}: {counts[filter_key]} Module")
-            item.setSizeHint(QSize(0, 54))
+            item.setSizeHint(QSize(0, 56))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
                 fallback_item = item
@@ -478,11 +486,11 @@ class MasterOverviewDialog(QDialog):
         )
 
         for row in visible_rows:
-            item = QTreeWidgetItem([row["label"], ""])
+            item = QTreeWidgetItem([self._module_list_label(row), ""])
             item.setData(0, Qt.UserRole, row["key"])
             item.setData(0, Qt.UserRole + 1, row["status_code"])
             item.setToolTip(0, f"{row['status_text']}: {row['detail']}")
-            item.setIcon(0, self._decorated_module_icon(row, 20, 12))
+            item.setIcon(0, self._decorated_module_icon(row, 20, 12, show_favorite_badge=False))
             item.setTextAlignment(1, Qt.AlignCenter)
             item.setToolTip(1, item.toolTip(0))
             status_icon = self._status_icon(row)
@@ -537,6 +545,12 @@ class MasterOverviewDialog(QDialog):
                 return label
         return "Alle Stati"
 
+    def _module_list_label(self, row):
+        label = row["label"]
+        if row.get("is_experimental"):
+            return f"{label} [Experimental]"
+        return label
+
     def _results_summary_text(self, result_count, filter_key, status_filter_key):
         filter_label = self._filter_label(filter_key)
         status_label = self._status_label(status_filter_key)
@@ -554,6 +568,7 @@ class MasterOverviewDialog(QDialog):
                 row["author"],
                 row["category"],
                 row["tool_type_label"],
+                row["release_state_label"],
                 row["detail"],
                 row["management_text"],
                 "favorit" if row["is_favorite"] else "",
@@ -620,6 +635,7 @@ class MasterOverviewDialog(QDialog):
         self.favorite_value.setText("-")
         self.package_value.setText("-")
         self.management_value.setText("-")
+        self.release_value.setText("-")
         self.tags_value.setText("-")
         self.author_value.setText("-")
         self.version_value.setText("-")
@@ -675,12 +691,21 @@ class MasterOverviewDialog(QDialog):
         )
         self.package_value.setText(row["package"] or "-")
         self.management_value.setText(row["management_text"] or "-")
+        self.release_value.setText(row["release_state_label"] or "-")
+        self.release_value.setToolTip(row["release_state_note"] or "")
         self.tags_value.setText(", ".join(row["tags"]) or "-")
         self.author_value.setText(row["author"] or "-")
         self.version_value.setText(row["version"] or "-")
         self.links_value.setText(self._build_links_html(row))
 
-        self.icon_label.setPixmap(self._decorated_module_pixmap(row, 88, 28))
+        self.icon_label.setPixmap(
+            self._decorated_module_pixmap(
+                row,
+                88,
+                28,
+                show_favorite_badge=row["is_favorite"],
+            )
+        )
 
     def _build_links_html(self, row):
         links = []
@@ -767,10 +792,17 @@ class MasterOverviewDialog(QDialog):
             return None
         return self._loaded_icon()
 
-    def _decorated_module_icon(self, row, size, badge_size):
-        return QIcon(self._decorated_module_pixmap(row, size, badge_size))
+    def _decorated_module_icon(self, row, size, badge_size, show_favorite_badge):
+        return QIcon(
+            self._decorated_module_pixmap(
+                row,
+                size,
+                badge_size,
+                show_favorite_badge=show_favorite_badge,
+            )
+        )
 
-    def _decorated_module_pixmap(self, row, size, badge_size):
+    def _decorated_module_pixmap(self, row, size, badge_size, show_favorite_badge):
         base_icon = QIcon(row["icon_path"])
         base_pixmap = base_icon.pixmap(size, size)
         if base_pixmap.isNull():
@@ -778,6 +810,9 @@ class MasterOverviewDialog(QDialog):
             pixmap.fill(Qt.transparent)
         else:
             pixmap = QPixmap(base_pixmap)
+
+        if not show_favorite_badge or not row["is_favorite"]:
+            return pixmap
 
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)

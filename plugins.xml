@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <plugins>
-  <pyqgis_plugin name="Trassify Master Tools" version="1.0.3">
+  <pyqgis_plugin name="Trassify Master Tools" version="1.0.4">
     <description><![CDATA[Ein Katalog-Plugin, das Trassify-Tools bei Bedarf herunterlaedt, installiert und aktiviert.]]></description>
     <about><![CDATA[Oeffnet einen Trassify-Katalog im Stil des QGIS-Erweiterungsfensters. Plugins werden erst bei Bedarf heruntergeladen, separat installiert und koennen direkt aus dem Master heraus aktiviert oder entfernt werden.]]></about>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
     <qgis_minimum_version>3.28</qgis_minimum_version>
     <qgis_maximum_version>3.99</qgis_maximum_version>
     <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
@@ -138,10 +138,10 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <tags><![CDATA[]]></tags>
     <server>False</server>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Sparte Betreiber Regeln" version="1.0.0">
+  <pyqgis_plugin name="Sparte Betreiber Regeln" version="1.0.1">
     <description><![CDATA[Pflegt rule-based Renderer fuer den aktiven Layer automatisch aus Sparte und Betreiber.]]></description>
     <about><![CDATA[Ein checkbarer Toggle, der auf dem aktiven Vektor-Layer mit den Feldern Sparte und Betreiber verschachtelte Regeln erzeugt: oben Sparte, darunter Betreiber.]]></about>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <qgis_minimum_version>3.28</qgis_minimum_version>
     <qgis_maximum_version></qgis_maximum_version>
     <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
@@ -152,7 +152,7 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
     <create_date>2026-05-08</create_date>
     <update_date>2026-05-08</update_date>
-    <experimental>false</experimental>
+    <experimental>true</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
     <repository><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></repository>
@@ -243,10 +243,10 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <tags><![CDATA[projekt,kml,startordner,gpkg,vorlage,alkis,osm,export]]></tags>
     <server>False</server>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Max Wild Projekt Status" version="1.4.0">
+  <pyqgis_plugin name="Max Wild Projekt Status" version="1.4.1">
     <description><![CDATA[Listet Max-Wild-Projekte aus _projekte auf und bearbeitet deren status.json-Dateien zentral.]]></description>
     <about><![CDATA[Zeigt alle Projektordner unter /Users/tomermaith/Documents/repo-webmap/max-wild/_projekte mit status.json in einer Tabelle und schreibt Aenderungen direkt zurueck.]]></about>
-    <version>1.4.0</version>
+    <version>1.4.1</version>
     <qgis_minimum_version>3.28</qgis_minimum_version>
     <qgis_maximum_version></qgis_maximum_version>
     <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
@@ -257,7 +257,7 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
     <create_date>2026-05-08</create_date>
     <update_date>2026-05-08</update_date>
-    <experimental>false</experimental>
+    <experimental>true</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
     <repository><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></repository>
