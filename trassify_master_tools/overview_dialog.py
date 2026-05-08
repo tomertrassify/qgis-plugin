@@ -166,6 +166,7 @@ class MasterOverviewDialog(QDialog):
         self.type_value = self._create_value_label(detail_panel)
         self.favorite_value = self._create_value_label(detail_panel)
         self.package_value = self._create_value_label(detail_panel)
+        self.management_value = self._create_value_label(detail_panel)
         self.tags_value = self._create_value_label(detail_panel)
         self.author_value = self._create_value_label(detail_panel)
         self.version_value = self._create_value_label(detail_panel)
@@ -175,6 +176,7 @@ class MasterOverviewDialog(QDialog):
         self.metadata_form.addRow("Typ", self.type_value)
         self.metadata_form.addRow("Favorit", self.favorite_value)
         self.metadata_form.addRow("Paket", self.package_value)
+        self.metadata_form.addRow("Verwaltung", self.management_value)
         self.metadata_form.addRow("Tags", self.tags_value)
         self.metadata_form.addRow("Autor", self.author_value)
         self.metadata_form.addRow("Version", self.version_value)
@@ -357,6 +359,7 @@ class MasterOverviewDialog(QDialog):
                 row["category"],
                 row["tool_type_label"],
                 row["detail"],
+                row["management_text"],
                 "favorit" if row["is_favorite"] else "",
                 " ".join(row["tags"]),
             ]
@@ -420,6 +423,7 @@ class MasterOverviewDialog(QDialog):
         self.type_value.setText("-")
         self.favorite_value.setText("-")
         self.package_value.setText("-")
+        self.management_value.setText("-")
         self.tags_value.setText("-")
         self.author_value.setText("-")
         self.version_value.setText("-")
@@ -460,7 +464,7 @@ class MasterOverviewDialog(QDialog):
         else:
             self.about_label.setText(
                 "Dieses Modul wird bei Bedarf separat installiert und erst danach in QGIS aktiviert. "
-                "Nicht installierte Tools bleiben komplett ausserhalb des lokalen Plugin-Ordners."
+                "Sobald es im lokalen QGIS-Profil liegt, kann der Master auch Aktualisieren und Entfernen uebernehmen."
                 + favorite_hint
             )
 
@@ -474,6 +478,7 @@ class MasterOverviewDialog(QDialog):
             "Favorit gespeichert" if row["is_favorite"] else "Nicht als Favorit gespeichert"
         )
         self.package_value.setText(row["package"] or "-")
+        self.management_value.setText(row["management_text"] or "-")
         self.tags_value.setText(", ".join(row["tags"]) or "-")
         self.author_value.setText(row["author"] or "-")
         self.version_value.setText(row["version"] or "-")

@@ -284,7 +284,7 @@ class TrassifyMasterToolsPlugin:
         )
         installed_version = local_info["installed_version"]
         update_available = (
-            local_info["is_managed"]
+            local_info["can_manage"]
             and bool(installed_version and catalog_version)
             and self._compare_versions(installed_version, catalog_version) < 0
         )
@@ -293,6 +293,9 @@ class TrassifyMasterToolsPlugin:
         status_text = "Nicht installiert"
         detail = (
             f"{label} ist noch nicht installiert und wird erst bei Bedarf heruntergeladen."
+        )
+        management_text = (
+            "Noch nicht installiert. Bei Bedarf wird das Plugin in das lokale QGIS-Profil geladen."
         )
 
         if local_info["is_installed"]:
@@ -318,8 +321,17 @@ class TrassifyMasterToolsPlugin:
                     f"{label} ist installiert, aber aktuell nicht aktiv."
                 )
 
-            if local_info["is_installed"] and not local_info["is_managed"]:
-                detail += " Die Installation liegt ausserhalb des Master-Katalogs."
+            if local_info["can_manage"]:
+                detail += " Die Installation liegt im lokalen QGIS-Profil und kann hier aktualisiert oder entfernt werden."
+                management_text = (
+                    "Im lokalen QGIS-Profil installiert. Dieses Plugin kann hier installiert, aktualisiert, aktiviert und entfernt werden."
+                )
+            else:
+                detail += " Die Installation liegt ausserhalb des lokalen QGIS-Profils und wird hier nur angezeigt."
+                management_text = (
+                    "Ausserhalb des lokalen QGIS-Profils installiert. Aktivieren und Deaktivieren bleiben moeglich, "
+                    "Datei-Updates und Entfernen sind hier deaktiviert."
+                )
 
         error_message = self.module_action_errors.get(spec["key"], "").strip()
         if error_message:
@@ -359,13 +371,15 @@ class TrassifyMasterToolsPlugin:
             "repository": metadata.get("repository") or "",
             "is_favorite": self.is_favorite(spec["key"]),
             "icon_path": self._resolve_module_icon_path(spec, catalog_entry),
+            "plugin_dir": local_info["plugin_dir"],
             "is_active": local_info["is_active"],
             "is_installed": local_info["is_installed"],
-            "is_managed": local_info["is_managed"],
+            "is_managed": local_info["can_manage"],
             "installed_version": installed_version,
             "catalog_version": catalog_version,
             "download_url": catalog_entry.get("download_url", ""),
-            "can_uninstall": local_info["is_managed"],
+            "can_uninstall": local_info["can_manage"],
+            "management_text": management_text,
         }
 
     def _load_catalog_snapshot(self):
@@ -498,12 +512,7 @@ class TrassifyMasterToolsPlugin:
 
     def _inspect_local_plugin(self, spec):
         plugin_dir = self._find_installed_plugin_dir(spec["package"])
-        is_managed = False
-        if plugin_dir is not None:
-            try:
-                is_managed = plugin_dir.resolve() == self._managed_plugins_dir().resolve() / spec["package"]
-            except Exception:
-                is_managed = False
+        can_manage = self._can_manage_plugin_dir(plugin_dir)
 
         active_plugins = getattr(qgis_utils, "active_plugins", []) or []
         is_active = spec["package"] in active_plugins
@@ -522,7 +531,7 @@ class TrassifyMasterToolsPlugin:
         return {
             "plugin_dir": plugin_dir,
             "is_installed": plugin_dir is not None,
-            "is_managed": is_managed,
+            "can_manage": can_manage,
             "is_active": is_active,
             "installed_version": installed_version,
         }
@@ -532,7 +541,7 @@ class TrassifyMasterToolsPlugin:
         if row["is_installed"] and not row["is_managed"]:
             self._record_error(
                 spec,
-                "Plugin wird ausserhalb des Master-Katalogs verwaltet und wird nicht ueberschrieben.",
+                "Plugin liegt ausserhalb des lokalen QGIS-Profils und wird hier nicht ueberschrieben.",
             )
             self._refresh_ui_state()
             return False
@@ -560,7 +569,10 @@ class TrassifyMasterToolsPlugin:
                     spec["package"],
                     extract_root,
                 )
-                self._replace_managed_plugin_dir(spec["package"], extracted_plugin_dir)
+                self._replace_plugin_dir(
+                    self._target_plugin_dir(spec["package"], row.get("plugin_dir")),
+                    extracted_plugin_dir,
+                )
 
             self._set_plugin_enabled_setting(spec["package"], activate_after_install)
             self._refresh_available_plugins()
@@ -681,7 +693,7 @@ class TrassifyMasterToolsPlugin:
             if row["is_active"]:
                 self._deactivate_installed_module(spec, announce=False)
 
-            plugin_dir = self._managed_plugins_dir() / spec["package"]
+            plugin_dir = self._target_plugin_dir(spec["package"], row.get("plugin_dir"))
             if plugin_dir.is_dir():
                 shutil.rmtree(plugin_dir)
 
@@ -749,13 +761,14 @@ class TrassifyMasterToolsPlugin:
             f"ZIP enthaelt kein Plugin-Verzeichnis fuer {package_name}."
         )
 
-    def _replace_managed_plugin_dir(self, package_name, source_dir):
-        managed_plugins_dir = self._managed_plugins_dir()
-        managed_plugins_dir.mkdir(parents=True, exist_ok=True)
+    def _replace_plugin_dir(self, target_dir, source_dir):
+        target_dir = Path(target_dir)
+        plugins_dir = target_dir.parent
+        package_name = target_dir.name
+        plugins_dir.mkdir(parents=True, exist_ok=True)
 
-        target_dir = managed_plugins_dir / package_name
-        staged_dir = managed_plugins_dir / f".{package_name}.staged"
-        backup_dir = managed_plugins_dir / f".{package_name}.backup"
+        staged_dir = plugins_dir / f".{package_name}.staged"
+        backup_dir = plugins_dir / f".{package_name}.backup"
 
         shutil.rmtree(staged_dir, ignore_errors=True)
         shutil.rmtree(backup_dir, ignore_errors=True)
@@ -782,6 +795,22 @@ class TrassifyMasterToolsPlugin:
             return Path(home_plugin_path)
         return Path(QgsApplication.qgisSettingsDirPath()) / "python" / "plugins"
 
+    def _target_plugin_dir(self, package_name, plugin_dir=None):
+        if self._can_manage_plugin_dir(plugin_dir):
+            return Path(plugin_dir)
+        return self._managed_plugins_dir() / package_name
+
+    def _can_manage_plugin_dir(self, plugin_dir):
+        if plugin_dir is None:
+            return False
+
+        plugin_parent = self._normalized_path(Path(plugin_dir).parent)
+        if plugin_parent is None:
+            return False
+
+        manageable_paths = self._manageable_plugin_dirs()
+        return any(self._same_path(plugin_parent, path) for path in manageable_paths)
+
     def _find_installed_plugin_dir(self, package_name):
         plugin_paths = [str(self._managed_plugins_dir())]
         plugin_paths.extend(list(getattr(qgis_utils, "plugin_paths", []) or []))
@@ -798,6 +827,30 @@ class TrassifyMasterToolsPlugin:
             if candidate.is_dir():
                 return candidate
         return None
+
+    def _manageable_plugin_dirs(self):
+        settings_root = self._normalized_path(QgsApplication.qgisSettingsDirPath())
+        candidates = []
+        raw_paths = [self._managed_plugins_dir()]
+        raw_paths.extend(list(getattr(qgis_utils, "plugin_paths", []) or []))
+
+        for raw_path in raw_paths:
+            normalized_path = self._normalized_path(raw_path)
+            if normalized_path is None:
+                continue
+            if settings_root is not None and not self._is_same_or_descendant(normalized_path, settings_root):
+                continue
+            if any(self._same_path(normalized_path, existing) for existing in candidates):
+                continue
+            candidates.append(normalized_path)
+
+        managed_dir = self._normalized_path(self._managed_plugins_dir())
+        if managed_dir is not None and not any(
+            self._same_path(managed_dir, existing) for existing in candidates
+        ):
+            candidates.insert(0, managed_dir)
+
+        return candidates
 
     def _refresh_available_plugins(self):
         updater = getattr(qgis_utils, "updateAvailablePlugins", None)
@@ -1024,6 +1077,36 @@ class TrassifyMasterToolsPlugin:
         if child is None or child.text is None:
             return ""
         return child.text.strip()
+
+    def _normalized_path(self, path):
+        if path is None:
+            return None
+        try:
+            return Path(path).expanduser().resolve()
+        except Exception:
+            try:
+                return Path(path).expanduser()
+            except Exception:
+                return None
+
+    def _same_path(self, left, right):
+        left_path = self._normalized_path(left)
+        right_path = self._normalized_path(right)
+        if left_path is None or right_path is None:
+            return False
+        return left_path == right_path
+
+    def _is_same_or_descendant(self, path, parent):
+        normalized_path = self._normalized_path(path)
+        normalized_parent = self._normalized_path(parent)
+        if normalized_path is None or normalized_parent is None:
+            return False
+
+        try:
+            normalized_path.relative_to(normalized_parent)
+            return True
+        except ValueError:
+            return False
 
     def _is_qt_object_alive(self, obj):
         if obj is None:
