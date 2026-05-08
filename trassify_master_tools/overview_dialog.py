@@ -33,6 +33,7 @@ class MasterOverviewDialog(QDialog):
         ("all", "Alle", QStyle.SP_FileDialogDetailedView),
         ("interactive", "Normale Tools", QStyle.SP_FileDialogListView),
         ("background", "Hintergrundtools", QStyle.SP_ComputerIcon),
+        ("experimental", "Experimental", QStyle.SP_MessageBoxWarning),
         ("favorites", "Favoriten", QStyle.SP_DirHomeIcon),
     )
     STATUS_FILTERS = (
@@ -62,7 +63,7 @@ class MasterOverviewDialog(QDialog):
 
         sidebar_frame = QFrame(self)
         sidebar_frame.setObjectName("sidebarFrame")
-        sidebar_frame.setFixedWidth(190)
+        sidebar_frame.setFixedWidth(184)
         sidebar_layout = QVBoxLayout(sidebar_frame)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
@@ -72,7 +73,7 @@ class MasterOverviewDialog(QDialog):
         self.filter_list.setFrameShape(QFrame.Box)
         self.filter_list.setLineWidth(0)
         self.filter_list.setSpacing(0)
-        self.filter_list.setIconSize(QSize(32, 32))
+        self.filter_list.setIconSize(QSize(28, 28))
         self.filter_list.setUniformItemSizes(True)
         self.filter_list.currentItemChanged.connect(self._apply_filters)
         sidebar_layout.addWidget(self.filter_list, 1)
@@ -361,15 +362,17 @@ class MasterOverviewDialog(QDialog):
                 padding: 0;
             }
             QListWidget#filterList::item {
-                padding: 8px 8px 8px 14px;
+                padding: 7px 8px 7px 18px;
                 margin: 0;
             }
             QListWidget#filterList::item:hover {
                 background: #9a9a9a;
+                padding: 7px 8px 7px 18px;
             }
             QListWidget#filterList::item:selected {
                 background: palette(window);
                 color: palette(window-text);
+                padding: 7px 8px 7px 18px;
             }
             QFrame#workspaceFrame {
                 background: transparent;
@@ -421,15 +424,26 @@ class MasterOverviewDialog(QDialog):
     def _populate_filters(self):
         current_filter = self._active_filter_key()
         counts = {
-            "all": len(self._all_rows),
+            "all": sum(
+                1 for row in self._all_rows if not row["is_experimental"]
+            ),
             "interactive": sum(
-                1 for row in self._all_rows if row["tool_type"] == "interactive"
+                1
+                for row in self._all_rows
+                if row["tool_type"] == "interactive" and not row["is_experimental"]
             ),
             "background": sum(
-                1 for row in self._all_rows if row["tool_type"] == "background"
+                1
+                for row in self._all_rows
+                if row["tool_type"] == "background" and not row["is_experimental"]
+            ),
+            "experimental": sum(
+                1 for row in self._all_rows if row["is_experimental"]
             ),
             "favorites": sum(
-                1 for row in self._all_rows if row["is_favorite"]
+                1
+                for row in self._all_rows
+                if row["is_favorite"] and not row["is_experimental"]
             ),
         }
 
@@ -442,7 +456,7 @@ class MasterOverviewDialog(QDialog):
             item = QListWidgetItem(style.standardIcon(icon_role), label)
             item.setData(Qt.UserRole, filter_key)
             item.setToolTip(f"{label}: {counts[filter_key]} Module")
-            item.setSizeHint(QSize(0, 56))
+            item.setSizeHint(QSize(0, 50))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
                 fallback_item = item
@@ -521,11 +535,13 @@ class MasterOverviewDialog(QDialog):
 
     def _matches_filter(self, row, filter_key):
         if filter_key == "all":
-            return True
+            return not row["is_experimental"]
         if filter_key in {"interactive", "background"}:
-            return row["tool_type"] == filter_key
+            return row["tool_type"] == filter_key and not row["is_experimental"]
+        if filter_key == "experimental":
+            return row["is_experimental"]
         if filter_key == "favorites":
-            return row["is_favorite"]
+            return row["is_favorite"] and not row["is_experimental"]
         return False
 
     def _matches_status_filter(self, row, filter_key):
