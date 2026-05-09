@@ -6,7 +6,6 @@ from qgis.PyQt.QtCore import QSize, Qt
 from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -35,14 +34,6 @@ class MasterOverviewDialog(QDialog):
         ("background", "Hintergrundtools", QStyle.SP_ComputerIcon),
         ("experimental", "Experimental", QStyle.SP_MessageBoxWarning),
         ("favorites", "Favoriten", QStyle.SP_DirHomeIcon),
-    )
-    STATUS_FILTERS = (
-        ("all", "Alle Stati"),
-        ("available", "Nicht installiert"),
-        ("installed", "Installiert"),
-        ("active", "Aktiv"),
-        ("update", "Update"),
-        ("error", "Fehler"),
     )
 
     def __init__(self, plugin_controller, parent=None):
@@ -125,18 +116,6 @@ class MasterOverviewDialog(QDialog):
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self._apply_filters)
         controls_layout.addWidget(self.search_field, 1)
-
-        status_label = QLabel("Status", header_frame)
-        status_label.setObjectName("statusFilterLabel")
-        controls_layout.addWidget(status_label)
-
-        self.status_filter = QComboBox(header_frame)
-        self.status_filter.setObjectName("statusFilter")
-        self.status_filter.setMinimumWidth(190)
-        for filter_key, label in self.STATUS_FILTERS:
-            self.status_filter.addItem(label, filter_key)
-        self.status_filter.currentIndexChanged.connect(self._apply_filters)
-        controls_layout.addWidget(self.status_filter)
 
         self.content_splitter = QSplitter(Qt.Horizontal, workspace_frame)
         self.content_splitter.setObjectName("contentSplitter")
@@ -391,7 +370,6 @@ class MasterOverviewDialog(QDialog):
             }
             QLabel#workspaceSubtitleLabel,
             QLabel#resultsSummaryLabel,
-            QLabel#statusFilterLabel,
             QLabel#detailAboutLabel {
                 color: palette(mid);
             }
@@ -473,12 +451,8 @@ class MasterOverviewDialog(QDialog):
             return "all"
         return current_item.data(Qt.UserRole) or "all"
 
-    def _active_status_filter_key(self):
-        return self.status_filter.currentData() or "all"
-
     def _apply_filters(self, *_args, preferred_key=None):
         filter_key = self._active_filter_key()
-        status_filter_key = self._active_status_filter_key()
         search_term = self.search_field.text().strip().lower()
 
         self.module_list.blockSignals(True)
@@ -488,15 +462,13 @@ class MasterOverviewDialog(QDialog):
         for row in self._all_rows:
             if not self._matches_filter(row, filter_key):
                 continue
-            if not self._matches_status_filter(row, status_filter_key):
-                continue
             if search_term and not self._matches_search(row, search_term):
                 continue
             visible_rows.append(row)
 
         self.module_section_label.setText(self._filter_label(filter_key))
         self.results_summary_label.setText(
-            self._results_summary_text(len(visible_rows), filter_key, status_filter_key)
+            self._results_summary_text(len(visible_rows), filter_key)
         )
 
         for row in visible_rows:
@@ -544,22 +516,11 @@ class MasterOverviewDialog(QDialog):
             return row["is_favorite"] and not row["is_experimental"]
         return False
 
-    def _matches_status_filter(self, row, filter_key):
-        if filter_key == "all":
-            return True
-        return row["status_code"] == filter_key
-
     def _filter_label(self, filter_key):
         for candidate_key, label, _icon_role in self.FILTERS:
             if candidate_key == filter_key:
                 return label
         return "Alle"
-
-    def _status_label(self, status_filter_key):
-        for candidate_key, label in self.STATUS_FILTERS:
-            if candidate_key == status_filter_key:
-                return label
-        return "Alle Stati"
 
     def _module_list_label(self, row):
         label = row["label"]
@@ -567,12 +528,9 @@ class MasterOverviewDialog(QDialog):
             return f"{label} [Experimental]"
         return label
 
-    def _results_summary_text(self, result_count, filter_key, status_filter_key):
+    def _results_summary_text(self, result_count, filter_key):
         filter_label = self._filter_label(filter_key)
-        status_label = self._status_label(status_filter_key)
-        if status_filter_key == "all":
-            return f"{result_count} Module | {filter_label}"
-        return f"{result_count} Module | {filter_label} | {status_label}"
+        return f"{result_count} Module | {filter_label}"
 
     def _matches_search(self, row, search_term):
         search_haystack = " ".join(

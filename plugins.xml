@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <plugins>
-  <pyqgis_plugin name="Trassify Master Tools" version="1.0.5">
+  <pyqgis_plugin name="Trassify Master Tools" version="1.0.6">
     <description><![CDATA[Ein Katalog-Plugin, das Trassify-Tools bei Bedarf herunterlaedt, installiert und aktiviert.]]></description>
     <about><![CDATA[Oeffnet einen Trassify-Katalog im Stil des QGIS-Erweiterungsfensters. Plugins werden erst bei Bedarf heruntergeladen, separat installiert und koennen direkt aus dem Master heraus aktiviert oder entfernt werden.]]></about>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
     <qgis_minimum_version>3.28</qgis_minimum_version>
     <qgis_maximum_version>3.99</qgis_maximum_version>
     <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>
@@ -12,8 +12,8 @@
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/trassify_master_tools.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
@@ -21,10 +21,10 @@
     <tags><![CDATA[trassify,katalog,repository,plugins,tools,qgis]]></tags>
     <server>False</server>
   </pyqgis_plugin>
-  <pyqgis_plugin name="AttributionButler" version="0.10.50">
+  <pyqgis_plugin name="AttributionButler" version="0.10.51">
     <description><![CDATA[Bindet eine Nextcloud-Link-Automatik als form_open-Funktion an den aktiven Layer.]]></description>
     <about><![CDATA[Konfiguriert Layer-Felder und Nextcloud-Zugangsdaten als Layer-Properties und setzt die Python-Init-Funktion auf form_open.]]></about>
-    <version>0.10.50</version>
+    <version>0.10.51</version>
     <qgis_minimum_version>3.28</qgis_minimum_version>
     <qgis_maximum_version></qgis_maximum_version>
     <homepage><![CDATA[]]></homepage>
@@ -33,9 +33,9 @@
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/attribution_buttler.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
-    <experimental>false</experimental>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
+    <experimental>true</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
     <repository><![CDATA[]]></repository>
@@ -54,8 +54,8 @@
     <author_name><![CDATA[Tomer + Codex]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/live_corridor_tool.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer + Codex]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
@@ -75,8 +75,8 @@
     <author_name><![CDATA[Guilhem Vellut]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/FreehandGeoreferencer.zip]]></download_url>
     <uploaded_by><![CDATA[Guilhem Vellut]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/gvellut/FreehandRasterGeoreferencer/issues]]></tracker>
@@ -108,8 +108,8 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Anton May, Mike Elstermann (#geoObserver)]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/GeoBasis_pro.zip]]></download_url>
     <uploaded_by><![CDATA[Anton May, Mike Elstermann (#geoObserver)]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/geoObserver/geobasis_loader/issues/]]></tracker>
@@ -117,20 +117,20 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <tags><![CDATA[]]></tags>
     <server>False</server>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Coordinatify" version="1.3.0">
+  <pyqgis_plugin name="Coordinatify" version="1.3.1">
     <description><![CDATA[Fügt im Karten-Rechtsklickmenü Aktionen für Google Maps und Street View im QGIS-Fenster sowie Adresse kopieren hinzu.]]></description>
     <about><![CDATA[Rechtsklick auf die Karte: Google Maps und Street View im QGIS-Fenster öffnen, Adresse kopieren und Bundesland anzeigen.]]></about>
-    <version>1.3.0</version>
+    <version>1.3.1</version>
     <qgis_minimum_version>3.16</qgis_minimum_version>
     <qgis_maximum_version></qgis_maximum_version>
     <homepage><![CDATA[]]></homepage>
     <file_name>coordinatify.zip</file_name>
-    <icon><![CDATA[]]></icon>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/background-tools/coordinatify/assets/TablerMapPin.svg]]></icon>
     <author_name><![CDATA[Codex]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/coordinatify.zip]]></download_url>
     <uploaded_by><![CDATA[Codex]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
@@ -150,8 +150,8 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/sparte_betreiber_regeln.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>true</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
@@ -171,8 +171,8 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[NextGIS]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/quick_map_services.zip]]></download_url>
     <uploaded_by><![CDATA[NextGIS]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/nextgis/quickmapservices/issues]]></tracker>
@@ -180,31 +180,31 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <tags><![CDATA[service, internet, tms, wms, qms, wfs, geojson, openstreetmap, osm, basemap]]></tags>
     <server>False</server>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Grid Quick GeoJSON Export" version="1.0.2">
+  <pyqgis_plugin name="Grid Quick GeoJSON Export" version="1.0.3">
     <description><![CDATA[Fuegt im Karten-Rechtsklick-Menue die Aktion "Schnellexport GeoJSON" hinzu und exportiert das geklickte Feature als einzelne GeoJSON-Datei.]]></description>
     <about><![CDATA[Rechtsklick auf ein Feature und es direkt als einzelnes GeoJSON speichern.]]></about>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
     <qgis_minimum_version>3.10</qgis_minimum_version>
     <qgis_maximum_version>3.99</qgis_maximum_version>
     <homepage><![CDATA[]]></homepage>
     <file_name>grid_quick_geojson_export.zip</file_name>
-    <icon><![CDATA[]]></icon>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/background-tools/grid_quick_geojson_export/icon.svg]]></icon>
     <author_name><![CDATA[Tomer + Codex]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/grid_quick_geojson_export.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer + Codex]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
-    <experimental>false</experimental>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
+    <experimental>true</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
     <repository><![CDATA[]]></repository>
     <tags><![CDATA[geojson,export,context menu,quick export]]></tags>
     <server>False</server>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Layer Fuser" version="1.0.0">
+  <pyqgis_plugin name="Layer Fuser" version="1.0.1">
     <description><![CDATA[Uebernimmt Geometrien und gemappte Attribute aus einer Shapefile oder GeoPackage-Layer in den ausgewaehlten Ziellayer.]]></description>
     <about><![CDATA[Fuegt einem bestehenden Vektorlayer die Features eines importierten Layers hinzu. Gleich benannte Felder werden erkannt, abweichende Felder koennen manuell zugeordnet oder ignoriert werden.]]></about>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <qgis_minimum_version>3.22</qgis_minimum_version>
     <qgis_maximum_version></qgis_maximum_version>
     <homepage><![CDATA[]]></homepage>
@@ -213,19 +213,19 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/layer_fuser.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
-    <experimental>false</experimental>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
+    <experimental>true</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
     <repository><![CDATA[]]></repository>
     <tags><![CDATA[vector,merge,attributes,geopackage,shapefile]]></tags>
     <server>False</server>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Projektstarter" version="1.5.1">
+  <pyqgis_plugin name="Projektstarter" version="1.5.2">
     <description><![CDATA[Waehlt einen Projektordner, erstellt ein projektbezogenes GeoPackage in 003_Ergebnis, styled das Projektgebiet, baut die Layerstruktur mit OSM und ALKIS auf und synchronisiert Zusatzexporte beim Speichern.]]></description>
     <about><![CDATA[Startet ein Projekt auf Basis der festen Ordnerstruktur 001_Projektinfos, 002_Leitungsauskunft und 003_Ergebnis.]]></about>
-    <version>1.5.1</version>
+    <version>1.5.2</version>
     <qgis_minimum_version>3.22</qgis_minimum_version>
     <qgis_maximum_version></qgis_maximum_version>
     <homepage><![CDATA[]]></homepage>
@@ -234,9 +234,9 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/max_wild_project_starter.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
-    <experimental>false</experimental>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
+    <experimental>true</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
     <repository><![CDATA[]]></repository>
@@ -255,8 +255,8 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/max_wild_project_status_manager.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>true</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
@@ -276,8 +276,8 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/projektstarter_attribution_buttler.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
@@ -297,8 +297,8 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Trassify]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/trassify_github.zip]]></download_url>
     <uploaded_by><![CDATA[Trassify]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
@@ -318,8 +318,8 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Trassify]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/webmap_export.zip]]></download_url>
     <uploaded_by><![CDATA[Trassify]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[https://github.com/tomertrassify/qgis-plugin/issues]]></tracker>
@@ -327,20 +327,20 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <tags><![CDATA[leaflet,webmap,export,geojson,web]]></tags>
     <server>False</server>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Quickrule" version="1.1.0">
+  <pyqgis_plugin name="Quickrule" version="1.1.1">
     <description><![CDATA[Preset-driven rule styling and layer filters with alias-based field mapping.]]></description>
     <about><![CDATA[Adds a Quickrule layer context action with presets (Betreiber/Sparte), configurable field aliases, value selection overlay, rule-based styling, and automatic save+exit edit mode before applying layer filters.]]></about>
-    <version>1.1.0</version>
+    <version>1.1.1</version>
     <qgis_minimum_version>3.22</qgis_minimum_version>
     <qgis_maximum_version></qgis_maximum_version>
     <homepage><![CDATA[]]></homepage>
     <file_name>quickrule.zip</file_name>
-    <icon><![CDATA[]]></icon>
+    <icon><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugin_sources/quickrules-pro/quickrule/icon.svg]]></icon>
     <author_name><![CDATA[Tomer + Codex]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/quickrule.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer + Codex]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
@@ -360,8 +360,8 @@ Despite careful checking, no liability can be accepted for the availability, acc
     <author_name><![CDATA[Tomer Maith]]></author_name>
     <download_url><![CDATA[https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/verpacken_pro.zip]]></download_url>
     <uploaded_by><![CDATA[Tomer Maith]]></uploaded_by>
-    <create_date>2026-05-08</create_date>
-    <update_date>2026-05-08</update_date>
+    <create_date>2026-05-09</create_date>
+    <update_date>2026-05-09</update_date>
     <experimental>false</experimental>
     <deprecated>false</deprecated>
     <tracker><![CDATA[]]></tracker>
