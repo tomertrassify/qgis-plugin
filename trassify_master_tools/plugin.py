@@ -46,6 +46,10 @@ class TrassifyMasterToolsPlugin:
     }
     CATALOG_RELATIVE_PATH = Path("catalog") / "plugins.json"
     CATALOG_USER_AGENT = "TrassifyMasterTools/2.0"
+    DEFAULT_OPEN_METHOD_CANDIDATES = ("show_overview", "run", "show_dialog")
+    PACKAGE_OPEN_METHOD_CANDIDATES = {
+        "quickrule": ("run_quickrule", "run"),
+    }
 
     def __init__(self, iface):
         self.iface = iface
@@ -223,8 +227,25 @@ class TrassifyMasterToolsPlugin:
     def can_run_secondary_action(self, row):
         return bool(row.get("can_uninstall"))
 
+    def get_open_action_label(self, row):
+        return "Oeffnen" if row.get("can_open") else ""
+
+    def can_open_module(self, row):
+        return bool(row.get("can_open"))
+
     def load_module_by_key(self, key):
         return self.run_primary_action_by_key(key)
+
+    def open_module_by_key(self, key):
+        spec = self._spec_by_key(key)
+        if spec is None:
+            return False
+
+        row = self._build_module_row(spec)
+        if not row.get("can_open"):
+            return False
+
+        return self._open_installed_module(spec)
 
     def run_primary_action_by_key(self, key):
         spec = self._spec_by_key(key)
@@ -355,6 +376,8 @@ class TrassifyMasterToolsPlugin:
         elif installed_version:
             version_text = installed_version
 
+        can_open = self._can_open_installed_module(spec, local_info)
+
         return {
             "key": spec["key"],
             "label": label,
@@ -388,6 +411,7 @@ class TrassifyMasterToolsPlugin:
             "installed_version": installed_version,
             "catalog_version": catalog_version,
             "download_url": catalog_entry.get("download_url", ""),
+            "can_open": can_open,
             "can_uninstall": local_info["can_manage"],
             "management_text": management_text,
         }
@@ -731,6 +755,51 @@ class TrassifyMasterToolsPlugin:
             self._refresh_ui_state()
             return False
 
+    def _open_installed_module(self, spec):
+        row = self._build_module_row(spec)
+        if not row["is_installed"]:
+            return False
+
+        if not row["is_active"]:
+            if not self._activate_installed_module(spec, announce=False):
+                self.iface.messageBar().pushMessage(
+                    self.MENU_TITLE,
+                    f"{row['label']} konnte nicht geoeffnet werden, weil das Plugin nicht aktiviert werden konnte.",
+                    level=Qgis.Warning,
+                    duration=6,
+                )
+                return False
+            row = self._build_module_row(spec)
+
+        plugin_instance = self._loaded_plugin_instance(spec["package"])
+        open_method_name = self._resolve_plugin_open_method_name(spec, plugin_instance)
+        if plugin_instance is None or not open_method_name:
+            self._record_error(spec, "Fuer dieses Plugin ist kein direkter Oeffnen-Einstiegspunkt verfuegbar.")
+            self.iface.messageBar().pushMessage(
+                self.MENU_TITLE,
+                f"{row['label']} bietet derzeit kein direktes Oeffnen aus dem Mastertool an.",
+                level=Qgis.Info,
+                duration=5,
+            )
+            self._refresh_ui_state()
+            return False
+
+        try:
+            getattr(plugin_instance, open_method_name)()
+            self._clear_error(spec)
+            self._refresh_ui_state()
+            return True
+        except Exception as exc:
+            self._record_error(spec, f"{type(exc).__name__}: {exc}")
+            self.iface.messageBar().pushMessage(
+                self.MENU_TITLE,
+                f"{row['label']} konnte nicht geoeffnet werden.",
+                level=Qgis.Warning,
+                duration=6,
+            )
+            self._refresh_ui_state()
+            return False
+
     def _download_archive(self, download_url, destination_path):
         request = urllib.request.Request(
             download_url,
@@ -837,6 +906,59 @@ class TrassifyMasterToolsPlugin:
             if candidate.is_dir():
                 return candidate
         return None
+
+    def _loaded_plugin_instance(self, package_name):
+        plugins = getattr(qgis_utils, "plugins", {}) or {}
+        return plugins.get(package_name)
+
+    def _can_open_installed_module(self, spec, local_info):
+        if not local_info.get("is_installed"):
+            return False
+
+        plugin_instance = self._loaded_plugin_instance(spec["package"])
+        if self._resolve_plugin_open_method_name(spec, plugin_instance):
+            return True
+
+        plugin_dir = local_info.get("plugin_dir")
+        if plugin_dir is None:
+            return False
+
+        return self._plugin_dir_appears_openable(spec, plugin_dir)
+
+    def _plugin_dir_appears_openable(self, spec, plugin_dir):
+        try:
+            candidate_names = tuple(self._plugin_open_method_candidates(spec))
+            if not candidate_names:
+                return False
+
+            for python_path in sorted(Path(plugin_dir).glob("*.py")):
+                try:
+                    content = python_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    content = python_path.read_text(encoding="latin-1")
+                for method_name in candidate_names:
+                    if f"def {method_name}(" in content:
+                        return True
+            return False
+        except Exception:
+            return False
+
+    def _plugin_open_method_candidates(self, spec):
+        package_name = spec["package"]
+        package_candidates = self.PACKAGE_OPEN_METHOD_CANDIDATES.get(package_name, ())
+        if package_candidates:
+            return package_candidates
+        return self.DEFAULT_OPEN_METHOD_CANDIDATES
+
+    def _resolve_plugin_open_method_name(self, spec, plugin_instance):
+        if plugin_instance is None:
+            return ""
+
+        for method_name in self._plugin_open_method_candidates(spec):
+            candidate = getattr(plugin_instance, method_name, None)
+            if callable(candidate):
+                return method_name
+        return ""
 
     def _manageable_plugin_dirs(self):
         settings_root = self._normalized_path(QgsApplication.qgisSettingsDirPath())

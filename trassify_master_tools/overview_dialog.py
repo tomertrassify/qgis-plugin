@@ -280,6 +280,13 @@ class MasterOverviewDialog(QDialog):
         self.favorite_button.clicked.connect(self._toggle_selected_favorite)
         actions_layout.addWidget(self.favorite_button)
 
+        self.open_button = QPushButton("Oeffnen", footer_frame)
+        self.open_button.setObjectName("subtleButton")
+        self.open_button.setFixedHeight(button_height)
+        self.open_button.clicked.connect(self._open_selected_module)
+        self.open_button.hide()
+        actions_layout.addWidget(self.open_button)
+
         self.primary_button = QPushButton("Installieren", footer_frame)
         self.primary_button.setObjectName("primaryButton")
         self.primary_button.setFixedHeight(button_height)
@@ -562,6 +569,8 @@ class MasterOverviewDialog(QDialog):
         item = self.module_list.currentItem()
         if item is None:
             self._update_favorite_button(None)
+            self.open_button.setEnabled(False)
+            self.open_button.hide()
             self.primary_button.setEnabled(False)
             self.secondary_button.setEnabled(False)
             self.primary_button.setText("Installieren")
@@ -571,6 +580,8 @@ class MasterOverviewDialog(QDialog):
         row = self._rows_by_key.get(item.data(0, Qt.UserRole))
         if row is None:
             self._update_favorite_button(None)
+            self.open_button.setEnabled(False)
+            self.open_button.hide()
             self.primary_button.setEnabled(False)
             self.secondary_button.setEnabled(False)
             self.primary_button.setText("Installieren")
@@ -578,6 +589,12 @@ class MasterOverviewDialog(QDialog):
             return
 
         self._update_favorite_button(row)
+        can_open = self.plugin_controller.can_open_module(row)
+        self.open_button.setVisible(can_open)
+        self.open_button.setEnabled(can_open)
+        self.open_button.setText(
+            self.plugin_controller.get_open_action_label(row) or "Oeffnen"
+        )
         self.primary_button.setEnabled(
             self.plugin_controller.can_run_primary_action(row)
         )
@@ -729,6 +746,18 @@ class MasterOverviewDialog(QDialog):
             return
 
         self.plugin_controller.run_secondary_action_by_key(key)
+        self.refresh()
+
+    def _open_selected_module(self):
+        item = self.module_list.currentItem()
+        if item is None:
+            return
+
+        key = item.data(0, Qt.UserRole)
+        if key is None:
+            return
+
+        self.plugin_controller.open_module_by_key(key)
         self.refresh()
 
     def _handle_item_double_click(self, item, _column):
