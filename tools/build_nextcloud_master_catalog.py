@@ -53,7 +53,7 @@ Inhalt:
 
 Upload:
 1. Diesen kompletten Ordner in den in den Master-Einstellungen gesetzten Nextcloud-Ordner hochladen.
-2. Beispiel: Wenn im Master `Trassify Master Tools` steht, dann muessen `catalog/` und `packages/`
+2. Beispiel: Wenn im Master `Trassify Allgemein/Plug-In/nextcloud-master-catalog` steht, dann muessen `catalog/` und `packages/`
    direkt darunter liegen.
 3. Passe in `catalog/plugins.json` optional pro Plugin die `groups` an.
 

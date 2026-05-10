@@ -438,13 +438,32 @@ class NextcloudAuthManager(QObject):
     def download_remote_file(self, remote_path: str, destination_path) -> None:
         if not self.is_authorized():
             raise NextcloudApiError("Bitte zuerst bei Nextcloud anmelden.")
-        self._api.download_remote_file(
-            self._base_url,
-            self._login_name,
-            self._app_password,
-            remote_path,
-            destination_path,
-            webdav_user=self._profile.user_id or self._login_name,
+        attempted_paths = self._download_path_candidates(remote_path)
+        last_error = None
+
+        for candidate_path in attempted_paths:
+            try:
+                self._api.download_remote_file(
+                    self._base_url,
+                    self._login_name,
+                    self._app_password,
+                    candidate_path,
+                    destination_path,
+                    webdav_user=self._profile.user_id or self._login_name,
+                )
+                return
+            except NextcloudApiError as exc:
+                last_error = exc
+                if exc.status_code != 404:
+                    raise
+
+        attempted_text = ", ".join(attempted_paths)
+        if last_error is None:
+            raise NextcloudApiError("Das Plugin-Paket konnte nicht geladen werden.")
+        raise NextcloudApiError(
+            f"Plugin-Paket nicht gefunden. Geprueft: {attempted_text}. "
+            f"Letzte Servermeldung: {last_error}",
+            status_code=last_error.status_code,
         )
 
     def cleanup(self) -> None:
@@ -512,6 +531,27 @@ class NextcloudAuthManager(QObject):
             add(DEFAULT_NEXTCLOUD_CATALOG_ROOT)
             add("nextcloud-master-catalog")
 
+        return candidates
+
+    def _download_path_candidates(self, remote_path: str) -> list[str]:
+        candidates = []
+
+        def add(path: str) -> None:
+            normalized = normalize_remote_path(path)
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+
+        normalized_path = normalize_remote_path(remote_path)
+        catalog_root = normalize_remote_path(self._catalog_root)
+
+        if catalog_root and normalized_path:
+            if (
+                normalized_path != catalog_root
+                and not normalized_path.startswith(catalog_root + "/")
+            ):
+                add(f"{catalog_root}/{normalized_path}")
+
+        add(normalized_path)
         return candidates
 
     def _save_catalog_root(self, catalog_root: str) -> None:
