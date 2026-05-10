@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <plugins>
-  <pyqgis_plugin name="Trassify Master Tools" version="2.0.2">
+  <pyqgis_plugin name="Trassify Master Tools" version="2.0.3">
     <description><![CDATA[Ein Katalog-Plugin, das Trassify-Tools bei Bedarf herunterlaedt, installiert und aktiviert.]]></description>
     <about><![CDATA[Oeffnet einen Trassify-Katalog im Stil des QGIS-Erweiterungsfensters. Plugins werden erst bei Bedarf heruntergeladen, separat installiert und koennen direkt aus dem Master heraus aktiviert oder entfernt werden.]]></about>
-    <version>2.0.2</version>
+    <version>2.0.3</version>
     <qgis_minimum_version>3.28</qgis_minimum_version>
     <qgis_maximum_version>3.99</qgis_maximum_version>
     <homepage><![CDATA[https://github.com/tomertrassify/qgis-plugin]]></homepage>

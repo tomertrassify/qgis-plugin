@@ -44,12 +44,16 @@ class MasterOverviewDialog(QDialog):
         self._all_rows = []
         self.auth_hero_path = self.plugin_controller.plugin_dir / "assets" / "nextcloud_login_hero.png"
         self.auth_logo_path = self.plugin_controller.plugin_dir / "assets" / "trassify-logo.png"
+        self._catalog_default_size = QSize(1260, 780)
+        self._catalog_min_size = QSize(1080, 680)
+        self._auth_dialog_size = QSize(620, 470)
+        self._dialog_mode = None
 
         self.setObjectName("masterOverviewDialog")
         self.setWindowTitle("Erweiterungen | Katalog")
         self.setWindowIcon(QIcon(str(plugin_controller.plugin_dir / "icon.svg")))
-        self.resize(1260, 780)
-        self.setMinimumSize(1080, 680)
+        self.resize(self._catalog_default_size)
+        self.setMinimumSize(self._catalog_min_size)
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -62,8 +66,8 @@ class MasterOverviewDialog(QDialog):
         self.auth_page = QWidget(self.page_stack)
         self.auth_page.setObjectName("authPage")
         auth_page_layout = QVBoxLayout(self.auth_page)
-        auth_page_layout.setContentsMargins(32, 32, 32, 32)
-        auth_page_layout.setSpacing(16)
+        auth_page_layout.setContentsMargins(12, 12, 12, 12)
+        auth_page_layout.setSpacing(0)
         auth_page_layout.addStretch(1)
         self.auth_widgets = self._create_auth_card(self.auth_page)
         auth_page_layout.addWidget(self.auth_widgets["frame"], 0, Qt.AlignHCenter)
@@ -349,8 +353,7 @@ class MasterOverviewDialog(QDialog):
     def _create_auth_card(self, parent):
         frame = QFrame(parent)
         frame.setObjectName("authCard")
-        frame.setMinimumWidth(640)
-        frame.setMaximumWidth(760)
+        frame.setFixedWidth(566)
 
         card_layout = QVBoxLayout(frame)
         card_layout.setContentsMargins(0, 0, 0, 0)
@@ -358,20 +361,20 @@ class MasterOverviewDialog(QDialog):
 
         hero_image = QLabel(frame)
         hero_image.setObjectName("authHeroImage")
-        hero_image.setFixedHeight(220)
+        hero_image.setFixedHeight(150)
         hero_image.setAlignment(Qt.AlignCenter)
-        hero_image.setPixmap(self._cover_pixmap(self.auth_hero_path, 760, 220))
+        hero_image.setPixmap(self._cover_pixmap(self.auth_hero_path, 566, 150))
         card_layout.addWidget(hero_image)
 
         content_widget = QWidget(frame)
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(40, 28, 40, 34)
-        content_layout.setSpacing(18)
+        content_layout.setContentsMargins(28, 24, 28, 26)
+        content_layout.setSpacing(14)
 
         logo_label = QLabel(content_widget)
         logo_label.setObjectName("authLogoLabel")
         logo_label.setAlignment(Qt.AlignCenter)
-        logo_label.setPixmap(self._contain_pixmap(self.auth_logo_path, 300, 64))
+        logo_label.setPixmap(self._contain_pixmap(self.auth_logo_path, 260, 52))
         content_layout.addWidget(logo_label, 0, Qt.AlignHCenter)
 
         title_label = QLabel("Willkommen bei Trassify", content_widget)
@@ -409,8 +412,8 @@ class MasterOverviewDialog(QDialog):
 
         login_button = QPushButton("Log In", content_widget)
         login_button.setObjectName("authPrimaryButton")
-        login_button.setFixedWidth(160)
-        login_button.setFixedHeight(44)
+        login_button.setFixedWidth(132)
+        login_button.setFixedHeight(40)
         login_button.clicked.connect(self._start_catalog_login)
         primary_row.addWidget(login_button)
         primary_row.addStretch(1)
@@ -419,12 +422,6 @@ class MasterOverviewDialog(QDialog):
         footer_row.setSpacing(0)
         footer_row.addStretch(1)
         content_layout.addLayout(footer_row)
-
-        settings_button = QPushButton("Einstellungen", content_widget)
-        settings_button.setObjectName("authTextButton")
-        settings_button.setFlat(True)
-        settings_button.clicked.connect(self.plugin_controller.show_settings)
-        footer_row.addWidget(settings_button)
 
         refresh_button = QPushButton("Verbindung pruefen", content_widget)
         refresh_button.setObjectName("authTextButton")
@@ -452,7 +449,6 @@ class MasterOverviewDialog(QDialog):
             "login": login_button,
             "refresh": refresh_button,
             "logout": logout_button,
-            "settings": settings_button,
         }
 
     def _contain_pixmap(self, path, width, height):
@@ -470,13 +466,30 @@ class MasterOverviewDialog(QDialog):
         offset_y = max(0, (scaled.height() - height) // 2)
         return scaled.copy(offset_x, offset_y, width, height)
 
+    def _set_dialog_mode(self, mode):
+        if self._dialog_mode == mode:
+            return
+        self._dialog_mode = mode
+        if mode == "auth":
+            self.setMinimumSize(self._auth_dialog_size)
+            self.setMaximumSize(self._auth_dialog_size)
+            self.resize(self._auth_dialog_size)
+            return
+
+        self.setMaximumSize(16777215, 16777215)
+        self.setMinimumSize(self._catalog_min_size)
+        if self.width() < self._catalog_min_size.width() or self.height() < self._catalog_min_size.height():
+            self.resize(self._catalog_default_size)
+
     def refresh(self):
         self._sync_auth_page()
         if not self.plugin_controller.can_access_catalog():
+            self._set_dialog_mode("auth")
             self.page_stack.setCurrentWidget(self.auth_page)
             self.setWindowTitle("Authorize Trassify Tools")
             return
 
+        self._set_dialog_mode("catalog")
         current_item = self.module_list.currentItem()
         current_key = current_item.data(0, Qt.UserRole) if current_item is not None else None
         self._all_rows = sorted(
@@ -550,10 +563,6 @@ class MasterOverviewDialog(QDialog):
             account_parts.append(f"<b>Konto:</b> {escape(display_name)}")
         if groups:
             account_parts.append(f"<b>Gruppen:</b> {escape(', '.join(groups))}")
-        if not account_parts and (has_saved_login or can_access or show_status):
-            account_parts.append(
-                f"<b>Server:</b> {escape(self.plugin_controller.get_shared_settings().get('nextcloud_base_url', '') or '-')}"
-            )
         account_text = "<br>".join(account_parts)
         for widgets in (self.auth_widgets, self.access_gate_widgets):
             widgets["account"].setText(account_text)
