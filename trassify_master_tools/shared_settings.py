@@ -8,8 +8,9 @@ from qgis.PyQt.QtCore import QSettings
 SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
 UI_SETTINGS_PREFIX = "TrassifyMasterTools/ui"
 ATTRIBUTION_BUTTLER_PREFIX = "AttributionButler/user_config"
-DEFAULT_NEXTCLOUD_CATALOG_ROOT = "Trassify Allgemein/Plug-In/nextcloud-master-catalog"
+DEFAULT_NEXTCLOUD_CATALOG_ROOT = "Trassify Allgemein/Qgis Plugins/nextcloud-master-catalog"
 LEGACY_NEXTCLOUD_CATALOG_ROOTS = (
+    "Trassify Allgemein/Plug-In/nextcloud-master-catalog",
     "Trassify Master Tools",
     "nextcloud-master-catalog",
 )
