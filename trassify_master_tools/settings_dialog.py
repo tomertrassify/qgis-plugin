@@ -17,7 +17,11 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from .shared_settings import DEFAULT_SHARED_SETTINGS, build_postgres_ogr_uri
+from .shared_settings import (
+    DEFAULT_NEXTCLOUD_CATALOG_ROOT,
+    DEFAULT_SHARED_SETTINGS,
+    build_postgres_ogr_uri,
+)
 
 
 class MasterSettingsDialog(QDialog):
@@ -104,7 +108,7 @@ class MasterSettingsDialog(QDialog):
         self.nextcloud_app_password = QLineEdit(connection_group)
         self.nextcloud_app_password.setEchoMode(QLineEdit.Password)
         self.nextcloud_catalog_root = QLineEdit(connection_group)
-        self.nextcloud_catalog_root.setPlaceholderText("Trassify Master Tools")
+        self.nextcloud_catalog_root.setPlaceholderText(DEFAULT_NEXTCLOUD_CATALOG_ROOT)
         self.nextcloud_folder_marker = QLineEdit(connection_group)
         self.nextcloud_folder_marker.setPlaceholderText("Nextcloud")
         self.local_nextcloud_roots = QPlainTextEdit(connection_group)
@@ -125,7 +129,8 @@ class MasterSettingsDialog(QDialog):
         info = QLabel(
             "Die Zugangsdaten koennen weiter manuell gepflegt werden, werden fuer den Master-Katalog aber "
             "bevorzugt ueber den Browser-Login von Nextcloud erzeugt. Der Plugin-Katalog-Ordner ist relativ "
-            "zum persoenlichen Nextcloud-Dateibereich des Nutzers."
+            "zum sichtbaren Nextcloud-Dateibereich des Nutzers, z. B. "
+            f"'{DEFAULT_NEXTCLOUD_CATALOG_ROOT}'."
         )
         info.setWordWrap(True)
         layout.addWidget(info)

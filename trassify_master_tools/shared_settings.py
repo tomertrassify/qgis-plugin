@@ -8,13 +8,18 @@ from qgis.PyQt.QtCore import QSettings
 SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
 UI_SETTINGS_PREFIX = "TrassifyMasterTools/ui"
 ATTRIBUTION_BUTTLER_PREFIX = "AttributionButler/user_config"
+DEFAULT_NEXTCLOUD_CATALOG_ROOT = "Trassify Allgemein/Plug-In/nextcloud-master-catalog"
+LEGACY_NEXTCLOUD_CATALOG_ROOTS = (
+    "Trassify Master Tools",
+    "nextcloud-master-catalog",
+)
 
 DEFAULT_SHARED_SETTINGS = {
     "workspace_root": "",
     "nextcloud_base_url": "https://nextcloud.trassify.cloud",
     "nextcloud_user": "",
     "nextcloud_app_password": "",
-    "nextcloud_catalog_root": "Trassify Master Tools",
+    "nextcloud_catalog_root": DEFAULT_NEXTCLOUD_CATALOG_ROOT,
     "local_nextcloud_roots": [],
     "nextcloud_folder_marker": "Nextcloud",
     "clickup_api_token": "",

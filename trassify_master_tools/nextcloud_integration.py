@@ -11,6 +11,11 @@ from qgis.PyQt.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QDesktopServices
 from qgis.core import Qgis
 
+from .shared_settings import (
+    DEFAULT_NEXTCLOUD_CATALOG_ROOT,
+    LEGACY_NEXTCLOUD_CATALOG_ROOTS,
+)
+
 
 LOGIN_FLOW_POLL_INTERVAL_MS = 2000
 
@@ -401,12 +406,33 @@ class NextcloudAuthManager(QObject):
             raise NextcloudApiError(
                 "In den Master-Einstellungen fehlt der Pfad zum geschuetzten Plugin-Katalog."
             )
-        return self._api.load_catalog(
-            self._base_url,
-            self._login_name,
-            self._app_password,
-            self._catalog_root,
-            webdav_user=self._profile.user_id or self._login_name,
+        attempted_roots = self._catalog_root_candidates()
+        last_error = None
+
+        for catalog_root in attempted_roots:
+            try:
+                payload = self._api.load_catalog(
+                    self._base_url,
+                    self._login_name,
+                    self._app_password,
+                    catalog_root,
+                    webdav_user=self._profile.user_id or self._login_name,
+                )
+                if catalog_root != self._catalog_root:
+                    self._save_catalog_root(catalog_root)
+                return payload
+            except NextcloudApiError as exc:
+                last_error = exc
+                if exc.status_code != 404:
+                    raise
+
+        attempted_text = ", ".join(attempted_roots)
+        if last_error is None:
+            raise NextcloudApiError("Der geschuetzte Plugin-Katalog konnte nicht geladen werden.")
+        raise NextcloudApiError(
+            f"Katalogordner nicht gefunden. Geprueft: {attempted_text}. "
+            f"Letzte Servermeldung: {last_error}",
+            status_code=last_error.status_code,
         )
 
     def download_remote_file(self, remote_path: str, destination_path) -> None:
@@ -470,6 +496,33 @@ class NextcloudAuthManager(QObject):
         settings["nextcloud_app_password"] = ""
         self._settings_saver(settings)
         self._reload_from_settings()
+
+    def _catalog_root_candidates(self) -> list[str]:
+        candidates = []
+
+        def add(root: str) -> None:
+            normalized = normalize_remote_path(root)
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+
+        configured_root = normalize_remote_path(self._catalog_root)
+        add(configured_root)
+
+        if not configured_root or configured_root in LEGACY_NEXTCLOUD_CATALOG_ROOTS:
+            add(DEFAULT_NEXTCLOUD_CATALOG_ROOT)
+            add("nextcloud-master-catalog")
+
+        return candidates
+
+    def _save_catalog_root(self, catalog_root: str) -> None:
+        normalized = normalize_remote_path(catalog_root)
+        if not normalized or normalized == self._catalog_root:
+            return
+
+        settings = dict(self._settings_loader() or {})
+        settings["nextcloud_catalog_root"] = normalized
+        self._settings_saver(settings)
+        self._catalog_root = normalized
 
     def _set_state(self, status: str, detail: str) -> None:
         changed = self._status != status or self._status_detail != detail
