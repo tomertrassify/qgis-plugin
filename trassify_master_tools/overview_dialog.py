@@ -128,14 +128,14 @@ class MasterOverviewDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        sidebar_frame = QFrame(self.catalog_page)
-        sidebar_frame.setObjectName("sidebarFrame")
-        sidebar_frame.setFixedWidth(184)
-        sidebar_layout = QVBoxLayout(sidebar_frame)
+        self.sidebar_frame = QFrame(self.catalog_page)
+        self.sidebar_frame.setObjectName("sidebarFrame")
+        self.sidebar_frame.setFixedWidth(184)
+        sidebar_layout = QVBoxLayout(self.sidebar_frame)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
 
-        self.filter_list = QListWidget(sidebar_frame)
+        self.filter_list = QListWidget(self.sidebar_frame)
         self.filter_list.setObjectName("filterList")
         self.filter_list.setFrameShape(QFrame.Box)
         self.filter_list.setLineWidth(0)
@@ -144,21 +144,21 @@ class MasterOverviewDialog(QDialog):
         self.filter_list.setUniformItemSizes(True)
         self.filter_list.currentItemChanged.connect(self._apply_filters)
         sidebar_layout.addWidget(self.filter_list, 1)
-        layout.addWidget(sidebar_frame)
+        layout.addWidget(self.sidebar_frame)
 
-        workspace_frame = QFrame(self.catalog_page)
-        workspace_frame.setObjectName("workspaceFrame")
-        workspace_layout = QVBoxLayout(workspace_frame)
+        self.workspace_frame = QFrame(self.catalog_page)
+        self.workspace_frame.setObjectName("workspaceFrame")
+        workspace_layout = QVBoxLayout(self.workspace_frame)
         workspace_layout.setContentsMargins(12, 12, 12, 12)
         workspace_layout.setSpacing(10)
-        layout.addWidget(workspace_frame, 1)
+        layout.addWidget(self.workspace_frame, 1)
 
-        header_frame = QFrame(workspace_frame)
-        header_frame.setObjectName("headerFrame")
-        header_layout = QVBoxLayout(header_frame)
+        self.header_frame = QFrame(self.workspace_frame)
+        self.header_frame.setObjectName("headerFrame")
+        header_layout = QVBoxLayout(self.header_frame)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(10)
-        workspace_layout.addWidget(header_frame)
+        workspace_layout.addWidget(self.header_frame)
 
         header_top_layout = QHBoxLayout()
         header_top_layout.setSpacing(12)
@@ -168,16 +168,16 @@ class MasterOverviewDialog(QDialog):
         header_text_layout.setSpacing(4)
         header_top_layout.addLayout(header_text_layout, 1)
 
-        workspace_title = QLabel("Plugin-Katalog", header_frame)
+        workspace_title = QLabel("Plugin-Katalog", self.header_frame)
         workspace_title.setObjectName("workspaceTitleLabel")
         header_text_layout.addWidget(workspace_title)
 
-        workspace_subtitle = QLabel("Verwalten direkt aus dem Mastertool.", header_frame)
+        workspace_subtitle = QLabel("Verwalten direkt aus dem Mastertool.", self.header_frame)
         workspace_subtitle.setObjectName("workspaceSubtitleLabel")
         workspace_subtitle.setWordWrap(True)
         header_text_layout.addWidget(workspace_subtitle)
 
-        self.catalog_count_badge = QLabel("", header_frame)
+        self.catalog_count_badge = QLabel("", self.header_frame)
         self.catalog_count_badge.setObjectName("catalogCountBadge")
         self.catalog_count_badge.setAlignment(Qt.AlignCenter)
         header_top_layout.addWidget(self.catalog_count_badge, 0, Qt.AlignTop)
@@ -186,14 +186,70 @@ class MasterOverviewDialog(QDialog):
         controls_layout.setSpacing(8)
         header_layout.addLayout(controls_layout)
 
-        self.search_field = QLineEdit(header_frame)
+        self.search_field = QLineEdit(self.header_frame)
         self.search_field.setObjectName("searchField")
         self.search_field.setPlaceholderText("Plugins durchsuchen...")
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self._apply_filters)
         controls_layout.addWidget(self.search_field, 1)
 
-        self.content_splitter = QSplitter(Qt.Horizontal, workspace_frame)
+        self.access_gate_frame = QFrame(self.workspace_frame)
+        self.access_gate_frame.setObjectName("authCard")
+        access_gate_layout = QVBoxLayout(self.access_gate_frame)
+        access_gate_layout.setContentsMargins(28, 28, 28, 28)
+        access_gate_layout.setSpacing(14)
+
+        self.access_gate_title_label = QLabel("Geschuetzten Plugin-Katalog entsperren", self.access_gate_frame)
+        self.access_gate_title_label.setObjectName("authTitleLabel")
+        self.access_gate_title_label.setWordWrap(True)
+        access_gate_layout.addWidget(self.access_gate_title_label)
+
+        self.access_gate_intro_label = QLabel(
+            "Die Plugin-Pakete liegen geschuetzt in Nextcloud. Vor dem Laden des Katalogs wird eine Browser-Anmeldung ueber Nextcloud benoetigt.",
+            self.access_gate_frame,
+        )
+        self.access_gate_intro_label.setObjectName("authIntroLabel")
+        self.access_gate_intro_label.setWordWrap(True)
+        access_gate_layout.addWidget(self.access_gate_intro_label)
+
+        self.access_gate_status_label = QLabel("", self.access_gate_frame)
+        self.access_gate_status_label.setObjectName("authStatusLabel")
+        self.access_gate_status_label.setWordWrap(True)
+        access_gate_layout.addWidget(self.access_gate_status_label)
+
+        self.access_gate_account_label = QLabel("", self.access_gate_frame)
+        self.access_gate_account_label.setObjectName("authAccountLabel")
+        self.access_gate_account_label.setWordWrap(True)
+        access_gate_layout.addWidget(self.access_gate_account_label)
+
+        access_gate_button_row = QHBoxLayout()
+        access_gate_button_row.setSpacing(8)
+        access_gate_layout.addLayout(access_gate_button_row)
+
+        self.access_gate_login_button = QPushButton("Im Browser anmelden", self.access_gate_frame)
+        self.access_gate_login_button.setObjectName("primaryButton")
+        self.access_gate_login_button.clicked.connect(self._start_catalog_login)
+        access_gate_button_row.addWidget(self.access_gate_login_button)
+
+        self.access_gate_refresh_button = QPushButton("Verbindung pruefen", self.access_gate_frame)
+        self.access_gate_refresh_button.setObjectName("subtleButton")
+        self.access_gate_refresh_button.clicked.connect(self._refresh_catalog_login)
+        access_gate_button_row.addWidget(self.access_gate_refresh_button)
+
+        self.access_gate_logout_button = QPushButton("Anmeldung entfernen", self.access_gate_frame)
+        self.access_gate_logout_button.setObjectName("secondaryButton")
+        self.access_gate_logout_button.clicked.connect(self._remove_catalog_login)
+        access_gate_button_row.addWidget(self.access_gate_logout_button)
+
+        self.access_gate_settings_button = QPushButton("Einstellungen", self.access_gate_frame)
+        self.access_gate_settings_button.setObjectName("subtleButton")
+        self.access_gate_settings_button.clicked.connect(self.plugin_controller.show_settings)
+        access_gate_button_row.addWidget(self.access_gate_settings_button)
+        access_gate_button_row.addStretch(1)
+
+        workspace_layout.addWidget(self.access_gate_frame)
+
+        self.content_splitter = QSplitter(Qt.Horizontal, self.workspace_frame)
         self.content_splitter.setObjectName("contentSplitter")
         self.content_splitter.setChildrenCollapsible(False)
         self.content_splitter.setHandleWidth(1)
@@ -325,21 +381,21 @@ class MasterOverviewDialog(QDialog):
         self.content_splitter.setStretchFactor(0, 5)
         self.content_splitter.setStretchFactor(1, 6)
 
-        footer_frame = QFrame(workspace_frame)
-        footer_frame.setObjectName("footerFrame")
-        actions_layout = QHBoxLayout(footer_frame)
+        self.footer_frame = QFrame(self.workspace_frame)
+        self.footer_frame.setObjectName("footerFrame")
+        actions_layout = QHBoxLayout(self.footer_frame)
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(8)
-        workspace_layout.addWidget(footer_frame)
+        workspace_layout.addWidget(self.footer_frame)
         button_height = 30
 
-        self.refresh_button = QPushButton("Katalog neu laden", footer_frame)
+        self.refresh_button = QPushButton("Katalog neu laden", self.footer_frame)
         self.refresh_button.setObjectName("subtleButton")
         self.refresh_button.setFixedHeight(button_height)
         self.refresh_button.clicked.connect(self._refresh_catalog_and_view)
         actions_layout.addWidget(self.refresh_button)
 
-        self.settings_button = QPushButton("Einstellungen", footer_frame)
+        self.settings_button = QPushButton("Einstellungen", self.footer_frame)
         self.settings_button.setObjectName("subtleButton")
         self.settings_button.setFixedHeight(button_height)
         self.settings_button.clicked.connect(self.plugin_controller.show_settings)
@@ -347,7 +403,7 @@ class MasterOverviewDialog(QDialog):
 
         actions_layout.addStretch(1)
 
-        self.favorite_button = QToolButton(footer_frame)
+        self.favorite_button = QToolButton(self.footer_frame)
         self.favorite_button.setObjectName("favoriteButton")
         self.favorite_button.setText("")
         self.favorite_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
@@ -356,26 +412,26 @@ class MasterOverviewDialog(QDialog):
         self.favorite_button.clicked.connect(self._toggle_selected_favorite)
         actions_layout.addWidget(self.favorite_button)
 
-        self.open_button = QPushButton("Oeffnen", footer_frame)
+        self.open_button = QPushButton("Oeffnen", self.footer_frame)
         self.open_button.setObjectName("subtleButton")
         self.open_button.setFixedHeight(button_height)
         self.open_button.clicked.connect(self._open_selected_module)
         self.open_button.hide()
         actions_layout.addWidget(self.open_button)
 
-        self.primary_button = QPushButton("Installieren", footer_frame)
+        self.primary_button = QPushButton("Installieren", self.footer_frame)
         self.primary_button.setObjectName("primaryButton")
         self.primary_button.setFixedHeight(button_height)
         self.primary_button.clicked.connect(self._run_primary_action)
         actions_layout.addWidget(self.primary_button)
 
-        self.secondary_button = QPushButton("Entfernen", footer_frame)
+        self.secondary_button = QPushButton("Entfernen", self.footer_frame)
         self.secondary_button.setObjectName("secondaryButton")
         self.secondary_button.setFixedHeight(button_height)
         self.secondary_button.clicked.connect(self._run_secondary_action)
         actions_layout.addWidget(self.secondary_button)
 
-        button_box = QDialogButtonBox(QDialogButtonBox.Close, footer_frame)
+        button_box = QDialogButtonBox(QDialogButtonBox.Close, self.footer_frame)
         button_box.setObjectName("dialogButtonBox")
         button_box.rejected.connect(self.reject)
         close_button = button_box.button(QDialogButtonBox.Close)
@@ -391,11 +447,13 @@ class MasterOverviewDialog(QDialog):
     def refresh(self):
         self._sync_auth_page()
         if not self.plugin_controller.can_access_catalog():
-            self.page_stack.setCurrentWidget(self.auth_page)
+            self.page_stack.setCurrentWidget(self.catalog_page)
+            self._set_catalog_access_state(False)
             self.setWindowTitle("Erweiterungen | Anmeldung")
             return
 
         self.page_stack.setCurrentWidget(self.catalog_page)
+        self._set_catalog_access_state(True)
         current_item = self.module_list.currentItem()
         current_key = current_item.data(0, Qt.UserRole) if current_item is not None else None
         self._all_rows = sorted(
@@ -433,8 +491,11 @@ class MasterOverviewDialog(QDialog):
         else:
             self.auth_title_label.setText("Geschuetzten Plugin-Katalog entsperren")
             self.auth_login_button.setText("Im Browser anmelden")
+        self.access_gate_title_label.setText(self.auth_title_label.text())
+        self.access_gate_login_button.setText(self.auth_login_button.text())
 
         self.auth_status_label.setText(detail or "Noch nicht bei Nextcloud angemeldet.")
+        self.access_gate_status_label.setText(self.auth_status_label.text())
 
         account_parts = []
         if display_name:
@@ -445,14 +506,28 @@ class MasterOverviewDialog(QDialog):
             account_parts.append(
                 f"<b>Server:</b> {escape(self.plugin_controller.get_shared_settings().get('nextcloud_base_url', '') or '-')}"
             )
-        self.auth_account_label.setText("<br>".join(account_parts))
+        account_text = "<br>".join(account_parts)
+        self.auth_account_label.setText(account_text)
         self.auth_account_label.setTextFormat(Qt.RichText)
+        self.access_gate_account_label.setText(account_text)
+        self.access_gate_account_label.setTextFormat(Qt.RichText)
 
         is_authorizing = status == "authorizing"
         self.auth_login_button.setEnabled(not is_authorizing)
         self.auth_refresh_button.setEnabled(has_saved_login and not is_authorizing)
         self.auth_logout_button.setEnabled(has_saved_login and not is_authorizing)
         self.auth_logout_button.setVisible(has_saved_login)
+        self.access_gate_login_button.setEnabled(self.auth_login_button.isEnabled())
+        self.access_gate_refresh_button.setEnabled(self.auth_refresh_button.isEnabled())
+        self.access_gate_logout_button.setEnabled(self.auth_logout_button.isEnabled())
+        self.access_gate_logout_button.setVisible(self.auth_logout_button.isVisible())
+
+    def _set_catalog_access_state(self, has_access):
+        self.sidebar_frame.setVisible(has_access)
+        self.header_frame.setVisible(has_access)
+        self.content_splitter.setVisible(has_access)
+        self.footer_frame.setVisible(has_access)
+        self.access_gate_frame.setVisible(not has_access)
 
     def _apply_window_styling(self):
         self.setStyleSheet(
