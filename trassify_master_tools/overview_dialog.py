@@ -42,6 +42,8 @@ class MasterOverviewDialog(QDialog):
         self.plugin_controller = plugin_controller
         self._rows_by_key = {}
         self._all_rows = []
+        self.auth_hero_path = self.plugin_controller.plugin_dir / "assets" / "nextcloud_login_hero.png"
+        self.auth_logo_path = self.plugin_controller.plugin_dir / "assets" / "trassify-logo.png"
 
         self.setObjectName("masterOverviewDialog")
         self.setWindowTitle("Erweiterungen | Katalog")
@@ -347,127 +349,132 @@ class MasterOverviewDialog(QDialog):
     def _create_auth_card(self, parent):
         frame = QFrame(parent)
         frame.setObjectName("authCard")
-        frame.setMinimumWidth(560)
-        frame.setMaximumWidth(680)
+        frame.setMinimumWidth(640)
+        frame.setMaximumWidth(760)
 
         card_layout = QVBoxLayout(frame)
         card_layout.setContentsMargins(0, 0, 0, 0)
         card_layout.setSpacing(0)
 
-        hero_frame = QFrame(frame)
-        hero_frame.setObjectName("authHeroFrame")
-        hero_layout = QHBoxLayout(hero_frame)
-        hero_layout.setContentsMargins(24, 22, 24, 20)
-        hero_layout.setSpacing(14)
-
-        icon_label = QLabel(hero_frame)
-        icon_label.setObjectName("authHeroIcon")
-        icon_label.setFixedSize(52, 52)
-        icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setPixmap(QIcon(str(self.plugin_controller.plugin_dir / "icon.svg")).pixmap(32, 32))
-        hero_layout.addWidget(icon_label, 0, Qt.AlignTop)
-
-        hero_text_layout = QVBoxLayout()
-        hero_text_layout.setSpacing(3)
-
-        eyebrow_label = QLabel("TRASSIFY MASTER TOOLS", hero_frame)
-        eyebrow_label.setObjectName("authEyebrowLabel")
-        hero_text_layout.addWidget(eyebrow_label)
-
-        hero_title_label = QLabel("Geschuetzter Katalog", hero_frame)
-        hero_title_label.setObjectName("authHeroLabel")
-        hero_title_label.setWordWrap(True)
-        hero_text_layout.addWidget(hero_title_label)
-        hero_layout.addLayout(hero_text_layout, 1)
-        card_layout.addWidget(hero_frame)
+        hero_image = QLabel(frame)
+        hero_image.setObjectName("authHeroImage")
+        hero_image.setFixedHeight(220)
+        hero_image.setAlignment(Qt.AlignCenter)
+        hero_image.setPixmap(self._cover_pixmap(self.auth_hero_path, 760, 220))
+        card_layout.addWidget(hero_image)
 
         content_widget = QWidget(frame)
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(24, 22, 24, 22)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(40, 28, 40, 34)
+        content_layout.setSpacing(18)
 
-        title_label = QLabel("Bei Nextcloud anmelden", content_widget)
+        logo_label = QLabel(content_widget)
+        logo_label.setObjectName("authLogoLabel")
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setPixmap(self._contain_pixmap(self.auth_logo_path, 300, 64))
+        content_layout.addWidget(logo_label, 0, Qt.AlignHCenter)
+
+        title_label = QLabel("Willkommen bei Trassify", content_widget)
         title_label.setObjectName("authTitleLabel")
         title_label.setWordWrap(True)
+        title_label.setAlignment(Qt.AlignCenter)
         content_layout.addWidget(title_label)
 
         intro_label = QLabel(
-            "Der Katalog und die Plugin-Pakete werden erst nach einer erfolgreichen Nextcloud-Anmeldung geladen.",
+            "Melde dich mit deinem Trassify-Account an, um Zugriff auf unsere Plugin-Collection zu erhalten.",
             content_widget,
         )
         intro_label.setObjectName("authIntroLabel")
         intro_label.setWordWrap(True)
+        intro_label.setAlignment(Qt.AlignCenter)
         content_layout.addWidget(intro_label)
 
         status_label = QLabel("", content_widget)
         status_label.setObjectName("authStatusCardLabel")
         status_label.setWordWrap(True)
         status_label.setTextFormat(Qt.PlainText)
+        status_label.setAlignment(Qt.AlignCenter)
         content_layout.addWidget(status_label)
 
         account_label = QLabel("", content_widget)
         account_label.setObjectName("authAccountLabel")
         account_label.setWordWrap(True)
+        account_label.setAlignment(Qt.AlignCenter)
         content_layout.addWidget(account_label)
-
-        note_label = QLabel(
-            "Nach der Anmeldung werden nur freigegebene Plugins und Download-Pakete geladen.",
-            content_widget,
-        )
-        note_label.setObjectName("authFooterLabel")
-        note_label.setWordWrap(True)
-        content_layout.addWidget(note_label)
 
         primary_row = QHBoxLayout()
         primary_row.setSpacing(10)
+        primary_row.addStretch(1)
         content_layout.addLayout(primary_row)
 
-        login_button = QPushButton("Im Browser anmelden", content_widget)
+        login_button = QPushButton("Log In", content_widget)
         login_button.setObjectName("authPrimaryButton")
+        login_button.setFixedWidth(160)
+        login_button.setFixedHeight(44)
         login_button.clicked.connect(self._start_catalog_login)
         primary_row.addWidget(login_button)
-
-        refresh_button = QPushButton("Verbindung pruefen", content_widget)
-        refresh_button.setObjectName("authSubtleButton")
-        refresh_button.clicked.connect(self._refresh_catalog_login)
-        primary_row.addWidget(refresh_button)
         primary_row.addStretch(1)
 
-        utility_row = QHBoxLayout()
-        utility_row.setSpacing(8)
-        content_layout.addLayout(utility_row)
+        footer_row = QHBoxLayout()
+        footer_row.setSpacing(0)
+        footer_row.addStretch(1)
+        content_layout.addLayout(footer_row)
 
         settings_button = QPushButton("Einstellungen", content_widget)
-        settings_button.setObjectName("authSubtleButton")
+        settings_button.setObjectName("authTextButton")
+        settings_button.setFlat(True)
         settings_button.clicked.connect(self.plugin_controller.show_settings)
-        utility_row.addWidget(settings_button)
+        footer_row.addWidget(settings_button)
+
+        refresh_button = QPushButton("Verbindung pruefen", content_widget)
+        refresh_button.setObjectName("authTextButton")
+        refresh_button.setFlat(True)
+        refresh_button.clicked.connect(self._refresh_catalog_login)
+        footer_row.addWidget(refresh_button)
 
         logout_button = QPushButton("Anmeldung entfernen", content_widget)
-        logout_button.setObjectName("authLinkButton")
+        logout_button.setObjectName("authTextButton")
+        logout_button.setFlat(True)
         logout_button.clicked.connect(self._remove_catalog_login)
-        utility_row.addWidget(logout_button)
-        utility_row.addStretch(1)
+        footer_row.addWidget(logout_button)
+        footer_row.addStretch(1)
 
         card_layout.addWidget(content_widget)
 
         return {
             "frame": frame,
+            "hero": hero_image,
+            "logo": logo_label,
             "title": title_label,
             "intro": intro_label,
             "status": status_label,
             "account": account_label,
-            "note": note_label,
             "login": login_button,
             "refresh": refresh_button,
             "logout": logout_button,
             "settings": settings_button,
         }
 
+    def _contain_pixmap(self, path, width, height):
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            return QPixmap()
+        return pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+    def _cover_pixmap(self, path, width, height):
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            return QPixmap()
+        scaled = pixmap.scaled(width, height, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        offset_x = max(0, (scaled.width() - width) // 2)
+        offset_y = max(0, (scaled.height() - height) // 2)
+        return scaled.copy(offset_x, offset_y, width, height)
+
     def refresh(self):
         self._sync_auth_page()
         if not self.plugin_controller.can_access_catalog():
             self.page_stack.setCurrentWidget(self.auth_page)
-            self.setWindowTitle("Erweiterungen | Nextcloud-Anmeldung")
+            self.setWindowTitle("Authorize Trassify Tools")
             return
 
         current_item = self.module_list.currentItem()
@@ -504,28 +511,37 @@ class MasterOverviewDialog(QDialog):
         has_saved_login = self.plugin_controller.has_saved_catalog_login()
         can_access = self.plugin_controller.can_access_catalog()
         default_intro = (
-            "Der Katalog und die Plugin-Pakete werden erst nach einer erfolgreichen Nextcloud-Anmeldung geladen."
+            "Melde dich mit deinem Trassify-Account an, um Zugriff auf unsere Plugin-Collection zu erhalten."
         )
 
         if can_access:
             title_text = "Nextcloud verbunden"
+            intro_text = "Dein Trassify-Konto ist verbunden. Der geschuetzte Plugin-Katalog kann geladen werden."
             login_text = "Erneut anmelden"
         elif status == "authorizing":
             title_text = "Browser-Login laeuft"
-            login_text = "Browser-Login laeuft..."
+            intro_text = "Schliesse die Anmeldung in deinem Browser ab, um die Plugin-Collection freizuschalten."
+            login_text = "Browser offen..."
         elif has_saved_login:
             title_text = "Gespeicherte Anmeldung pruefen"
+            intro_text = "Es ist bereits eine Anmeldung gespeichert. Du kannst die Verbindung pruefen oder dich neu anmelden."
             login_text = "Neu anmelden"
         else:
-            title_text = "Bei Nextcloud anmelden"
-            login_text = "Im Browser anmelden"
+            title_text = "Willkommen bei Trassify"
+            intro_text = default_intro
+            login_text = "Log In"
 
         for widgets in (self.auth_widgets, self.access_gate_widgets):
             widgets["title"].setText(title_text)
-            widgets["intro"].setText(default_intro)
+            widgets["intro"].setText(intro_text)
             widgets["login"].setText(login_text)
 
-        status_text = detail or "Noch keine Nextcloud-Anmeldung gespeichert."
+        status_text = (detail or "").strip()
+        show_status = bool(status_text)
+        if status == "authorizing" and not show_status:
+            status_text = "Warte auf die Rueckmeldung aus Nextcloud."
+            show_status = True
+
         self.auth_widgets["status"].setText(status_text)
         self.access_gate_widgets["status"].setText(status_text)
 
@@ -534,7 +550,7 @@ class MasterOverviewDialog(QDialog):
             account_parts.append(f"<b>Konto:</b> {escape(display_name)}")
         if groups:
             account_parts.append(f"<b>Gruppen:</b> {escape(', '.join(groups))}")
-        if not account_parts:
+        if not account_parts and (has_saved_login or can_access or show_status):
             account_parts.append(
                 f"<b>Server:</b> {escape(self.plugin_controller.get_shared_settings().get('nextcloud_base_url', '') or '-')}"
             )
@@ -546,7 +562,10 @@ class MasterOverviewDialog(QDialog):
         is_authorizing = status == "authorizing"
         for widgets in (self.auth_widgets, self.access_gate_widgets):
             widgets["login"].setEnabled(not is_authorizing)
+            widgets["status"].setVisible(show_status)
+            widgets["account"].setVisible(bool(account_text))
             widgets["refresh"].setEnabled(has_saved_login and not is_authorizing)
+            widgets["refresh"].setVisible(has_saved_login)
             widgets["logout"].setEnabled(has_saved_login and not is_authorizing)
             widgets["logout"].setVisible(has_saved_login)
         self.catalog_logout_button.setEnabled(has_saved_login and not is_authorizing)
@@ -570,6 +589,7 @@ class MasterOverviewDialog(QDialog):
                 "Die Anmeldung ist vorhanden, aber der geschuetzte Katalog konnte nicht geladen werden."
             )
             self.access_gate_widgets["status"].setText(error_detail)
+            self.access_gate_widgets["status"].setVisible(True)
             return
 
         self.access_gate_widgets["title"].setText("Keine Plugins verfuegbar")
@@ -584,6 +604,7 @@ class MasterOverviewDialog(QDialog):
             self.access_gate_widgets["status"].setText(
                 "Keine freigeschalteten Plugins fuer dieses Konto gefunden."
             )
+        self.access_gate_widgets["status"].setVisible(True)
 
     def _apply_window_styling(self):
         self.setStyleSheet(
@@ -593,35 +614,26 @@ class MasterOverviewDialog(QDialog):
                 color: palette(window-text);
             }
             QStackedWidget#overviewPageStack,
-            QWidget#authPage,
             QWidget#catalogPage {
                 background: transparent;
             }
+            QWidget#authPage {
+                background: #f1f1ef;
+            }
             QFrame#authCard {
-                background: #f7f9f7;
-                border: 1px solid #d8dfd8;
-                border-radius: 18px;
+                background: white;
+                border: 1px solid #c8c8c3;
+                border-radius: 22px;
             }
-            QFrame#authHeroFrame {
-                background: #294d37;
+            QLabel#authHeroImage {
+                background: transparent;
                 border: none;
-                border-top-left-radius: 18px;
-                border-top-right-radius: 18px;
+                border-top-left-radius: 22px;
+                border-top-right-radius: 22px;
             }
-            QLabel#authHeroIcon {
-                background: rgba(255, 255, 255, 0.14);
-                border-radius: 26px;
-                padding: 8px;
-            }
-            QLabel#authEyebrowLabel {
-                color: rgba(255, 255, 255, 0.72);
-                font-size: 11px;
-                font-weight: 700;
-            }
-            QLabel#authHeroLabel {
-                color: white;
-                font-size: 18px;
-                font-weight: 700;
+            QLabel#authLogoLabel {
+                background: transparent;
+                border: none;
             }
             QFrame#sidebarFrame {
                 background: #8f8f8f;
@@ -672,55 +684,52 @@ class MasterOverviewDialog(QDialog):
                 font-weight: 700;
             }
             QLabel#authTitleLabel {
-                color: palette(window-text);
-                font-size: 19px;
+                color: #111111;
+                font-size: 18px;
                 font-weight: 700;
             }
-            QLabel#authIntroLabel,
-            QLabel#authAccountLabel,
-            QLabel#authFooterLabel {
-                color: #647168;
+            QLabel#authIntroLabel {
+                color: #202020;
+                font-size: 15px;
+                padding-left: 40px;
+                padding-right: 40px;
+            }
+            QLabel#authAccountLabel {
+                color: #7f7f7f;
+                font-size: 12px;
             }
             QLabel#authStatusCardLabel {
-                color: #223128;
-                background: #eef3ef;
-                border: 1px solid #d7dfd7;
-                border-radius: 10px;
-                padding: 10px 12px;
+                color: #6f6f6f;
+                background: transparent;
+                border: none;
+                padding: 0 20px;
             }
             QPushButton#authPrimaryButton {
-                background: #294d37;
+                background: #5b7847;
                 color: white;
-                border: 1px solid #203c2b;
-                border-radius: 10px;
-                padding: 8px 16px;
+                border: 2px solid #5aa2f8;
+                border-radius: 6px;
+                padding: 8px 20px;
+                font-size: 15px;
+                font-weight: 600;
             }
             QPushButton#authPrimaryButton:hover {
-                background: #325f44;
+                background: #698757;
             }
             QPushButton#authPrimaryButton:disabled {
-                background: #8ea495;
-                border-color: #8ea495;
-                color: #eef2ef;
+                background: #9cac92;
+                border-color: #9ebce4;
+                color: #f5f5f5;
             }
-            QPushButton#authSubtleButton {
+            QPushButton#authTextButton {
                 background: transparent;
-                color: palette(button-text);
-                border: 1px solid #c9d1ca;
-                border-radius: 10px;
-                padding: 8px 14px;
-            }
-            QPushButton#authSubtleButton:hover {
-                background: rgba(41, 77, 55, 0.05);
-            }
-            QPushButton#authLinkButton {
-                background: transparent;
-                color: #647168;
+                color: #9a9a9a;
                 border: none;
-                padding: 8px 2px;
+                padding: 4px 10px;
+                font-size: 12px;
             }
-            QPushButton#authLinkButton:hover {
-                color: palette(window-text);
+            QPushButton#authTextButton:hover {
+                color: #666666;
             }
             QLabel#sectionTitleLabel,
             QLabel#detailDescriptionLabel {
