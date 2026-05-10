@@ -56,7 +56,7 @@ def main() -> int:
 
     if args.include_public_packages:
         for entry in catalog_entries:
-            source_dir = root_dir / "plugin_sources" / entry["source_path"]
+            source_dir = Path(entry["source_dir"])
             version = entry["metadata"].get("version", "").strip() or "dev"
             versioned_zip = versioned_zip_path(dist_dir, entry["package"], version)
             stable_zip = root_dir / stable_zip_name(entry["package"])

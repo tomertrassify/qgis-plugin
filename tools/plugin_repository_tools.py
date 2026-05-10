@@ -13,6 +13,7 @@ from urllib.parse import quote
 
 MASTER_PLUGIN_DIR = "trassify_master_tools"
 MASTER_PLUGIN_ZIP_NAME = f"{MASTER_PLUGIN_DIR}.zip"
+LOCAL_PLUGIN_SOURCE_BACKUP_DIR = Path("dist") / "local-plugin-source-backup" / "plugin_sources"
 IGNORE_DIR_NAMES = {"__pycache__", "dist"}
 IGNORE_FILE_SUFFIXES = {".pyc", ".pyo", ".zip"}
 IGNORE_FILE_NAMES = {".DS_Store"}
@@ -99,7 +100,11 @@ def build_plugins_xml_url(raw_base_url: str) -> str:
 
 
 def source_dir_for_spec(root_dir: Path, spec: dict) -> Path:
-    return root_dir / "plugin_sources" / spec["source_path"]
+    source_path = Path(str(spec["source_path"] or "").strip())
+    backup_dir = root_dir / LOCAL_PLUGIN_SOURCE_BACKUP_DIR / source_path
+    if backup_dir.is_dir():
+        return backup_dir
+    return root_dir / "plugin_sources" / source_path
 
 
 def stable_zip_name(package_name: str) -> str:

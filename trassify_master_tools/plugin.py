@@ -501,7 +501,6 @@ class TrassifyMasterToolsPlugin:
         entries = []
 
         for spec in BUNDLED_PLUGINS:
-            metadata = self._get_module_metadata(spec)
             entries.append(
                 {
                     "key": spec["key"],
@@ -513,7 +512,7 @@ class TrassifyMasterToolsPlugin:
                     "download_url": "",
                     "icon_relative_path": "",
                     "icon_url": "",
-                    "metadata": metadata,
+                    "metadata": {},
                 }
             )
 
@@ -540,10 +539,7 @@ class TrassifyMasterToolsPlugin:
 
     def _catalog_entry(self, spec):
         entry = dict(self.catalog_entries_by_key.get(spec["key"]) or {})
-        metadata = dict(entry.get("metadata") or {})
-        if not metadata:
-            metadata = self._get_module_metadata(spec)
-            entry["metadata"] = metadata
+        entry["metadata"] = dict(entry.get("metadata") or {})
 
         secure_entry = dict(self.secure_catalog_entries_by_key.get(spec["key"]) or {})
         if secure_entry:
@@ -1115,49 +1111,12 @@ class TrassifyMasterToolsPlugin:
             return True
         return bool(set(allowed_groups) & set(user_groups))
 
-    def _get_module_metadata(self, spec):
-        metadata_path = (
-            self.plugin_dir.parent
-            / "plugin_sources"
-            / spec["source_path"]
-            / "metadata.txt"
-        )
-        if metadata_path.is_file():
-            parser = configparser.ConfigParser(interpolation=None)
-            parser.optionxform = str
-            for encoding in ("utf-8", "latin-1"):
-                try:
-                    with metadata_path.open(encoding=encoding) as handle:
-                        parser.read_file(handle)
-                    break
-                except UnicodeDecodeError:
-                    parser = configparser.ConfigParser(interpolation=None)
-                    parser.optionxform = str
-                    continue
-            if parser.has_section("general"):
-                return {
-                    key: value.strip()
-                    for key, value in parser.items("general")
-                }
-        return {}
-
     def _resolve_module_icon_path(self, spec, catalog_entry):
         icon_relative_path = str(catalog_entry.get("icon_relative_path") or "").strip()
         if icon_relative_path:
             candidate = self.plugin_dir / "catalog" / icon_relative_path
             if candidate.is_file():
                 return str(candidate)
-
-        source_dir = self.plugin_dir.parent / "plugin_sources" / spec["source_path"]
-        metadata = catalog_entry.get("metadata", {})
-        explicit_icon = source_dir / str(metadata.get("icon") or "").strip()
-        if explicit_icon.is_file():
-            return str(explicit_icon)
-
-        for fallback_name in ("icon.svg", "icon.png", "icon.ico"):
-            fallback_icon = source_dir / fallback_name
-            if fallback_icon.is_file():
-                return str(fallback_icon)
 
         return str(self.plugin_dir / "icon.svg")
 

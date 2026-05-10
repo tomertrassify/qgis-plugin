@@ -5,11 +5,14 @@ import argparse
 import subprocess
 from pathlib import Path
 
+from plugin_repository_tools import source_dir_for_spec
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-BUTLER_METADATA_PATH = (
-    ROOT_DIR / "plugin_sources" / "projektstarter_attribution_buttler" / "metadata.txt"
-)
+BUTLER_METADATA_PATH = source_dir_for_spec(
+    ROOT_DIR,
+    {"source_path": "projektstarter_attribution_buttler"},
+) / "metadata.txt"
 MASTER_METADATA_PATH = ROOT_DIR / "trassify_master_tools" / "metadata.txt"
 PREPARE_SCRIPT_PATH = ROOT_DIR / "prepare_plugin_repository.sh"
 

@@ -7,7 +7,7 @@ import json
 import shutil
 from pathlib import Path
 
-LOCAL_ZIP_BACKUP_DIR = Path("dist") / "local-plugin-zip-backup"
+from plugin_repository_tools import build_plugin_zip, source_dir_for_spec
 
 
 def load_manifest(repo_root: Path):
@@ -59,8 +59,8 @@ Upload:
    direkt darunter liegen.
 3. Passe in `catalog/plugins.json` optional pro Plugin die `groups` an.
 
-Lokale ZIP-Quelle:
-- Fuer den Build sucht dieses Skript zuerst unter `dist/local-plugin-zip-backup/` und danach im Repo-Root.
+Lokale Quellbasis:
+- Fuer den Build werden die privaten Plugin-Quellen unter `dist/local-plugin-source-backup/plugin_sources/` verwendet.
 
 Gruppen:
 - `[]` oder fehlend: fuer alle authentifizierten Nutzer sichtbar
@@ -86,24 +86,22 @@ def build_catalog(repo_root: Path, output_dir: Path) -> tuple[int, list[str]]:
 
     for plugin_spec in manifest:
         package_name = str(plugin_spec["package"]).strip()
-        zip_source = resolve_zip_source(repo_root, package_name)
-        metadata = read_metadata(
-            repo_root / "plugin_sources" / plugin_spec["source_path"] / "metadata.txt"
-        )
+        source_dir = source_dir_for_spec(repo_root, plugin_spec)
+        metadata = read_metadata(source_dir / "metadata.txt")
 
-        if zip_source is None or not zip_source.is_file():
-            warnings.append(f"Fehlendes ZIP uebersprungen: {package_name}.zip")
+        if not source_dir.is_dir():
+            warnings.append(f"Fehlende Plugin-Quelle uebersprungen: {package_name}")
             continue
 
-        target_zip = packages_dir / zip_source.name
-        shutil.copy2(zip_source, target_zip)
+        target_zip = packages_dir / f"{package_name}.zip"
+        build_plugin_zip(source_dir, package_name, target_zip)
         modules.append(
             {
                 "key": plugin_spec["key"],
                 "label": plugin_spec["label"],
                 "package": package_name,
                 "version": str(metadata.get("version") or "").strip(),
-                "archive_path": f"packages/{zip_source.name}",
+                "archive_path": f"packages/{target_zip.name}",
                 "groups": [],
             }
         )
@@ -117,18 +115,6 @@ def build_catalog(repo_root: Path, output_dir: Path) -> tuple[int, list[str]]:
     )
     write_readme(output_dir)
     return len(modules), warnings
-
-
-def resolve_zip_source(repo_root: Path, package_name: str) -> Path | None:
-    zip_name = f"{package_name}.zip"
-    candidates = (
-        repo_root / LOCAL_ZIP_BACKUP_DIR / zip_name,
-        repo_root / zip_name,
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return None
 
 
 def main() -> int:
