@@ -50,8 +50,8 @@ class MasterOverviewDialog(QDialog):
         self.auth_logo_path = self.plugin_controller.plugin_dir / "assets" / "trassify-logo.png"
         self._catalog_default_size = QSize(1260, 780)
         self._catalog_min_size = QSize(1080, 680)
-        self._auth_default_size = QSize(500, 680)
-        self._auth_min_size = QSize(460, 600)
+        self._auth_default_size = QSize(480, 650)
+        self._auth_min_size = QSize(440, 560)
         self._dialog_mode = None
 
         self.setObjectName("masterOverviewDialog")
@@ -74,8 +74,7 @@ class MasterOverviewDialog(QDialog):
         auth_page_layout.setContentsMargins(0, 0, 0, 0)
         auth_page_layout.setSpacing(0)
         self.auth_widgets = self._create_auth_card(self.auth_page, compact=True)
-        auth_page_layout.addWidget(self.auth_widgets["frame"], 0, Qt.AlignTop)
-        auth_page_layout.addStretch(1)
+        auth_page_layout.addWidget(self.auth_widgets["frame"], 1)
         self.page_stack.addWidget(self.auth_page)
 
         self.catalog_page = QWidget(self.page_stack)
@@ -385,7 +384,7 @@ class MasterOverviewDialog(QDialog):
         frame.setObjectName("authCard")
         if compact:
             frame.setMinimumWidth(self._auth_min_size.width())
-            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         else:
             frame.setFixedWidth(566)
             frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
@@ -396,16 +395,19 @@ class MasterOverviewDialog(QDialog):
 
         hero_image = QLabel(frame)
         hero_image.setObjectName("authHeroImage")
-        hero_image.setFixedHeight(185 if compact else 150)
+        hero_image.setFixedHeight(172 if compact else 150)
         hero_image.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         hero_image.setAlignment(Qt.AlignCenter)
         hero_image.setMargin(0)
         card_layout.addWidget(hero_image)
 
         content_widget = QWidget(frame)
+        content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(28, 18 if compact else 20, 28, 20 if compact else 24)
-        content_layout.setSpacing(9 if compact else 12)
+        content_layout.setSpacing(8 if compact else 12)
+        if compact:
+            content_layout.addStretch(1)
 
         logo_label = QLabel(content_widget)
         logo_label.setObjectName("authLogoLabel")
@@ -473,6 +475,9 @@ class MasterOverviewDialog(QDialog):
         footer_row.addWidget(logout_button)
         footer_row.addStretch(1)
 
+        if compact:
+            content_layout.addStretch(1)
+
         card_layout.addWidget(content_widget)
 
         return {
@@ -539,8 +544,8 @@ class MasterOverviewDialog(QDialog):
                 self._cover_pixmap(self.auth_hero_path, hero_width, hero_height)
             )
 
-            logo_width = 190 if widgets["compact"] else 210
-            logo_height = 38 if widgets["compact"] else 42
+            logo_width = 178 if widgets["compact"] else 210
+            logo_height = 34 if widgets["compact"] else 42
             widgets["logo"].setPixmap(
                 self._contain_pixmap(self.auth_logo_path, logo_width, logo_height)
             )
