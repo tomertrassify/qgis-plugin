@@ -46,7 +46,7 @@ class MasterOverviewDialog(QDialog):
         self.auth_logo_path = self.plugin_controller.plugin_dir / "assets" / "trassify-logo.png"
         self._catalog_default_size = QSize(1260, 780)
         self._catalog_min_size = QSize(1080, 680)
-        self._auth_dialog_size = QSize(620, 470)
+        self._auth_dialog_size = QSize(566, 430)
         self._dialog_mode = None
 
         self.setObjectName("masterOverviewDialog")
@@ -66,12 +66,10 @@ class MasterOverviewDialog(QDialog):
         self.auth_page = QWidget(self.page_stack)
         self.auth_page.setObjectName("authPage")
         auth_page_layout = QVBoxLayout(self.auth_page)
-        auth_page_layout.setContentsMargins(12, 12, 12, 12)
+        auth_page_layout.setContentsMargins(0, 0, 0, 0)
         auth_page_layout.setSpacing(0)
-        auth_page_layout.addStretch(1)
-        self.auth_widgets = self._create_auth_card(self.auth_page)
-        auth_page_layout.addWidget(self.auth_widgets["frame"], 0, Qt.AlignHCenter)
-        auth_page_layout.addStretch(1)
+        self.auth_widgets = self._create_auth_card(self.auth_page, compact=True)
+        auth_page_layout.addWidget(self.auth_widgets["frame"], 0, Qt.AlignTop | Qt.AlignHCenter)
         self.page_stack.addWidget(self.auth_page)
 
         self.catalog_page = QWidget(self.page_stack)
@@ -145,7 +143,7 @@ class MasterOverviewDialog(QDialog):
         self.search_field.textChanged.connect(self._apply_filters)
         controls_layout.addWidget(self.search_field, 1)
 
-        self.access_gate_widgets = self._create_auth_card(self.workspace_frame)
+        self.access_gate_widgets = self._create_auth_card(self.workspace_frame, compact=False)
         self.access_gate_frame = self.access_gate_widgets["frame"]
         workspace_layout.addWidget(self.access_gate_frame, 0, Qt.AlignHCenter)
 
@@ -350,7 +348,7 @@ class MasterOverviewDialog(QDialog):
         self._apply_window_styling()
         self.refresh()
 
-    def _create_auth_card(self, parent):
+    def _create_auth_card(self, parent, compact):
         frame = QFrame(parent)
         frame.setObjectName("authCard")
         frame.setFixedWidth(566)
@@ -362,19 +360,21 @@ class MasterOverviewDialog(QDialog):
         hero_image = QLabel(frame)
         hero_image.setObjectName("authHeroImage")
         hero_image.setFixedHeight(150)
+        hero_image.setFixedWidth(566)
         hero_image.setAlignment(Qt.AlignCenter)
+        hero_image.setMargin(0)
         hero_image.setPixmap(self._cover_pixmap(self.auth_hero_path, 566, 150))
         card_layout.addWidget(hero_image)
 
         content_widget = QWidget(frame)
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(28, 24, 28, 26)
-        content_layout.setSpacing(14)
+        content_layout.setContentsMargins(28, 20, 28, 24)
+        content_layout.setSpacing(12)
 
         logo_label = QLabel(content_widget)
         logo_label.setObjectName("authLogoLabel")
         logo_label.setAlignment(Qt.AlignCenter)
-        logo_label.setPixmap(self._contain_pixmap(self.auth_logo_path, 260, 52))
+        logo_label.setPixmap(self._contain_pixmap(self.auth_logo_path, 210, 42))
         content_layout.addWidget(logo_label, 0, Qt.AlignHCenter)
 
         title_label = QLabel("Willkommen bei Trassify", content_widget)
@@ -435,6 +435,9 @@ class MasterOverviewDialog(QDialog):
         logout_button.clicked.connect(self._remove_catalog_login)
         footer_row.addWidget(logout_button)
         footer_row.addStretch(1)
+
+        if compact:
+            content_layout.addStretch(1)
 
         card_layout.addWidget(content_widget)
 
@@ -637,6 +640,8 @@ class MasterOverviewDialog(QDialog):
             QLabel#authHeroImage {
                 background: transparent;
                 border: none;
+                padding: 0;
+                margin: 0;
                 border-top-left-radius: 22px;
                 border-top-right-radius: 22px;
             }
@@ -714,20 +719,20 @@ class MasterOverviewDialog(QDialog):
                 padding: 0 20px;
             }
             QPushButton#authPrimaryButton {
-                background: #5b7847;
+                background: #5d7d4f;
                 color: white;
-                border: 2px solid #5aa2f8;
-                border-radius: 6px;
-                padding: 8px 20px;
-                font-size: 15px;
-                font-weight: 600;
+                border: 1px solid #4d6841;
+                border-radius: 8px;
+                padding: 6px 18px;
+                font-size: 14px;
+                font-weight: 500;
             }
             QPushButton#authPrimaryButton:hover {
-                background: #698757;
+                background: #6a8a5c;
             }
             QPushButton#authPrimaryButton:disabled {
                 background: #9cac92;
-                border-color: #9ebce4;
+                border-color: #899880;
                 color: #f5f5f5;
             }
             QPushButton#authTextButton {
