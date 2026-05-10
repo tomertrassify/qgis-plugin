@@ -27,6 +27,8 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from .settings_dialog import MasterSettingsWidget
+
 
 class MasterOverviewDialog(QDialog):
     FILTERS = (
@@ -35,6 +37,7 @@ class MasterOverviewDialog(QDialog):
         ("background", "Hintergrundtools", QStyle.SP_ComputerIcon),
         ("experimental", "Experimental", QStyle.SP_MessageBoxWarning),
         ("favorites", "Favoriten", QStyle.SP_DirHomeIcon),
+        ("settings", "Einstellungen", QStyle.SP_FileDialogContentsView),
     )
 
     def __init__(self, plugin_controller, parent=None):
@@ -118,14 +121,14 @@ class MasterOverviewDialog(QDialog):
         header_text_layout.setSpacing(4)
         header_top_layout.addLayout(header_text_layout, 1)
 
-        workspace_title = QLabel("Plugin-Katalog", self.header_frame)
-        workspace_title.setObjectName("workspaceTitleLabel")
-        header_text_layout.addWidget(workspace_title)
+        self.workspace_title_label = QLabel("Plugin-Katalog", self.header_frame)
+        self.workspace_title_label.setObjectName("workspaceTitleLabel")
+        header_text_layout.addWidget(self.workspace_title_label)
 
-        workspace_subtitle = QLabel("Verwalten direkt aus dem Mastertool.", self.header_frame)
-        workspace_subtitle.setObjectName("workspaceSubtitleLabel")
-        workspace_subtitle.setWordWrap(True)
-        header_text_layout.addWidget(workspace_subtitle)
+        self.workspace_subtitle_label = QLabel("Verwalten direkt aus dem Mastertool.", self.header_frame)
+        self.workspace_subtitle_label.setObjectName("workspaceSubtitleLabel")
+        self.workspace_subtitle_label.setWordWrap(True)
+        header_text_layout.addWidget(self.workspace_subtitle_label)
 
         self.catalog_count_badge = QLabel("", self.header_frame)
         self.catalog_count_badge.setObjectName("catalogCountBadge")
@@ -146,6 +149,50 @@ class MasterOverviewDialog(QDialog):
         self.access_gate_widgets = self._create_auth_card(self.workspace_frame, compact=False)
         self.access_gate_frame = self.access_gate_widgets["frame"]
         workspace_layout.addWidget(self.access_gate_frame, 0, Qt.AlignHCenter)
+
+        self.settings_frame = QFrame(self.workspace_frame)
+        self.settings_frame.setObjectName("settingsFrame")
+        settings_layout = QVBoxLayout(self.settings_frame)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.setSpacing(12)
+
+        self.settings_status_label = QLabel("", self.settings_frame)
+        self.settings_status_label.setObjectName("settingsStatusLabel")
+        self.settings_status_label.setWordWrap(True)
+        self.settings_status_label.hide()
+        settings_layout.addWidget(self.settings_status_label)
+
+        self.settings_widget = MasterSettingsWidget(self.plugin_controller, self.settings_frame)
+        settings_layout.addWidget(self.settings_widget, 1)
+
+        settings_actions_layout = QHBoxLayout()
+        settings_actions_layout.setContentsMargins(0, 0, 0, 0)
+        settings_actions_layout.setSpacing(8)
+        settings_layout.addLayout(settings_actions_layout)
+
+        self.settings_save_button = QPushButton("Speichern", self.settings_frame)
+        self.settings_save_button.setObjectName("primaryButton")
+        self.settings_save_button.clicked.connect(self._save_settings_view)
+        settings_actions_layout.addWidget(self.settings_save_button)
+
+        self.settings_restore_button = QPushButton("Standardwerte", self.settings_frame)
+        self.settings_restore_button.setObjectName("subtleButton")
+        self.settings_restore_button.clicked.connect(self._restore_settings_view)
+        settings_actions_layout.addWidget(self.settings_restore_button)
+
+        settings_actions_layout.addStretch(1)
+
+        self.settings_reload_button = QPushButton("Katalog neu laden", self.settings_frame)
+        self.settings_reload_button.setObjectName("subtleButton")
+        self.settings_reload_button.clicked.connect(self._refresh_catalog_and_view)
+        settings_actions_layout.addWidget(self.settings_reload_button)
+
+        self.settings_logout_button = QPushButton("Nextcloud abmelden", self.settings_frame)
+        self.settings_logout_button.setObjectName("subtleButton")
+        self.settings_logout_button.clicked.connect(self._remove_catalog_login)
+        settings_actions_layout.addWidget(self.settings_logout_button)
+
+        workspace_layout.addWidget(self.settings_frame, 1)
 
         self.content_splitter = QSplitter(Qt.Horizontal, self.workspace_frame)
         self.content_splitter.setObjectName("contentSplitter")
@@ -287,26 +334,6 @@ class MasterOverviewDialog(QDialog):
         workspace_layout.addWidget(self.footer_frame)
         button_height = 30
 
-        self.refresh_button = QPushButton("Katalog neu laden", self.footer_frame)
-        self.refresh_button.setObjectName("subtleButton")
-        self.refresh_button.setFixedHeight(button_height)
-        self.refresh_button.clicked.connect(self._refresh_catalog_and_view)
-        actions_layout.addWidget(self.refresh_button)
-
-        self.settings_button = QPushButton("Einstellungen", self.footer_frame)
-        self.settings_button.setObjectName("subtleButton")
-        self.settings_button.setFixedHeight(button_height)
-        self.settings_button.clicked.connect(self.plugin_controller.show_settings)
-        actions_layout.addWidget(self.settings_button)
-
-        self.catalog_logout_button = QPushButton("Nextcloud abmelden", self.footer_frame)
-        self.catalog_logout_button.setObjectName("subtleButton")
-        self.catalog_logout_button.setFixedHeight(button_height)
-        self.catalog_logout_button.clicked.connect(self._remove_catalog_login)
-        actions_layout.addWidget(self.catalog_logout_button)
-
-        actions_layout.addStretch(1)
-
         self.favorite_button = QToolButton(self.footer_frame)
         self.favorite_button.setObjectName("favoriteButton")
         self.favorite_button.setText("")
@@ -334,6 +361,8 @@ class MasterOverviewDialog(QDialog):
         self.secondary_button.setFixedHeight(button_height)
         self.secondary_button.clicked.connect(self._run_secondary_action)
         actions_layout.addWidget(self.secondary_button)
+
+        actions_layout.addStretch(1)
 
         button_box = QDialogButtonBox(QDialogButtonBox.Close, self.footer_frame)
         button_box.setObjectName("dialogButtonBox")
@@ -515,9 +544,12 @@ class MasterOverviewDialog(QDialog):
         self._populate_filters()
         self._apply_filters(preferred_key=current_key)
         self.catalog_count_badge.setText(f"{len(self._all_rows)} Module")
-        self.setWindowTitle(
-            f"Erweiterungen | Katalog ({len(self._all_rows)})"
-        )
+        if self._active_filter_key() == "settings":
+            self.setWindowTitle("Erweiterungen | Einstellungen")
+        else:
+            self.setWindowTitle(
+                f"Erweiterungen | Katalog ({len(self._all_rows)})"
+            )
 
     def _sync_auth_page(self):
         status = self.plugin_controller.auth_status()
@@ -580,15 +612,17 @@ class MasterOverviewDialog(QDialog):
             widgets["refresh"].setVisible(has_saved_login)
             widgets["logout"].setEnabled(has_saved_login and not is_authorizing)
             widgets["logout"].setVisible(has_saved_login)
-        self.catalog_logout_button.setEnabled(has_saved_login and not is_authorizing)
-        self.catalog_logout_button.setVisible(has_saved_login)
+        self.settings_reload_button.setEnabled(not is_authorizing)
+        self.settings_logout_button.setEnabled(has_saved_login and not is_authorizing)
+        self.settings_logout_button.setVisible(has_saved_login)
 
     def _set_catalog_access_state(self, has_access):
         self.sidebar_frame.setVisible(has_access)
         self.header_frame.setVisible(has_access)
-        self.content_splitter.setVisible(has_access)
         self.footer_frame.setVisible(has_access)
         self.access_gate_frame.setVisible(not has_access)
+        self.settings_frame.setVisible(False)
+        self.content_splitter.setVisible(has_access)
 
     def _sync_empty_catalog_gate(self):
         error_detail = str(
@@ -679,7 +713,8 @@ class MasterOverviewDialog(QDialog):
             QFrame#headerFrame,
             QFrame#modulePanel,
             QFrame#detailPanel,
-            QFrame#footerFrame {
+            QFrame#footerFrame,
+            QFrame#settingsFrame {
                 background: transparent;
                 border: none;
             }
@@ -711,6 +746,13 @@ class MasterOverviewDialog(QDialog):
             QLabel#authAccountLabel {
                 color: #7f7f7f;
                 font-size: 12px;
+            }
+            QLabel#settingsStatusLabel {
+                color: #2d5d32;
+                background: #eef6ef;
+                border: 1px solid #cadecb;
+                border-radius: 8px;
+                padding: 8px 10px;
             }
             QLabel#authStatusCardLabel {
                 color: #6f6f6f;
@@ -803,6 +845,7 @@ class MasterOverviewDialog(QDialog):
                 for row in self._all_rows
                 if row["is_favorite"] and not row["is_experimental"]
             ),
+            "settings": 0,
         }
 
         self.filter_list.blockSignals(True)
@@ -813,7 +856,10 @@ class MasterOverviewDialog(QDialog):
         for filter_key, label, icon_role in self.FILTERS:
             item = QListWidgetItem(style.standardIcon(icon_role), label)
             item.setData(Qt.UserRole, filter_key)
-            item.setToolTip(f"{label}: {counts[filter_key]} Module")
+            if filter_key == "settings":
+                item.setToolTip(label)
+            else:
+                item.setToolTip(f"{label}: {counts[filter_key]} Module")
             item.setSizeHint(QSize(0, 50))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
@@ -833,6 +879,11 @@ class MasterOverviewDialog(QDialog):
 
     def _apply_filters(self, *_args, preferred_key=None):
         filter_key = self._active_filter_key()
+        if filter_key == "settings":
+            self._show_settings_view()
+            return
+
+        self._show_catalog_view()
         search_term = self.search_field.text().strip().lower()
 
         self.module_list.blockSignals(True)
@@ -894,6 +945,8 @@ class MasterOverviewDialog(QDialog):
             return row["is_experimental"]
         if filter_key == "favorites":
             return row["is_favorite"] and not row["is_experimental"]
+        if filter_key == "settings":
+            return False
         return False
 
     def _filter_label(self, filter_key):
@@ -909,6 +962,8 @@ class MasterOverviewDialog(QDialog):
         return label
 
     def _results_summary_text(self, result_count, filter_key):
+        if filter_key == "settings":
+            return ""
         filter_label = self._filter_label(filter_key)
         return f"{result_count} Module | {filter_label}"
 
@@ -939,6 +994,8 @@ class MasterOverviewDialog(QDialog):
         return None
 
     def _sync_details(self):
+        if self._active_filter_key() == "settings":
+            return
         item = self.module_list.currentItem()
         if item is None:
             self._update_favorite_button(None)
@@ -1142,6 +1199,51 @@ class MasterOverviewDialog(QDialog):
     def _refresh_catalog_and_view(self):
         self.plugin_controller.refresh_catalog()
         self.refresh()
+
+    def _show_settings_view(self):
+        self.workspace_title_label.setText("Einstellungen")
+        self.workspace_subtitle_label.setText(
+            "Zentrale Master-Einstellungen fuer separat installierbare Module."
+        )
+        self.catalog_count_badge.hide()
+        self.search_field.hide()
+        self.content_splitter.hide()
+        self.settings_frame.show()
+        self.footer_frame.show()
+        self._set_module_action_visibility(False)
+        self.settings_widget.set_values(self.plugin_controller.get_shared_settings())
+
+    def _show_catalog_view(self):
+        self.workspace_title_label.setText("Plugin-Katalog")
+        self.workspace_subtitle_label.setText("Verwalten direkt aus dem Mastertool.")
+        self.catalog_count_badge.show()
+        self.search_field.show()
+        self.settings_frame.hide()
+        self.content_splitter.show()
+        self.footer_frame.show()
+        self._set_module_action_visibility(True)
+
+    def _set_module_action_visibility(self, visible):
+        self.favorite_button.setVisible(visible)
+        self.open_button.setVisible(visible and self.open_button.isEnabled())
+        self.primary_button.setVisible(visible)
+        self.secondary_button.setVisible(visible)
+
+    def _save_settings_view(self):
+        _settings, message = self.plugin_controller.apply_settings_values(
+            self.settings_widget.values(),
+            announce=False,
+        )
+        self.settings_status_label.setText(message)
+        self.settings_status_label.show()
+        self.refresh()
+
+    def _restore_settings_view(self):
+        self.settings_widget.restore_defaults()
+        self.settings_status_label.setText(
+            "Standardwerte geladen. Noch nicht gespeichert."
+        )
+        self.settings_status_label.show()
 
     def _toggle_selected_favorite(self):
         item = self.module_list.currentItem()

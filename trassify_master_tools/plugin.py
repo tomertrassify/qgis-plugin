@@ -147,19 +147,29 @@ class TrassifyMasterToolsPlugin:
         if dialog.exec_() != dialog.Accepted:
             return
 
-        settings = self.save_shared_settings(dialog.values())
+        self.apply_settings_values(dialog.values(), announce=True)
+
+    def apply_settings_values(self, values, announce=True):
+        settings = self.save_shared_settings(values)
         self.auth_manager.refresh_session(announce=False)
         has_database_uri = bool(build_postgres_ogr_uri(settings))
         message = "Zentrale Einstellungen gespeichert."
         if has_database_uri:
             message += " Datenbank-URI fuer kompatible Plugins ist verfuegbar."
 
-        self.iface.messageBar().pushMessage(
-            self.MENU_TITLE,
-            message,
-            level=Qgis.Success,
-            duration=5,
-        )
+        if self.auth_manager.is_authorized():
+            self.refresh_catalog(announce=False)
+        else:
+            self._refresh_ui_state()
+
+        if announce:
+            self.iface.messageBar().pushMessage(
+                self.MENU_TITLE,
+                message,
+                level=Qgis.Success,
+                duration=5,
+            )
+        return settings, message
 
     def refresh_catalog(self, announce=True):
         self._load_catalog_snapshot()

@@ -24,14 +24,10 @@ from .shared_settings import (
 )
 
 
-class MasterSettingsDialog(QDialog):
+class MasterSettingsWidget(QWidget):
     def __init__(self, plugin_controller, parent=None):
         super().__init__(parent)
         self.plugin_controller = plugin_controller
-
-        self.setWindowTitle("Trassify Master Tools | Einstellungen")
-        self.setWindowIcon(QIcon(str(plugin_controller.plugin_dir / "icon.svg")))
-        self.resize(760, 620)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -51,17 +47,6 @@ class MasterSettingsDialog(QDialog):
         self._build_nextcloud_tab()
         self._build_clickup_tab()
         self._build_database_tab()
-
-        self.button_box = QDialogButtonBox(
-            QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults,
-            self,
-        )
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
-        restore_button = self.button_box.button(QDialogButtonBox.RestoreDefaults)
-        if restore_button is not None:
-            restore_button.clicked.connect(self._restore_defaults)
-        layout.addWidget(self.button_box)
 
         self.set_values(plugin_controller.get_shared_settings())
 
@@ -300,7 +285,7 @@ class MasterSettingsDialog(QDialog):
             "database_sslmode": self.database_sslmode.currentText().strip(),
         }
 
-    def _restore_defaults(self):
+    def restore_defaults(self):
         self.set_values(DEFAULT_SHARED_SETTINGS)
 
     def _set_combo_text(self, combo_box, text):
@@ -312,3 +297,34 @@ class MasterSettingsDialog(QDialog):
 
     def _update_database_preview(self):
         self.database_uri_preview.setText(build_postgres_ogr_uri(self.values()))
+
+
+class MasterSettingsDialog(QDialog):
+    def __init__(self, plugin_controller, parent=None):
+        super().__init__(parent)
+        self.plugin_controller = plugin_controller
+
+        self.setWindowTitle("Trassify Master Tools | Einstellungen")
+        self.setWindowIcon(QIcon(str(plugin_controller.plugin_dir / "icon.svg")))
+        self.resize(760, 620)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        self.settings_widget = MasterSettingsWidget(plugin_controller, self)
+        layout.addWidget(self.settings_widget, 1)
+
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults,
+            self,
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        restore_button = self.button_box.button(QDialogButtonBox.RestoreDefaults)
+        if restore_button is not None:
+            restore_button.clicked.connect(self.settings_widget.restore_defaults)
+        layout.addWidget(self.button_box)
+
+    def values(self):
+        return self.settings_widget.values()
