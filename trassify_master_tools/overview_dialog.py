@@ -401,6 +401,12 @@ class MasterOverviewDialog(QDialog):
         self.settings_button.clicked.connect(self.plugin_controller.show_settings)
         actions_layout.addWidget(self.settings_button)
 
+        self.catalog_logout_button = QPushButton("Nextcloud abmelden", self.footer_frame)
+        self.catalog_logout_button.setObjectName("subtleButton")
+        self.catalog_logout_button.setFixedHeight(button_height)
+        self.catalog_logout_button.clicked.connect(self._remove_catalog_login)
+        actions_layout.addWidget(self.catalog_logout_button)
+
         actions_layout.addStretch(1)
 
         self.favorite_button = QToolButton(self.footer_frame)
@@ -452,8 +458,6 @@ class MasterOverviewDialog(QDialog):
             self.setWindowTitle("Erweiterungen | Anmeldung")
             return
 
-        self.page_stack.setCurrentWidget(self.catalog_page)
-        self._set_catalog_access_state(True)
         current_item = self.module_list.currentItem()
         current_key = current_item.data(0, Qt.UserRole) if current_item is not None else None
         self._all_rows = sorted(
@@ -464,6 +468,15 @@ class MasterOverviewDialog(QDialog):
             row["key"]: row for row in self._all_rows
         }
 
+        if not self._all_rows:
+            self.page_stack.setCurrentWidget(self.catalog_page)
+            self._set_catalog_access_state(False)
+            self._sync_empty_catalog_gate()
+            self.setWindowTitle("Erweiterungen | Nextcloud")
+            return
+
+        self.page_stack.setCurrentWidget(self.catalog_page)
+        self._set_catalog_access_state(True)
         self._populate_filters()
         self._apply_filters(preferred_key=current_key)
         self.catalog_count_badge.setText(f"{len(self._all_rows)} Module")
@@ -478,6 +491,9 @@ class MasterOverviewDialog(QDialog):
         groups = self.plugin_controller.auth_groups()
         has_saved_login = self.plugin_controller.has_saved_catalog_login()
         can_access = self.plugin_controller.can_access_catalog()
+        default_intro = (
+            "Die Plugin-Pakete liegen geschuetzt in Nextcloud. Vor dem Laden des Katalogs wird eine Browser-Anmeldung ueber Nextcloud benoetigt."
+        )
 
         if can_access:
             self.auth_title_label.setText("Nextcloud-Verbindung aktiv")
@@ -491,6 +507,8 @@ class MasterOverviewDialog(QDialog):
         else:
             self.auth_title_label.setText("Geschuetzten Plugin-Katalog entsperren")
             self.auth_login_button.setText("Im Browser anmelden")
+        self.auth_intro_label.setText(default_intro)
+        self.access_gate_intro_label.setText(default_intro)
         self.access_gate_title_label.setText(self.auth_title_label.text())
         self.access_gate_login_button.setText(self.auth_login_button.text())
 
@@ -521,6 +539,8 @@ class MasterOverviewDialog(QDialog):
         self.access_gate_refresh_button.setEnabled(self.auth_refresh_button.isEnabled())
         self.access_gate_logout_button.setEnabled(self.auth_logout_button.isEnabled())
         self.access_gate_logout_button.setVisible(self.auth_logout_button.isVisible())
+        self.catalog_logout_button.setEnabled(has_saved_login and not is_authorizing)
+        self.catalog_logout_button.setVisible(has_saved_login)
 
     def _set_catalog_access_state(self, has_access):
         self.sidebar_frame.setVisible(has_access)
@@ -528,6 +548,31 @@ class MasterOverviewDialog(QDialog):
         self.content_splitter.setVisible(has_access)
         self.footer_frame.setVisible(has_access)
         self.access_gate_frame.setVisible(not has_access)
+
+    def _sync_empty_catalog_gate(self):
+        self.access_gate_title_label.setText("Nextcloud-Verbindung aktiv")
+        error_detail = str(
+            getattr(self.plugin_controller, "catalog_refresh_error", "") or ""
+        ).strip()
+        groups = [group for group in self.plugin_controller.auth_groups() if group]
+        if error_detail:
+            self.access_gate_intro_label.setText(
+                "Die Anmeldung ist vorhanden, aber der geschuetzte Katalog konnte nicht geladen werden."
+            )
+            self.access_gate_status_label.setText(error_detail)
+            return
+
+        self.access_gate_intro_label.setText(
+            "Die Anmeldung ist vorhanden, aber aktuell sind keine Plugins fuer dieses Konto sichtbar."
+        )
+        if groups:
+            self.access_gate_status_label.setText(
+                f"Keine freigeschalteten Plugins fuer Gruppen: {', '.join(groups)}."
+            )
+        else:
+            self.access_gate_status_label.setText(
+                "Keine freigeschalteten Plugins fuer dieses Konto gefunden."
+            )
 
     def _apply_window_styling(self):
         self.setStyleSheet(
