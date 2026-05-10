@@ -22,11 +22,16 @@ from plugin_repository_tools import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Erzeugt alle QGIS-Repository-Artefakte: Master-ZIP, Einzelplugin-ZIPs "
-            "und plugins.xml."
+            "Erzeugt die QGIS-Repository-Artefakte. Standardmaessig wird nur das "
+            "oeffentliche Mastertool ausgeliefert."
         )
     )
     parser.add_argument("--root-dir", required=True)
+    parser.add_argument(
+        "--include-public-packages",
+        action="store_true",
+        help="Erzeugt zusaetzlich die einzelnen Plugin-ZIPs im Repo-Root und traegt sie in plugins.xml ein.",
+    )
     return parser.parse_args()
 
 
@@ -42,24 +47,24 @@ def main() -> int:
         fallback_repository_url=master_entry["metadata"].get("repository", ""),
     )
     master_entry = build_master_entry(root_dir, raw_base_url=raw_base_url)
-    catalog_entries = build_catalog_entries(root_dir, raw_base_url)
+    catalog_entries = []
+    if args.include_public_packages:
+        catalog_entries = build_catalog_entries(root_dir, raw_base_url)
 
     build_master_zip(root_dir)
     copy_master_zip_to_root(root_dir, dist_dir, master_entry["metadata"]["version"])
 
-    for entry in catalog_entries:
-        source_dir = root_dir / "plugin_sources" / entry["source_path"]
-        version = entry["metadata"].get("version", "").strip() or "dev"
-        versioned_zip = versioned_zip_path(dist_dir, entry["package"], version)
-        stable_zip = root_dir / stable_zip_name(entry["package"])
+    if args.include_public_packages:
+        for entry in catalog_entries:
+            source_dir = root_dir / "plugin_sources" / entry["source_path"]
+            version = entry["metadata"].get("version", "").strip() or "dev"
+            versioned_zip = versioned_zip_path(dist_dir, entry["package"], version)
+            stable_zip = root_dir / stable_zip_name(entry["package"])
 
-        build_plugin_zip(source_dir, entry["package"], versioned_zip)
-        shutil.copyfile(versioned_zip, stable_zip)
+            build_plugin_zip(source_dir, entry["package"], versioned_zip)
+            shutil.copyfile(versioned_zip, stable_zip)
 
-    write_plugins_xml(
-        [master_entry, *catalog_entries],
-        root_dir / "plugins.xml",
-    )
+    write_plugins_xml([master_entry, *catalog_entries], root_dir / "plugins.xml")
     return 0
 
 
