@@ -17,6 +17,7 @@ from qgis.PyQt.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QStyle,
@@ -49,7 +50,8 @@ class MasterOverviewDialog(QDialog):
         self.auth_logo_path = self.plugin_controller.plugin_dir / "assets" / "trassify-logo.png"
         self._catalog_default_size = QSize(1260, 780)
         self._catalog_min_size = QSize(1080, 680)
-        self._auth_dialog_size = QSize(566, 430)
+        self._auth_default_size = QSize(540, 408)
+        self._auth_min_size = QSize(500, 380)
         self._dialog_mode = None
 
         self.setObjectName("masterOverviewDialog")
@@ -72,7 +74,7 @@ class MasterOverviewDialog(QDialog):
         auth_page_layout.setContentsMargins(0, 0, 0, 0)
         auth_page_layout.setSpacing(0)
         self.auth_widgets = self._create_auth_card(self.auth_page, compact=True)
-        auth_page_layout.addWidget(self.auth_widgets["frame"], 0, Qt.AlignTop | Qt.AlignHCenter)
+        auth_page_layout.addWidget(self.auth_widgets["frame"], 1)
         self.page_stack.addWidget(self.auth_page)
 
         self.catalog_page = QWidget(self.page_stack)
@@ -380,7 +382,12 @@ class MasterOverviewDialog(QDialog):
     def _create_auth_card(self, parent, compact):
         frame = QFrame(parent)
         frame.setObjectName("authCard")
-        frame.setFixedWidth(566)
+        if compact:
+            frame.setMinimumWidth(self._auth_min_size.width())
+            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        else:
+            frame.setFixedWidth(566)
+            frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
 
         card_layout = QVBoxLayout(frame)
         card_layout.setContentsMargins(0, 0, 0, 0)
@@ -388,22 +395,19 @@ class MasterOverviewDialog(QDialog):
 
         hero_image = QLabel(frame)
         hero_image.setObjectName("authHeroImage")
-        hero_image.setFixedHeight(150)
-        hero_image.setFixedWidth(566)
+        hero_image.setFixedHeight(140 if compact else 150)
         hero_image.setAlignment(Qt.AlignCenter)
         hero_image.setMargin(0)
-        hero_image.setPixmap(self._cover_pixmap(self.auth_hero_path, 566, 150))
         card_layout.addWidget(hero_image)
 
         content_widget = QWidget(frame)
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(28, 20, 28, 24)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(28, 18 if compact else 20, 28, 22 if compact else 24)
+        content_layout.setSpacing(10 if compact else 12)
 
         logo_label = QLabel(content_widget)
         logo_label.setObjectName("authLogoLabel")
         logo_label.setAlignment(Qt.AlignCenter)
-        logo_label.setPixmap(self._contain_pixmap(self.auth_logo_path, 210, 42))
         content_layout.addWidget(logo_label, 0, Qt.AlignHCenter)
 
         title_label = QLabel("Willkommen bei Trassify", content_widget)
@@ -441,8 +445,8 @@ class MasterOverviewDialog(QDialog):
 
         login_button = QPushButton("Log In", content_widget)
         login_button.setObjectName("authPrimaryButton")
-        login_button.setFixedWidth(132)
-        login_button.setFixedHeight(40)
+        login_button.setFixedWidth(128)
+        login_button.setFixedHeight(38)
         login_button.clicked.connect(self._start_catalog_login)
         primary_row.addWidget(login_button)
         primary_row.addStretch(1)
@@ -472,6 +476,7 @@ class MasterOverviewDialog(QDialog):
 
         return {
             "frame": frame,
+            "compact": compact,
             "hero": hero_image,
             "logo": logo_label,
             "title": title_label,
@@ -503,15 +508,36 @@ class MasterOverviewDialog(QDialog):
             return
         self._dialog_mode = mode
         if mode == "auth":
-            self.setMinimumSize(self._auth_dialog_size)
-            self.setMaximumSize(self._auth_dialog_size)
-            self.resize(self._auth_dialog_size)
+            self.setMaximumSize(16777215, 16777215)
+            self.setMinimumSize(self._auth_min_size)
+            self.resize(self._auth_default_size)
+            self._update_auth_artwork()
             return
 
         self.setMaximumSize(16777215, 16777215)
         self.setMinimumSize(self._catalog_min_size)
         if self.width() < self._catalog_min_size.width() or self.height() < self._catalog_min_size.height():
             self.resize(self._catalog_default_size)
+        self._update_auth_artwork()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_auth_artwork()
+
+    def _update_auth_artwork(self):
+        for widgets in (self.auth_widgets, self.access_gate_widgets):
+            hero_label = widgets["hero"]
+            hero_width = max(1, hero_label.width())
+            hero_height = max(1, hero_label.height())
+            hero_label.setPixmap(
+                self._cover_pixmap(self.auth_hero_path, hero_width, hero_height)
+            )
+
+            logo_width = 190 if widgets["compact"] else 210
+            logo_height = 38 if widgets["compact"] else 42
+            widgets["logo"].setPixmap(
+                self._contain_pixmap(self.auth_logo_path, logo_width, logo_height)
+            )
 
     def refresh(self):
         self._sync_auth_page()
