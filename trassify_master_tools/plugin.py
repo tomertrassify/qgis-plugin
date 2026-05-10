@@ -8,8 +8,6 @@ import shutil
 import sys
 import tempfile
 import traceback
-import urllib.request
-import xml.etree.ElementTree as ET
 from itertools import zip_longest
 from pathlib import Path
 from zipfile import ZipFile
@@ -22,6 +20,10 @@ from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar
 from qgis.core import Qgis, QgsApplication, QgsMessageLog
 
 from .manifest import BACKGROUND_TOOL, BUNDLED_PLUGINS, INTERACTIVE_TOOL
+from .nextcloud_integration import (
+    NextcloudAuthManager,
+    normalize_remote_path,
+)
 from .overview_dialog import MasterOverviewDialog
 from .settings_dialog import MasterSettingsDialog
 from .shared_settings import (
@@ -61,9 +63,15 @@ class TrassifyMasterToolsPlugin:
         self.module_action_errors: dict[str, str] = {}
         self.catalog_entries: list[dict] = []
         self.catalog_entries_by_key: dict[str, dict] = {}
-        self.remote_catalog_by_zip_name: dict[str, dict] = {}
-        self.catalog_plugins_xml_url = ""
+        self.secure_catalog_entries_by_key: dict[str, dict] = {}
         self.catalog_refresh_error = ""
+        self.auth_manager = NextcloudAuthManager(
+            self.get_shared_settings,
+            self.save_shared_settings,
+            self._push_message,
+            self.CATALOG_USER_AGENT,
+        )
+        self.auth_manager.state_changed.connect(self._handle_auth_state_changed)
         stored_favorite_keys = load_favorite_module_keys()
         self.favorite_module_keys = self._sanitize_favorite_module_keys(
             stored_favorite_keys
@@ -91,7 +99,8 @@ class TrassifyMasterToolsPlugin:
             self.toolbar.addAction(self.overview_action)
 
         self._load_catalog_snapshot()
-        self.refresh_catalog(announce=False)
+        if self.auth_manager.has_saved_credentials():
+            self.auth_manager.refresh_session(announce=False)
         self._show_startup_message()
 
     def unload(self):
@@ -116,7 +125,12 @@ class TrassifyMasterToolsPlugin:
             self._safe_qt_call(self.iface.mainWindow().removeToolBar, toolbar)
             self._safe_qt_call(toolbar.deleteLater)
 
+        self.auth_manager.cleanup()
+
     def show_overview(self):
+        if self.auth_manager.has_saved_credentials() and not self.auth_manager.is_authorized():
+            self.auth_manager.refresh_session(announce=False)
+
         if self.overview_dialog is None:
             self.overview_dialog = MasterOverviewDialog(
                 self, self.iface.mainWindow()
@@ -134,6 +148,7 @@ class TrassifyMasterToolsPlugin:
             return
 
         settings = self.save_shared_settings(dialog.values())
+        self.auth_manager.refresh_session(announce=False)
         has_database_uri = bool(build_postgres_ogr_uri(settings))
         message = "Zentrale Einstellungen gespeichert."
         if has_database_uri:
@@ -148,23 +163,34 @@ class TrassifyMasterToolsPlugin:
 
     def refresh_catalog(self, announce=True):
         self._load_catalog_snapshot()
-        self._refresh_remote_catalog()
-        self._refresh_ui_state()
-
-        if announce:
-            if self.catalog_refresh_error:
-                self.iface.messageBar().pushMessage(
-                    self.MENU_TITLE,
-                    "Katalog aktualisiert, Online-Index ist derzeit nicht erreichbar.",
-                    level=Qgis.Warning,
-                    duration=6,
+        if not self.auth_manager.is_authorized():
+            self.secure_catalog_entries_by_key = {}
+            self.catalog_refresh_error = ""
+            self._refresh_ui_state()
+            if announce:
+                self._push_message(
+                    "Bitte zuerst bei Nextcloud anmelden, bevor der Plugin-Katalog geladen wird.",
+                    Qgis.Info,
+                    5,
                 )
-            else:
-                self.iface.messageBar().pushMessage(
-                    self.MENU_TITLE,
-                    "Katalog aktualisiert.",
-                    level=Qgis.Info,
-                    duration=4,
+            return
+
+        try:
+            payload = self.auth_manager.load_secure_catalog()
+            self._apply_secure_catalog_payload(payload)
+            self.catalog_refresh_error = ""
+            self._refresh_ui_state()
+            if announce:
+                self._push_message("Geschuetzten Katalog aktualisiert.", Qgis.Info, 4)
+        except Exception as exc:
+            self.catalog_refresh_error = f"{type(exc).__name__}: {exc}"
+            self.secure_catalog_entries_by_key = {}
+            self._refresh_ui_state()
+            if announce:
+                self._push_message(
+                    "Geschuetzter Katalog konnte nicht geladen werden.",
+                    Qgis.Warning,
+                    6,
                 )
 
     def get_shared_settings(self):
@@ -200,7 +226,7 @@ class TrassifyMasterToolsPlugin:
     def get_module_rows(self):
         self._refresh_available_plugins()
         return sorted(
-            (self._build_module_row(spec) for spec in BUNDLED_PLUGINS),
+            (self._build_module_row(spec) for spec in self._visible_catalog_specs()),
             key=lambda row: row["label"].lower(),
         )
 
@@ -232,6 +258,34 @@ class TrassifyMasterToolsPlugin:
 
     def can_open_module(self, row):
         return bool(row.get("can_open"))
+
+    def can_access_catalog(self):
+        return self.auth_manager.is_authorized()
+
+    def auth_status(self):
+        return self.auth_manager.status
+
+    def auth_status_detail(self):
+        return self.auth_manager.status_detail
+
+    def auth_display_name(self):
+        profile = self.auth_manager.user_profile
+        return profile.display_name or self.auth_manager.login_name
+
+    def auth_groups(self):
+        return list(self.auth_manager.user_profile.groups)
+
+    def has_saved_catalog_login(self):
+        return self.auth_manager.has_saved_credentials()
+
+    def start_catalog_login(self):
+        return self.auth_manager.begin_login()
+
+    def refresh_catalog_login(self):
+        return self.auth_manager.refresh_session(announce=True)
+
+    def remove_catalog_login(self):
+        self.auth_manager.logout()
 
     def load_module_by_key(self, key):
         return self.run_primary_action_by_key(key)
@@ -411,6 +465,8 @@ class TrassifyMasterToolsPlugin:
             "installed_version": installed_version,
             "catalog_version": catalog_version,
             "download_url": catalog_entry.get("download_url", ""),
+            "archive_path": catalog_entry.get("archive_path", ""),
+            "allowed_groups": list(catalog_entry.get("groups", [])),
             "can_open": can_open,
             "can_uninstall": local_info["can_manage"],
             "management_text": management_text,
@@ -422,7 +478,6 @@ class TrassifyMasterToolsPlugin:
             try:
                 payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
                 modules = payload.get("modules") or []
-                self.catalog_plugins_xml_url = str(payload.get("plugins_xml_url") or "").strip()
                 self.catalog_entries = [
                     self._normalized_catalog_entry(entry)
                     for entry in modules
@@ -442,14 +497,7 @@ class TrassifyMasterToolsPlugin:
         self.catalog_entries_by_key = {
             entry["key"]: entry for entry in self.catalog_entries
         }
-        if self.catalog_entries:
-            self.catalog_plugins_xml_url = str(
-                self.catalog_entries[0].get("plugins_xml_url") or ""
-            ).strip()
-
     def _build_dev_catalog_entries(self):
-        raw_base_url = self._resolve_raw_base_url_from_metadata()
-        plugins_xml_url = f"{raw_base_url}/plugins.xml" if raw_base_url else ""
         entries = []
 
         for spec in BUNDLED_PLUGINS:
@@ -462,10 +510,7 @@ class TrassifyMasterToolsPlugin:
                     "source_path": spec["source_path"],
                     "tool_type": spec.get("tool_type", INTERACTIVE_TOOL),
                     "zip_name": f"{spec['package']}.zip",
-                    "download_url": (
-                        f"{raw_base_url}/{spec['package']}.zip" if raw_base_url else ""
-                    ),
-                    "plugins_xml_url": plugins_xml_url,
+                    "download_url": "",
                     "icon_relative_path": "",
                     "icon_url": "",
                     "metadata": metadata,
@@ -482,10 +527,14 @@ class TrassifyMasterToolsPlugin:
             "source_path": str(entry.get("source_path") or "").strip(),
             "tool_type": str(entry.get("tool_type") or INTERACTIVE_TOOL).strip(),
             "zip_name": str(entry.get("zip_name") or "").strip(),
-            "download_url": str(entry.get("download_url") or "").strip(),
-            "plugins_xml_url": str(entry.get("plugins_xml_url") or "").strip(),
+            "download_url": "",
+            "archive_path": normalize_remote_path(
+                entry.get("archive_path") or entry.get("path") or ""
+            ),
             "icon_relative_path": str(entry.get("icon_relative_path") or "").strip(),
             "icon_url": str(entry.get("icon_url") or "").strip(),
+            "groups": self._normalized_groups(entry.get("groups") or entry.get("roles")),
+            "remote_version": str(entry.get("remote_version") or entry.get("version") or "").strip(),
             "metadata": dict(entry.get("metadata") or {}),
         }
 
@@ -496,53 +545,30 @@ class TrassifyMasterToolsPlugin:
             metadata = self._get_module_metadata(spec)
             entry["metadata"] = metadata
 
-        remote_entry = self.remote_catalog_by_zip_name.get(entry.get("zip_name", ""))
-        if remote_entry:
-            entry["download_url"] = remote_entry.get("download_url") or entry.get("download_url", "")
-            entry["remote_version"] = remote_entry.get("version", "")
-            entry["remote_icon_url"] = remote_entry.get("icon", "")
+        secure_entry = dict(self.secure_catalog_entries_by_key.get(spec["key"]) or {})
+        if secure_entry:
+            entry["archive_path"] = secure_entry.get("archive_path", "")
+            entry["groups"] = list(secure_entry.get("groups") or [])
+            entry["remote_version"] = secure_entry.get("remote_version") or secure_entry.get("version") or ""
         else:
+            entry["archive_path"] = ""
+            entry["groups"] = []
             entry["remote_version"] = ""
-            entry["remote_icon_url"] = ""
 
         return entry
 
-    def _refresh_remote_catalog(self):
-        url = str(self.catalog_plugins_xml_url or "").strip()
-        if not url:
-            self.remote_catalog_by_zip_name = {}
-            self.catalog_refresh_error = ""
-            return
+    def _apply_secure_catalog_payload(self, payload):
+        modules = payload.get("modules") or payload.get("plugins") or []
+        normalized = {}
 
-        request = urllib.request.Request(
-            url,
-            headers={"User-Agent": self.CATALOG_USER_AGENT},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                payload = response.read()
-            self.remote_catalog_by_zip_name = self._parse_remote_plugins_xml(payload)
-            self.catalog_refresh_error = ""
-        except Exception as exc:
-            self.catalog_refresh_error = f"{type(exc).__name__}: {exc}"
-
-    def _parse_remote_plugins_xml(self, payload: bytes):
-        root = ET.fromstring(payload)
-        entries = {}
-
-        for plugin_element in root.findall("pyqgis_plugin"):
-            file_name = self._xml_text(plugin_element, "file_name")
-            if not file_name:
+        for entry in modules:
+            normalized_entry = self._normalized_catalog_entry(entry)
+            key = normalized_entry.get("key", "")
+            if not key:
                 continue
+            normalized[key] = normalized_entry
 
-            entries[file_name] = {
-                "version": self._xml_text(plugin_element, "version"),
-                "download_url": self._xml_text(plugin_element, "download_url"),
-                "icon": self._xml_text(plugin_element, "icon"),
-                "name": plugin_element.attrib.get("name", ""),
-            }
-
-        return entries
+        self.secure_catalog_entries_by_key = normalized
 
     def _inspect_local_plugin(self, spec):
         plugin_dir = self._find_installed_plugin_dir(spec["package"])
@@ -580,9 +606,12 @@ class TrassifyMasterToolsPlugin:
             self._refresh_ui_state()
             return False
 
-        download_url = row.get("download_url", "").strip()
-        if not download_url:
-            self._record_error(spec, "Keine Download-URL fuer dieses Plugin verfuegbar.")
+        remote_archive_path = normalize_remote_path(row.get("archive_path", ""))
+        if not remote_archive_path:
+            self._record_error(
+                spec,
+                "Fuer dieses Plugin ist im geschuetzten Katalog kein Paketpfad hinterlegt.",
+            )
             self._refresh_ui_state()
             return False
 
@@ -597,7 +626,10 @@ class TrassifyMasterToolsPlugin:
                 archive_path = temp_dir / "plugin.zip"
                 extract_root = temp_dir / "extract"
 
-                self._download_archive(download_url, archive_path)
+                self.auth_manager.download_remote_file(
+                    remote_archive_path,
+                    archive_path,
+                )
                 extracted_plugin_dir = self._extract_plugin_archive(
                     archive_path,
                     spec["package"],
@@ -800,14 +832,6 @@ class TrassifyMasterToolsPlugin:
             self._refresh_ui_state()
             return False
 
-    def _download_archive(self, download_url, destination_path):
-        request = urllib.request.Request(
-            download_url,
-            headers={"User-Agent": self.CATALOG_USER_AGENT},
-        )
-        with urllib.request.urlopen(request, timeout=30) as response:
-            destination_path.write_bytes(response.read())
-
     def _extract_plugin_archive(self, archive_path, package_name, extract_root):
         extract_root.mkdir(parents=True, exist_ok=True)
 
@@ -1009,16 +1033,10 @@ class TrassifyMasterToolsPlugin:
         self.module_action_errors.pop(spec["key"], None)
 
     def _show_startup_message(self):
-        message = "Master-Katalog aktiv."
-        if self.catalog_refresh_error:
-            message += " Online-Index derzeit nicht erreichbar, lokaler Snapshot wird verwendet."
-
-        self.iface.messageBar().pushMessage(
-            self.MENU_TITLE,
-            message,
-            level=Qgis.Warning if self.catalog_refresh_error else Qgis.Info,
-            duration=6 if self.catalog_refresh_error else 4,
-        )
+        message = "Master-Katalog aktiv. Plugin-Downloads laufen ueber den geschuetzten Nextcloud-Katalog."
+        if not self.auth_manager.has_saved_credentials():
+            message += " Vor dem Laden ist eine Nextcloud-Anmeldung erforderlich."
+        self._push_message(message, Qgis.Info, 6)
 
     def _refresh_overview_dialog(self):
         if self.overview_dialog is not None:
@@ -1026,6 +1044,23 @@ class TrassifyMasterToolsPlugin:
 
     def _refresh_ui_state(self):
         self._refresh_overview_dialog()
+
+    def _push_message(self, message, level=Qgis.Info, duration=4):
+        self.iface.messageBar().pushMessage(
+            self.MENU_TITLE,
+            str(message or "").strip(),
+            level=level,
+            duration=duration,
+        )
+
+    def _handle_auth_state_changed(self):
+        if self.auth_manager.is_authorized():
+            self.refresh_catalog(announce=False)
+            return
+
+        self.secure_catalog_entries_by_key = {}
+        self.catalog_refresh_error = ""
+        self._refresh_ui_state()
 
     def _sync_shared_settings(self, config=None):
         settings = config or self.get_shared_settings()
@@ -1054,6 +1089,31 @@ class TrassifyMasterToolsPlugin:
             if spec["key"] == key:
                 return spec
         return None
+
+    def _visible_catalog_specs(self):
+        if not self.auth_manager.is_authorized():
+            return []
+
+        user_groups = set(self.auth_manager.user_profile.groups)
+        visible_specs = []
+
+        for spec in BUNDLED_PLUGINS:
+            entry = self.secure_catalog_entries_by_key.get(spec["key"])
+            if entry is None:
+                continue
+            if not self._catalog_entry_visible_for_groups(entry, user_groups):
+                continue
+            visible_specs.append(spec)
+
+        return visible_specs
+
+    def _catalog_entry_visible_for_groups(self, entry, user_groups):
+        allowed_groups = self._normalized_groups(entry.get("groups"))
+        if not allowed_groups:
+            return True
+        if "*" in allowed_groups:
+            return True
+        return bool(set(allowed_groups) & set(user_groups))
 
     def _get_module_metadata(self, spec):
         metadata_path = (
@@ -1100,37 +1160,6 @@ class TrassifyMasterToolsPlugin:
                 return str(fallback_icon)
 
         return str(self.plugin_dir / "icon.svg")
-
-    def _resolve_raw_base_url_from_metadata(self):
-        metadata = self._master_metadata()
-        repository_url = (
-            metadata.get("repository")
-            or metadata.get("homepage")
-            or ""
-        )
-        match = re.search(
-            r"github\.com[:/](?P<slug>[^/]+/[^/.]+)(?:\.git)?/?$",
-            str(repository_url),
-        )
-        if not match:
-            return ""
-        return f"https://raw.githubusercontent.com/{match.group('slug')}/main"
-
-    def _master_metadata(self):
-        metadata_path = self.plugin_dir / "metadata.txt"
-        if not metadata_path.is_file():
-            return {}
-
-        parser = configparser.ConfigParser(interpolation=None)
-        parser.optionxform = str
-        with metadata_path.open(encoding="utf-8") as handle:
-            parser.read_file(handle)
-        if not parser.has_section("general"):
-            return {}
-        return {
-            key: value.strip()
-            for key, value in parser.items("general")
-        }
 
     def _metadata_value(self, metadata_path, key):
         if not metadata_path.is_file():
@@ -1184,6 +1213,23 @@ class TrassifyMasterToolsPlugin:
         value = str((metadata or {}).get(key, "")).strip().lower()
         return value in {"1", "true", "yes", "on"}
 
+    def _normalized_groups(self, raw_groups):
+        if isinstance(raw_groups, list):
+            return [
+                str(group or "").strip()
+                for group in raw_groups
+                if str(group or "").strip()
+            ]
+
+        if raw_groups is None:
+            return []
+
+        return [
+            token.strip()
+            for token in str(raw_groups).replace(";", ",").split(",")
+            if token.strip()
+        ]
+
     def _compare_versions(self, left, right):
         left_key = self._version_key(left)
         right_key = self._version_key(right)
@@ -1207,12 +1253,6 @@ class TrassifyMasterToolsPlugin:
             else:
                 key.append((1, token.lower()))
         return key
-
-    def _xml_text(self, element, tag_name):
-        child = element.find(tag_name)
-        if child is None or child.text is None:
-            return ""
-        return child.text.strip()
 
     def _normalized_path(self, path):
         if path is None:

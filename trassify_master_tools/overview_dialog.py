@@ -18,6 +18,7 @@ from qgis.PyQt.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QStyle,
     QToolButton,
     QTreeWidget,
@@ -48,11 +49,86 @@ class MasterOverviewDialog(QDialog):
         self.resize(1260, 780)
         self.setMinimumSize(1080, 680)
 
-        layout = QHBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self.page_stack = QStackedWidget(self)
+        self.page_stack.setObjectName("overviewPageStack")
+        root_layout.addWidget(self.page_stack, 1)
+
+        self.auth_page = QWidget(self.page_stack)
+        self.auth_page.setObjectName("authPage")
+        auth_page_layout = QVBoxLayout(self.auth_page)
+        auth_page_layout.setContentsMargins(26, 26, 26, 26)
+        auth_page_layout.setSpacing(16)
+        auth_page_layout.addStretch(1)
+
+        auth_card = QFrame(self.auth_page)
+        auth_card.setObjectName("authCard")
+        auth_card_layout = QVBoxLayout(auth_card)
+        auth_card_layout.setContentsMargins(28, 28, 28, 28)
+        auth_card_layout.setSpacing(14)
+
+        self.auth_title_label = QLabel("Geschuetzten Plugin-Katalog entsperren", auth_card)
+        self.auth_title_label.setObjectName("authTitleLabel")
+        self.auth_title_label.setWordWrap(True)
+        auth_card_layout.addWidget(self.auth_title_label)
+
+        self.auth_intro_label = QLabel(
+            "Die Plugin-Pakete liegen geschuetzt in Nextcloud. Vor dem Laden des Katalogs wird eine Browser-Anmeldung ueber Nextcloud benoetigt.",
+            auth_card,
+        )
+        self.auth_intro_label.setObjectName("authIntroLabel")
+        self.auth_intro_label.setWordWrap(True)
+        auth_card_layout.addWidget(self.auth_intro_label)
+
+        self.auth_status_label = QLabel("", auth_card)
+        self.auth_status_label.setObjectName("authStatusLabel")
+        self.auth_status_label.setWordWrap(True)
+        auth_card_layout.addWidget(self.auth_status_label)
+
+        self.auth_account_label = QLabel("", auth_card)
+        self.auth_account_label.setObjectName("authAccountLabel")
+        self.auth_account_label.setWordWrap(True)
+        auth_card_layout.addWidget(self.auth_account_label)
+
+        auth_button_row = QHBoxLayout()
+        auth_button_row.setSpacing(8)
+        auth_card_layout.addLayout(auth_button_row)
+
+        self.auth_login_button = QPushButton("Im Browser anmelden", auth_card)
+        self.auth_login_button.setObjectName("primaryButton")
+        self.auth_login_button.clicked.connect(self._start_catalog_login)
+        auth_button_row.addWidget(self.auth_login_button)
+
+        self.auth_refresh_button = QPushButton("Verbindung pruefen", auth_card)
+        self.auth_refresh_button.setObjectName("subtleButton")
+        self.auth_refresh_button.clicked.connect(self._refresh_catalog_login)
+        auth_button_row.addWidget(self.auth_refresh_button)
+
+        self.auth_logout_button = QPushButton("Anmeldung entfernen", auth_card)
+        self.auth_logout_button.setObjectName("secondaryButton")
+        self.auth_logout_button.clicked.connect(self._remove_catalog_login)
+        auth_button_row.addWidget(self.auth_logout_button)
+
+        self.auth_settings_button = QPushButton("Einstellungen", auth_card)
+        self.auth_settings_button.setObjectName("subtleButton")
+        self.auth_settings_button.clicked.connect(self.plugin_controller.show_settings)
+        auth_button_row.addWidget(self.auth_settings_button)
+
+        auth_button_row.addStretch(1)
+        auth_page_layout.addWidget(auth_card, 0, Qt.AlignHCenter)
+        auth_page_layout.addStretch(1)
+        self.page_stack.addWidget(self.auth_page)
+
+        self.catalog_page = QWidget(self.page_stack)
+        self.catalog_page.setObjectName("catalogPage")
+        layout = QHBoxLayout(self.catalog_page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        sidebar_frame = QFrame(self)
+        sidebar_frame = QFrame(self.catalog_page)
         sidebar_frame.setObjectName("sidebarFrame")
         sidebar_frame.setFixedWidth(184)
         sidebar_layout = QVBoxLayout(sidebar_frame)
@@ -70,7 +146,7 @@ class MasterOverviewDialog(QDialog):
         sidebar_layout.addWidget(self.filter_list, 1)
         layout.addWidget(sidebar_frame)
 
-        workspace_frame = QFrame(self)
+        workspace_frame = QFrame(self.catalog_page)
         workspace_frame.setObjectName("workspaceFrame")
         workspace_layout = QVBoxLayout(workspace_frame)
         workspace_layout.setContentsMargins(12, 12, 12, 12)
@@ -308,10 +384,18 @@ class MasterOverviewDialog(QDialog):
             close_button.setFixedHeight(button_height)
         actions_layout.addWidget(button_box)
 
+        self.page_stack.addWidget(self.catalog_page)
         self._apply_window_styling()
         self.refresh()
 
     def refresh(self):
+        self._sync_auth_page()
+        if not self.plugin_controller.can_access_catalog():
+            self.page_stack.setCurrentWidget(self.auth_page)
+            self.setWindowTitle("Erweiterungen | Anmeldung")
+            return
+
+        self.page_stack.setCurrentWidget(self.catalog_page)
         current_item = self.module_list.currentItem()
         current_key = current_item.data(0, Qt.UserRole) if current_item is not None else None
         self._all_rows = sorted(
@@ -329,12 +413,63 @@ class MasterOverviewDialog(QDialog):
             f"Erweiterungen | Katalog ({len(self._all_rows)})"
         )
 
+    def _sync_auth_page(self):
+        status = self.plugin_controller.auth_status()
+        detail = self.plugin_controller.auth_status_detail()
+        display_name = self.plugin_controller.auth_display_name()
+        groups = self.plugin_controller.auth_groups()
+        has_saved_login = self.plugin_controller.has_saved_catalog_login()
+        can_access = self.plugin_controller.can_access_catalog()
+
+        if can_access:
+            self.auth_title_label.setText("Nextcloud-Verbindung aktiv")
+            self.auth_login_button.setText("Erneut anmelden")
+        elif status == "authorizing":
+            self.auth_title_label.setText("Browser-Login laeuft")
+            self.auth_login_button.setText("Browser-Login laeuft...")
+        elif has_saved_login:
+            self.auth_title_label.setText("Gespeicherte Anmeldung pruefen")
+            self.auth_login_button.setText("Neu anmelden")
+        else:
+            self.auth_title_label.setText("Geschuetzten Plugin-Katalog entsperren")
+            self.auth_login_button.setText("Im Browser anmelden")
+
+        self.auth_status_label.setText(detail or "Noch nicht bei Nextcloud angemeldet.")
+
+        account_parts = []
+        if display_name:
+            account_parts.append(f"<b>Konto:</b> {escape(display_name)}")
+        if groups:
+            account_parts.append(f"<b>Gruppen:</b> {escape(', '.join(groups))}")
+        if not account_parts:
+            account_parts.append(
+                f"<b>Server:</b> {escape(self.plugin_controller.get_shared_settings().get('nextcloud_base_url', '') or '-')}"
+            )
+        self.auth_account_label.setText("<br>".join(account_parts))
+        self.auth_account_label.setTextFormat(Qt.RichText)
+
+        is_authorizing = status == "authorizing"
+        self.auth_login_button.setEnabled(not is_authorizing)
+        self.auth_refresh_button.setEnabled(has_saved_login and not is_authorizing)
+        self.auth_logout_button.setEnabled(has_saved_login and not is_authorizing)
+        self.auth_logout_button.setVisible(has_saved_login)
+
     def _apply_window_styling(self):
         self.setStyleSheet(
             """
             QDialog#masterOverviewDialog {
                 background: palette(window);
                 color: palette(window-text);
+            }
+            QStackedWidget#overviewPageStack,
+            QWidget#authPage,
+            QWidget#catalogPage {
+                background: transparent;
+            }
+            QFrame#authCard {
+                background: palette(base);
+                border: 1px solid palette(midlight);
+                border-radius: 10px;
             }
             QFrame#sidebarFrame {
                 background: #8f8f8f;
@@ -384,6 +519,18 @@ class MasterOverviewDialog(QDialog):
                 color: palette(mid);
                 font-weight: 700;
             }
+            QLabel#authTitleLabel {
+                color: palette(window-text);
+                font-size: 20px;
+                font-weight: 700;
+            }
+            QLabel#authIntroLabel,
+            QLabel#authAccountLabel {
+                color: palette(mid);
+            }
+            QLabel#authStatusLabel {
+                color: palette(window-text);
+            }
             QLabel#sectionTitleLabel,
             QLabel#detailDescriptionLabel {
                 color: palette(window-text);
@@ -405,6 +552,18 @@ class MasterOverviewDialog(QDialog):
             }
             """
         )
+
+    def _start_catalog_login(self):
+        self.plugin_controller.start_catalog_login()
+        self.refresh()
+
+    def _refresh_catalog_login(self):
+        self.plugin_controller.refresh_catalog_login()
+        self.refresh()
+
+    def _remove_catalog_login(self):
+        self.plugin_controller.remove_catalog_login()
+        self.refresh()
 
     def _populate_filters(self):
         current_filter = self._active_filter_key()

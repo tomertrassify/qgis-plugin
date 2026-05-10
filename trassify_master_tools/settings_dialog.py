@@ -103,6 +103,8 @@ class MasterSettingsDialog(QDialog):
         self.nextcloud_user.setPlaceholderText("name@example.com")
         self.nextcloud_app_password = QLineEdit(connection_group)
         self.nextcloud_app_password.setEchoMode(QLineEdit.Password)
+        self.nextcloud_catalog_root = QLineEdit(connection_group)
+        self.nextcloud_catalog_root.setPlaceholderText("Trassify Master Tools")
         self.nextcloud_folder_marker = QLineEdit(connection_group)
         self.nextcloud_folder_marker.setPlaceholderText("Nextcloud")
         self.local_nextcloud_roots = QPlainTextEdit(connection_group)
@@ -115,13 +117,15 @@ class MasterSettingsDialog(QDialog):
         connection_form.addRow("Nextcloud URL", self.nextcloud_base_url)
         connection_form.addRow("Benutzer", self.nextcloud_user)
         connection_form.addRow("App-Passwort", self.nextcloud_app_password)
+        connection_form.addRow("Plugin-Katalog-Ordner", self.nextcloud_catalog_root)
         connection_form.addRow("Lokale Sync-Roots", self.local_nextcloud_roots)
         connection_form.addRow("Ordner-Marker", self.nextcloud_folder_marker)
         layout.addWidget(connection_group)
 
         info = QLabel(
-            "Diese Werte werden sofort in die globale Nutzerkonfiguration kompatibler Module gespiegelt. "
-            "Aktuell betrifft das insbesondere AttributionButler."
+            "Die Zugangsdaten koennen weiter manuell gepflegt werden, werden fuer den Master-Katalog aber "
+            "bevorzugt ueber den Browser-Login von Nextcloud erzeugt. Der Plugin-Katalog-Ordner ist relativ "
+            "zum persoenlichen Nextcloud-Dateibereich des Nutzers."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -239,6 +243,9 @@ class MasterSettingsDialog(QDialog):
         self.nextcloud_app_password.setText(
             str(values.get("nextcloud_app_password", ""))
         )
+        self.nextcloud_catalog_root.setText(
+            str(values.get("nextcloud_catalog_root", ""))
+        )
         self.nextcloud_folder_marker.setText(
             str(values.get("nextcloud_folder_marker", ""))
         )
@@ -269,6 +276,7 @@ class MasterSettingsDialog(QDialog):
             "nextcloud_base_url": self.nextcloud_base_url.text().strip(),
             "nextcloud_user": self.nextcloud_user.text().strip(),
             "nextcloud_app_password": self.nextcloud_app_password.text(),
+            "nextcloud_catalog_root": self.nextcloud_catalog_root.text().strip(),
             "local_nextcloud_roots": [
                 line.strip()
                 for line in self.local_nextcloud_roots.toPlainText().splitlines()

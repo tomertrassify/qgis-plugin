@@ -14,6 +14,7 @@ DEFAULT_SHARED_SETTINGS = {
     "nextcloud_base_url": "https://nextcloud.trassify.cloud",
     "nextcloud_user": "",
     "nextcloud_app_password": "",
+    "nextcloud_catalog_root": "Trassify Master Tools",
     "local_nextcloud_roots": [],
     "nextcloud_folder_marker": "Nextcloud",
     "clickup_api_token": "",
