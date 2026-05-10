@@ -74,8 +74,7 @@ class MasterOverviewDialog(QDialog):
         auth_page_layout.setContentsMargins(0, 0, 0, 0)
         auth_page_layout.setSpacing(0)
         self.auth_widgets = self._create_auth_card(self.auth_page, compact=True)
-        auth_page_layout.addWidget(self.auth_widgets["frame"], 0, Qt.AlignTop)
-        auth_page_layout.addStretch(1)
+        auth_page_layout.addWidget(self.auth_widgets["frame"], 1)
         self.page_stack.addWidget(self.auth_page)
 
         self.catalog_page = QWidget(self.page_stack)
@@ -385,7 +384,7 @@ class MasterOverviewDialog(QDialog):
         frame.setObjectName("authCard")
         if compact:
             frame.setMinimumWidth(self._auth_min_size.width())
-            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         else:
             frame.setFixedWidth(566)
             frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
@@ -403,10 +402,12 @@ class MasterOverviewDialog(QDialog):
         card_layout.addWidget(hero_image)
 
         content_widget = QWidget(frame)
-        content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(24, 14 if compact else 20, 24, 14 if compact else 24)
         content_layout.setSpacing(6 if compact else 12)
+        if compact:
+            content_layout.addStretch(1)
 
         logo_label = QLabel(content_widget)
         logo_label.setObjectName("authLogoLabel")
@@ -473,6 +474,9 @@ class MasterOverviewDialog(QDialog):
         logout_button.clicked.connect(self._remove_catalog_login)
         footer_row.addWidget(logout_button)
         footer_row.addStretch(1)
+
+        if compact:
+            content_layout.addStretch(1)
 
         card_layout.addWidget(content_widget)
 
