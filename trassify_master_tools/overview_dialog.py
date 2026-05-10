@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from html import escape
 
-from qgis.PyQt.QtCore import QSize, Qt
-from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from qgis.PyQt.QtCore import QSize, Qt, QTimer
+from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPainter, QPixmap, QPalette
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -74,7 +74,9 @@ class MasterOverviewDialog(QDialog):
         auth_page_layout.setContentsMargins(0, 0, 0, 0)
         auth_page_layout.setSpacing(0)
         self.auth_widgets = self._create_auth_card(self.auth_page, compact=True)
-        auth_page_layout.addWidget(self.auth_widgets["frame"], 1)
+        auth_page_layout.addStretch(1)
+        auth_page_layout.addWidget(self.auth_widgets["frame"], 0)
+        auth_page_layout.addStretch(1)
         self.page_stack.addWidget(self.auth_page)
 
         self.catalog_page = QWidget(self.page_stack)
@@ -384,7 +386,7 @@ class MasterOverviewDialog(QDialog):
         frame.setObjectName("authCard")
         if compact:
             frame.setMinimumWidth(self._auth_min_size.width())
-            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         else:
             frame.setFixedWidth(566)
             frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
@@ -396,6 +398,7 @@ class MasterOverviewDialog(QDialog):
         hero_image = QLabel(frame)
         hero_image.setObjectName("authHeroImage")
         hero_image.setFixedHeight(140 if compact else 150)
+        hero_image.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         hero_image.setAlignment(Qt.AlignCenter)
         hero_image.setMargin(0)
         card_layout.addWidget(hero_image)
@@ -447,6 +450,11 @@ class MasterOverviewDialog(QDialog):
         login_button.setObjectName("authPrimaryButton")
         login_button.setFixedWidth(128)
         login_button.setFixedHeight(38)
+        login_button.setAutoDefault(True)
+        login_button.setDefault(True)
+        button_palette = QPalette(login_button.palette())
+        button_palette.setColor(QPalette.Button, QColor("#5d7d4f"))
+        login_button.setPalette(button_palette)
         login_button.clicked.connect(self._start_catalog_login)
         primary_row.addWidget(login_button)
         primary_row.addStretch(1)
@@ -468,9 +476,6 @@ class MasterOverviewDialog(QDialog):
         logout_button.clicked.connect(self._remove_catalog_login)
         footer_row.addWidget(logout_button)
         footer_row.addStretch(1)
-
-        if compact:
-            content_layout.addStretch(1)
 
         card_layout.addWidget(content_widget)
 
@@ -523,6 +528,10 @@ class MasterOverviewDialog(QDialog):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_auth_artwork()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._update_auth_artwork)
 
     def _update_auth_artwork(self):
         for widgets in (self.auth_widgets, self.access_gate_widgets):
@@ -787,21 +796,7 @@ class MasterOverviewDialog(QDialog):
                 padding: 0 20px;
             }
             QPushButton#authPrimaryButton {
-                background: #5d7d4f;
-                color: white;
-                border: 1px solid #4d6841;
-                border-radius: 8px;
-                padding: 6px 18px;
-                font-size: 14px;
-                font-weight: 500;
-            }
-            QPushButton#authPrimaryButton:hover {
-                background: #6a8a5c;
-            }
-            QPushButton#authPrimaryButton:disabled {
-                background: #9cac92;
-                border-color: #899880;
-                color: #f5f5f5;
+                padding: 4px 16px;
             }
             QPushButton#authTextButton {
                 background: transparent;
