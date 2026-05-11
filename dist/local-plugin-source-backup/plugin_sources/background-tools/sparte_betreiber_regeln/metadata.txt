@@ -1,7 +1,7 @@
 [general]
 name=Sparte Betreiber Regeln
 description=Pflegt rule-based Renderer fuer den aktiven Layer automatisch aus Sparte und Betreiber.
-version=1.0.1
+version=1.0.2
 qgisMinimumVersion=3.28
 author=Tomer Maith
 email=
