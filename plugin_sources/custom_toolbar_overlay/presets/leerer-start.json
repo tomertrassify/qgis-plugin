@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "name": "Leerer Start",
+  "description": "Startet ohne eigene Werkzeugleisten und blendet keine Standardleisten aus. Dient als einfaches Beispiel fuer das Preset-Format.",
+  "hidden_native_toolbars": [],
+  "toolbars": []
+}

@@ -1,0 +1,16 @@
+[general]
+name=Export Pro
+qgisMinimumVersion=3.22
+description=Exportiert ausgewaehlte Layer per Rechtsklick schnell als GeoPackage, DXF, Shapefile-Ordner, KML oder GeoJSON.
+version=1.1.1
+author=Tomer Maith
+email=
+about=Schneller Mehrformat-Export fuer ausgewaehlte Layer aus der Layerliste, inklusive GeoPackage, DXF, Shapefile, KML und GeoJSON.
+tracker=
+repository=
+category=Plugins
+icon=icon.svg
+experimental=False
+deprecated=False
+tags=export,geopackage,dxf,shapefile,kml,geojson,layer
+homepage=

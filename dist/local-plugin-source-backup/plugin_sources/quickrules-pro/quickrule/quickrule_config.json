@@ -1,0 +1,26 @@
+{
+  "presets": {
+    "betreiber": {
+      "label": "Preset: Betreiber",
+      "aliases": [
+        "betreiber",
+        "netzbetreiber",
+        "operator",
+        "owner",
+        "company",
+        "provider"
+      ]
+    },
+    "sparte": {
+      "label": "Preset: Sparte",
+      "aliases": [
+        "sparte",
+        "segment",
+        "category",
+        "typ",
+        "type",
+        "branche"
+      ]
+    }
+  }
+}

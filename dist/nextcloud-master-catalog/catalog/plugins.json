@@ -1,0 +1,132 @@
+{
+  "modules": [
+    {
+      "key": "attribution_buttler",
+      "label": "AttributionButler",
+      "package": "attribution_buttler",
+      "version": "0.10.51",
+      "archive_path": "packages/attribution_buttler.zip",
+      "groups": []
+    },
+    {
+      "key": "schutzrohr",
+      "label": "Schutzrohr",
+      "package": "live_corridor_tool",
+      "version": "0.9.1",
+      "archive_path": "packages/live_corridor_tool.zip",
+      "groups": []
+    },
+    {
+      "key": "freehand_raster_georeferencer",
+      "label": "Freehand Raster Georeferencer",
+      "package": "FreehandGeoreferencer",
+      "version": "0.8.3",
+      "archive_path": "packages/FreehandGeoreferencer.zip",
+      "groups": []
+    },
+    {
+      "key": "geobasis_loader",
+      "label": "GeoBasis Loader",
+      "package": "GeoBasis_pro",
+      "version": "1.4.2",
+      "archive_path": "packages/GeoBasis_pro.zip",
+      "groups": []
+    },
+    {
+      "key": "coordinatify",
+      "label": "Coordinatify",
+      "package": "coordinatify",
+      "version": "1.3.1",
+      "archive_path": "packages/coordinatify.zip",
+      "groups": []
+    },
+    {
+      "key": "sparte_betreiber_regeln",
+      "label": "Sparte Betreiber Regeln",
+      "package": "sparte_betreiber_regeln",
+      "version": "1.0.1",
+      "archive_path": "packages/sparte_betreiber_regeln.zip",
+      "groups": []
+    },
+    {
+      "key": "quick_map_services",
+      "label": "QuickMapServices",
+      "package": "quick_map_services",
+      "version": "1.1.0",
+      "archive_path": "packages/quick_map_services.zip",
+      "groups": []
+    },
+    {
+      "key": "grid_quick_geojson_export",
+      "label": "Grid Quick GeoJSON Export",
+      "package": "grid_quick_geojson_export",
+      "version": "1.0.3",
+      "archive_path": "packages/grid_quick_geojson_export.zip",
+      "groups": []
+    },
+    {
+      "key": "layer_fuser",
+      "label": "Layer Fuser",
+      "package": "layer_fuser",
+      "version": "1.0.1",
+      "archive_path": "packages/layer_fuser.zip",
+      "groups": []
+    },
+    {
+      "key": "projektstarter",
+      "label": "Projektstarter",
+      "package": "max_wild_project_starter",
+      "version": "1.5.2",
+      "archive_path": "packages/max_wild_project_starter.zip",
+      "groups": []
+    },
+    {
+      "key": "projektstatus_butler",
+      "label": "Max Wild Projekt Status",
+      "package": "max_wild_project_status_manager",
+      "version": "1.4.1",
+      "archive_path": "packages/max_wild_project_status_manager.zip",
+      "groups": []
+    },
+    {
+      "key": "projektstarter_attribution_buttler",
+      "label": "Projektstarter Butler",
+      "package": "projektstarter_attribution_buttler",
+      "version": "1.0.12",
+      "archive_path": "packages/projektstarter_attribution_buttler.zip",
+      "groups": []
+    },
+    {
+      "key": "trassify_github",
+      "label": "Trassify Github",
+      "package": "trassify_github",
+      "version": "1.1.4",
+      "archive_path": "packages/trassify_github.zip",
+      "groups": []
+    },
+    {
+      "key": "webmap_export",
+      "label": "Webmap Export",
+      "package": "webmap_export",
+      "version": "1.0.2",
+      "archive_path": "packages/webmap_export.zip",
+      "groups": []
+    },
+    {
+      "key": "quickrule",
+      "label": "Quickrule",
+      "package": "quickrule",
+      "version": "1.1.1",
+      "archive_path": "packages/quickrule.zip",
+      "groups": []
+    },
+    {
+      "key": "export_pro",
+      "label": "Export Pro",
+      "package": "verpacken_pro",
+      "version": "1.1.1",
+      "archive_path": "packages/verpacken_pro.zip",
+      "groups": []
+    }
+  ]
+}

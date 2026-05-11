@@ -1,0 +1,49 @@
+[general]
+name=QuickOSM
+qgisMinimumVersion=3.34
+qgisMaximumVersion=4.99
+description=Download OSM data thanks to the Overpass API. You can also open local OSM or PBF files. A special parser, on top of OGR, is used to let you see all OSM keys available.
+about=Execute customs Overpass queries in QGIS to get OSM data.
+author=Etienne Trimaille
+email=gustrimaille@yahoo.fr
+hasProcessingProvider=yes
+server=False
+
+# End of mandatory metadata
+
+# Done automatically by qgis-plugin-ci
+version=2.5.1
+commitNumber=1
+commitSha1=72b3ef2b0807f9514a547ab53b1ccd1944146619
+dateTime=2026-03-07T08:02:57Z
+changelog=
+ Version 2.5.1:
+ * Make the plugin compatible QGIS 4 again
+
+ Version 2.5.0:
+ * Raise to QGIS 3.34 minimum, the previous LTR
+ * Fix typo in QGIS Processing, contribution from @ghtmtt
+ * New preset *Inset* from @frasemcl
+ * Improve support for Qt6, coming with QGIS 4.0, contribution from @kommen
+ * Change background color of QListWidget to grey, contribution from @eithan-lastmile
+ * Do not export empty extent in JSON
+ * New GitHub organization dedicated to QuickOSM : https://github.com/QuickOSM/QuickOSM
+
+ Version 2.4.1:
+ * Fix wrong widget name, contribution from @Huntani
+
+
+# End of qgis-plugin-ci
+
+# Tags are comma separated with spaces allowed
+tags=osm,openstreetmap,overpass,download,osmdownload,josm,remote,pbf,processing,modeler
+
+homepage=https://quickosm.github.io/QuickOSM/
+tracker=https://github.com/QuickOSM/QuickOSM/issues
+repository=https://github.com/QuickOSM/QuickOSM/
+icon=resources/icons/QuickOSM.svg
+# experimental flag
+experimental=False
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False

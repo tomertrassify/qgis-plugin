@@ -113,6 +113,13 @@ BUNDLED_PLUGINS = (
         "tool_type": BACKGROUND_TOOL,
     },
     {
+        "key": "custom_toolbar_overlay",
+        "label": "Custom Toolbar Overlay",
+        "package": "custom_toolbar_overlay",
+        "source_path": "custom_toolbar_overlay",
+        "tool_type": INTERACTIVE_TOOL,
+    },
+    {
         "key": "export_pro",
         "label": "Export Pro",
         "package": "verpacken_pro",

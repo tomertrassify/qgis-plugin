@@ -1,0 +1,19 @@
+[general]
+name=Custom Toolbar Overlay
+description=Erstellt eigene QGIS-Werkzeugleisten aus vorhandenen Toolbar-Tools und blendet ungenutzte Standardleisten aus.
+version=0.3.22
+qgisMinimumVersion=3.28
+qgisMaximumVersion=3.99
+author=OpenAI Codex
+email=
+about=Mit diesem Plugin lassen sich kompakte eigene Werkzeugleisten aus vorhandenen QGIS-Toolbar-Actions aufbauen. Im Dialog koennen Standardleisten ein- oder ausgeblendet, eingebaute Vorlagen genutzt, bestehende QGIS-Standardleisten als eigene Kopie uebernommen, eigene Leisten mit doppelten Werkzeugen oder eigenen Dropdown-Gruppen angelegt sowie Branding und Plugin-Button per Checkbox gesteuert werden. Sichtbarkeitsaenderungen an Werkzeugleisten, die direkt in QGIS erfolgen, werden zurueck in die Plugin-Einstellungen synchronisiert. Eigene Werkzeugleisten verwenden statische Proxy-Kopien, damit originale QGIS-Tools und Dropdowns technisch unangetastet bleiben, spiegeln aber weiterhin den aktiv/deaktiviert-Status der QGIS-Originale inklusive des echten Toolbar-Widget-Status. Native QGIS-Dropdown-Buttons verwenden stabile Root-IDs statt fluechtiger Unteraktions-IDs, folgen dem aktuell im Original ausgewaehlten Unterwerkzeug samt Icon und behandeln geloeschte Qt-Widgets als harmlosen Refresh-Ausfall statt als Python-Fehler. Fuer das QGIS-Stuetzpunkt-/Knotenwerkzeug wird zusaetzlich ein gezielter Sonderfall ueber die offiziellen Interface-Actions genutzt, damit Hauptklick und Dropdown nicht an einem falschen generischen Geometriemenue haengen. Der Disabled-Zustand wird zusaetzlich visuell als deaktiviertes Icon auf dem Custom-Button gerendert. Tools aus Nebenfenstern wie Georeferenzierer werden aus Sicherheitsgruenden nicht mehr als generische Quelle uebernommen. Positionen eigener Werkzeugleisten bleiben beim Speichern erhalten und werden bei einem normalen QGIS-Neustart wiederhergestellt. Ein Toolbar-Debug-Export hilft bei QGIS-Sonderfaellen. Ein Reset-Button setzt die Plugin-Konfiguration auf den sichtbaren QGIS-Standard zurueck.
+category=Plugins
+icon=icon.svg
+tags=toolbar,ui,workspace,layout,customize,qgis
+homepage=
+tracker=
+repository=
+experimental=False
+deprecated=False
+supportsQt6=True
+hasProcessingProvider=False
