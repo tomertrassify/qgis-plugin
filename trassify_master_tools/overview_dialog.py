@@ -46,12 +46,13 @@ class MasterOverviewDialog(QDialog):
         self.plugin_controller = plugin_controller
         self._rows_by_key = {}
         self._all_rows = []
+        self.auth_icon_path = self.plugin_controller.plugin_dir / "icon.svg"
         self.auth_hero_path = self.plugin_controller.plugin_dir / "assets" / "nextcloud_login_hero.png"
         self.auth_logo_path = self.plugin_controller.plugin_dir / "assets" / "trassify-logo.png"
         self._catalog_default_size = QSize(1260, 780)
         self._catalog_min_size = QSize(1080, 680)
-        self._auth_default_size = QSize(440, 500)
-        self._auth_min_size = QSize(400, 440)
+        self._auth_default_size = QSize(640, 880)
+        self._auth_min_size = QSize(560, 760)
         self._dialog_mode = None
 
         self.setObjectName("masterOverviewDialog")
@@ -380,14 +381,187 @@ class MasterOverviewDialog(QDialog):
         self.refresh()
 
     def _create_auth_card(self, parent, compact):
+        if compact:
+            return self._create_compact_auth_card(parent)
+        return self._create_access_gate_card(parent)
+
+    def _create_compact_auth_card(self, parent):
+        frame = QFrame(parent)
+        frame.setObjectName("authDialogFrame")
+        frame.setMinimumWidth(self._auth_min_size.width())
+        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(34, 26, 34, 28)
+        frame_layout.setSpacing(0)
+
+        dialog_card = QFrame(frame)
+        dialog_card.setObjectName("authDialogCard")
+        dialog_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        frame_layout.addWidget(dialog_card, 1)
+
+        dialog_layout = QVBoxLayout(dialog_card)
+        dialog_layout.setContentsMargins(42, 42, 42, 34)
+        dialog_layout.setSpacing(0)
+        dialog_layout.addStretch(1)
+
+        content_column = QWidget(dialog_card)
+        content_column.setObjectName("authDialogColumn")
+        content_column.setMaximumWidth(520)
+        content_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
+        dialog_layout.addWidget(content_column, 0, Qt.AlignHCenter | Qt.AlignVCenter)
+
+        content_layout = QVBoxLayout(content_column)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+
+        icon_label = QLabel(content_column)
+        icon_label.setObjectName("authIconBadge")
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setFixedSize(88, 88)
+        icon_pixmap = self._contain_pixmap(self.auth_icon_path, 88, 88)
+        if not icon_pixmap.isNull():
+            icon_label.setPixmap(icon_pixmap)
+        content_layout.addWidget(icon_label, 0, Qt.AlignHCenter)
+
+        content_layout.addSpacing(26)
+
+        title_label = QLabel("Trassify Authentication", content_column)
+        title_label.setObjectName("authDialogTitleLabel")
+        title_label.setWordWrap(True)
+        title_label.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(title_label)
+
+        subtitle_label = QLabel(
+            "for QGIS Master Tool Plugin",
+            content_column,
+        )
+        subtitle_label.setObjectName("authDialogSubtitleLabel")
+        subtitle_label.setWordWrap(True)
+        subtitle_label.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(subtitle_label)
+
+        content_layout.addSpacing(50)
+
+        access_label = QLabel("Trassify is requesting access to:", content_column)
+        access_label.setObjectName("authPermissionCaptionLabel")
+        access_label.setWordWrap(True)
+        content_layout.addWidget(access_label)
+
+        content_layout.addSpacing(16)
+
+        permission_card = QFrame(content_column)
+        permission_card.setObjectName("authPermissionCard")
+        permission_layout = QVBoxLayout(permission_card)
+        permission_layout.setContentsMargins(26, 22, 26, 20)
+        permission_layout.setSpacing(0)
+        content_layout.addWidget(permission_card)
+
+        permission_header_layout = QHBoxLayout()
+        permission_header_layout.setContentsMargins(0, 0, 0, 0)
+        permission_header_layout.setSpacing(12)
+        permission_layout.addLayout(permission_header_layout)
+
+        permission_check_label = QLabel("✓", permission_card)
+        permission_check_label.setObjectName("authPermissionCheckLabel")
+        permission_header_layout.addWidget(permission_check_label, 0, Qt.AlignTop)
+
+        permission_title_label = QLabel("Nextcloud user data", permission_card)
+        permission_title_label.setObjectName("authPermissionTitleLabel")
+        permission_header_layout.addWidget(permission_title_label, 1)
+
+        permission_layout.addSpacing(16)
+
+        for text in (
+            "Nextcloud user Account",
+            "User E-Mail",
+            "User Password",
+        ):
+            bullet_label = QLabel(f"•    {text}", permission_card)
+            bullet_label.setObjectName("authPermissionItemLabel")
+            bullet_label.setWordWrap(True)
+            permission_layout.addWidget(bullet_label)
+            permission_layout.addSpacing(10)
+
+        permission_layout.addSpacing(6)
+
+        separator = QFrame(permission_card)
+        separator.setObjectName("authPermissionSeparator")
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Plain)
+        permission_layout.addWidget(separator)
+
+        permission_layout.addSpacing(16)
+
+        legal_label = QLabel(
+            (
+                "By authorizing access, you also agree with the Nextcloud "
+                "<span style=\"color:#9bbb93; font-weight:600;\">Terms of Use</span> "
+                "and "
+                "<span style=\"color:#9bbb93; font-weight:600;\">Privacy Policy</span>."
+            ),
+            permission_card,
+        )
+        legal_label.setObjectName("authPermissionFootnoteLabel")
+        legal_label.setWordWrap(True)
+        legal_label.setTextFormat(Qt.RichText)
+        permission_layout.addWidget(legal_label)
+
+        status_label = QLabel("", content_column)
+        status_label.setObjectName("authDialogStatusLabel")
+        status_label.setWordWrap(True)
+        status_label.setTextFormat(Qt.PlainText)
+        status_label.setAlignment(Qt.AlignCenter)
+        content_layout.addSpacing(18)
+        content_layout.addWidget(status_label)
+
+        content_layout.addSpacing(28)
+
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setSpacing(14)
+        content_layout.addLayout(buttons_layout)
+
+        cancel_button = QPushButton("Cancel", content_column)
+        cancel_button.setObjectName("authCancelButton")
+        cancel_button.setFixedHeight(54)
+        cancel_button.clicked.connect(self.reject)
+        buttons_layout.addWidget(cancel_button, 1)
+
+        login_button = QPushButton("Authorize", content_column)
+        login_button.setObjectName("authAuthorizeButton")
+        login_button.setFixedHeight(54)
+        login_button.setAutoDefault(True)
+        login_button.setDefault(True)
+        login_button.clicked.connect(self._start_catalog_login)
+        buttons_layout.addWidget(login_button, 1)
+
+        content_layout.addSpacing(28)
+
+        redirect_label = QLabel("", content_column)
+        redirect_label.setObjectName("authRedirectLabel")
+        redirect_label.setWordWrap(True)
+        redirect_label.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(redirect_label)
+
+        dialog_layout.addStretch(1)
+
+        return {
+            "frame": frame,
+            "compact": True,
+            "title": title_label,
+            "subtitle": subtitle_label,
+            "status": status_label,
+            "login": login_button,
+            "cancel": cancel_button,
+            "redirect": redirect_label,
+        }
+
+    def _create_access_gate_card(self, parent):
         frame = QFrame(parent)
         frame.setObjectName("authCard")
-        if compact:
-            frame.setMinimumWidth(self._auth_min_size.width())
-            frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        else:
-            frame.setFixedWidth(566)
-            frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        frame.setFixedWidth(566)
+        frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
 
         card_layout = QVBoxLayout(frame)
         card_layout.setContentsMargins(0, 0, 0, 0)
@@ -395,7 +569,7 @@ class MasterOverviewDialog(QDialog):
 
         hero_image = QLabel(frame)
         hero_image.setObjectName("authHeroImage")
-        hero_image.setFixedHeight(158 if compact else 150)
+        hero_image.setFixedHeight(150)
         hero_image.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         hero_image.setAlignment(Qt.AlignCenter)
         hero_image.setMargin(0)
@@ -404,10 +578,8 @@ class MasterOverviewDialog(QDialog):
         content_widget = QWidget(frame)
         content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(24, 14 if compact else 20, 24, 14 if compact else 24)
-        content_layout.setSpacing(6 if compact else 12)
-        if compact:
-            content_layout.addStretch(1)
+        content_layout.setContentsMargins(24, 20, 24, 24)
+        content_layout.setSpacing(12)
 
         logo_label = QLabel(content_widget)
         logo_label.setObjectName("authLogoLabel")
@@ -475,14 +647,11 @@ class MasterOverviewDialog(QDialog):
         footer_row.addWidget(logout_button)
         footer_row.addStretch(1)
 
-        if compact:
-            content_layout.addStretch(1)
-
         card_layout.addWidget(content_widget)
 
         return {
             "frame": frame,
-            "compact": compact,
+            "compact": False,
             "hero": hero_image,
             "logo": logo_label,
             "title": title_label,
@@ -536,26 +705,23 @@ class MasterOverviewDialog(QDialog):
         QTimer.singleShot(25, self._update_auth_artwork)
 
     def _update_auth_artwork(self):
-        for widgets in (self.auth_widgets, self.access_gate_widgets):
-            hero_label = widgets["hero"]
-            hero_width = max(1, hero_label.width())
-            hero_height = max(1, hero_label.height())
-            hero_label.setPixmap(
-                self._cover_pixmap(self.auth_hero_path, hero_width, hero_height)
-            )
+        hero_label = self.access_gate_widgets["hero"]
+        hero_width = max(1, hero_label.width())
+        hero_height = max(1, hero_label.height())
+        hero_label.setPixmap(
+            self._cover_pixmap(self.auth_hero_path, hero_width, hero_height)
+        )
 
-            logo_width = 164 if widgets["compact"] else 210
-            logo_height = 31 if widgets["compact"] else 42
-            widgets["logo"].setPixmap(
-                self._contain_pixmap(self.auth_logo_path, logo_width, logo_height)
-            )
+        self.access_gate_widgets["logo"].setPixmap(
+            self._contain_pixmap(self.auth_logo_path, 210, 42)
+        )
 
     def refresh(self):
         self._sync_auth_page()
         if not self.plugin_controller.can_access_catalog():
             self._set_dialog_mode("auth")
             self.page_stack.setCurrentWidget(self.auth_page)
-            self.setWindowTitle("Authorize Trassify Tools")
+            self.setWindowTitle("Authorize Trassify")
             return
 
         self._set_dialog_mode("catalog")
@@ -595,31 +761,67 @@ class MasterOverviewDialog(QDialog):
         groups = self.plugin_controller.auth_groups()
         has_saved_login = self.plugin_controller.has_saved_catalog_login()
         can_access = self.plugin_controller.can_access_catalog()
-        default_intro = (
+        shared_settings = self.plugin_controller.get_shared_settings()
+        base_url = str(shared_settings.get("nextcloud_base_url", "") or "").strip()
+        if base_url and not base_url.endswith("/"):
+            base_url = f"{base_url}/"
+
+        gate_intro = (
             "Melde dich mit deinem Trassify-Account an, um Zugriff auf unsere Plugin-Collection zu erhalten."
         )
 
         if can_access:
-            title_text = "Nextcloud verbunden"
-            intro_text = "Dein Trassify-Konto ist verbunden. Der geschuetzte Plugin-Katalog kann geladen werden."
-            login_text = "Erneut anmelden"
+            gate_title_text = "Nextcloud verbunden"
+            gate_intro_text = "Dein Trassify-Konto ist verbunden. Der geschuetzte Plugin-Katalog kann geladen werden."
         elif status == "authorizing":
-            title_text = "Browser-Login laeuft"
-            intro_text = "Schliesse die Anmeldung in deinem Browser ab, um die Plugin-Collection freizuschalten."
-            login_text = "Browser offen..."
+            gate_title_text = "Browser-Login laeuft"
+            gate_intro_text = "Schliesse die Anmeldung in deinem Browser ab, um die Plugin-Collection freizuschalten."
         elif has_saved_login:
-            title_text = "Gespeicherte Anmeldung pruefen"
-            intro_text = "Es ist bereits eine Anmeldung gespeichert. Du kannst die Verbindung pruefen oder dich neu anmelden."
-            login_text = "Neu anmelden"
+            gate_title_text = "Gespeicherte Anmeldung pruefen"
+            gate_intro_text = "Es ist bereits eine Anmeldung gespeichert. Du kannst die Verbindung pruefen oder dich neu anmelden."
         else:
-            title_text = "Willkommen bei Trassify"
-            intro_text = default_intro
-            login_text = "Log In"
+            gate_title_text = "Willkommen bei Trassify"
+            gate_intro_text = gate_intro
 
-        for widgets in (self.auth_widgets, self.access_gate_widgets):
-            widgets["title"].setText(title_text)
-            widgets["intro"].setText(intro_text)
-            widgets["login"].setText(login_text)
+        if status == "authorizing":
+            gate_login_text = "Browser offen..."
+        elif has_saved_login and not can_access:
+            gate_login_text = "Neu anmelden"
+        elif can_access:
+            gate_login_text = "Erneut anmelden"
+        else:
+            gate_login_text = "Log In"
+
+        if status == "authorizing":
+            popup_status_text = (
+                "Browser-Login geoeffnet. Bitte schliesse die Anmeldung in Nextcloud ab."
+            )
+        elif detail:
+            popup_status_text = detail.strip()
+        elif has_saved_login and not can_access:
+            popup_status_text = (
+                "Eine gespeicherte Anmeldung ist vorhanden, der Zugriff muss aber erneut bestaetigt werden."
+            )
+        else:
+            popup_status_text = ""
+
+        self.auth_widgets["title"].setText("Trassify Authentication")
+        self.auth_widgets["subtitle"].setText("for QGIS Master Tool Plugin")
+        self.auth_widgets["status"].setText(popup_status_text)
+        self.auth_widgets["status"].setVisible(bool(popup_status_text))
+        self.auth_widgets["redirect"].setText(
+            "You will be redirected to\n"
+            f"{base_url or 'https://nextcloud.trassify.cloud/'}"
+        )
+        self.auth_widgets["login"].setText(
+            "Authorizing..." if status == "authorizing" else "Authorize"
+        )
+        self.auth_widgets["login"].setEnabled(status != "authorizing")
+        self.auth_widgets["cancel"].setEnabled(status != "authorizing")
+
+        self.access_gate_widgets["title"].setText(gate_title_text)
+        self.access_gate_widgets["intro"].setText(gate_intro_text)
+        self.access_gate_widgets["login"].setText(gate_login_text)
 
         status_text = (detail or "").strip()
         show_status = bool(status_text)
@@ -627,7 +829,6 @@ class MasterOverviewDialog(QDialog):
             status_text = "Warte auf die Rueckmeldung aus Nextcloud."
             show_status = True
 
-        self.auth_widgets["status"].setText(status_text)
         self.access_gate_widgets["status"].setText(status_text)
 
         account_parts = []
@@ -636,19 +837,17 @@ class MasterOverviewDialog(QDialog):
         if groups:
             account_parts.append(f"<b>Gruppen:</b> {escape(', '.join(groups))}")
         account_text = "<br>".join(account_parts)
-        for widgets in (self.auth_widgets, self.access_gate_widgets):
-            widgets["account"].setText(account_text)
-            widgets["account"].setTextFormat(Qt.RichText)
+        self.access_gate_widgets["account"].setText(account_text)
+        self.access_gate_widgets["account"].setTextFormat(Qt.RichText)
 
         is_authorizing = status == "authorizing"
-        for widgets in (self.auth_widgets, self.access_gate_widgets):
-            widgets["login"].setEnabled(not is_authorizing)
-            widgets["status"].setVisible(show_status)
-            widgets["account"].setVisible(bool(account_text))
-            widgets["refresh"].setEnabled(has_saved_login and not is_authorizing)
-            widgets["refresh"].setVisible(has_saved_login)
-            widgets["logout"].setEnabled(has_saved_login and not is_authorizing)
-            widgets["logout"].setVisible(has_saved_login)
+        self.access_gate_widgets["login"].setEnabled(not is_authorizing)
+        self.access_gate_widgets["status"].setVisible(show_status)
+        self.access_gate_widgets["account"].setVisible(bool(account_text))
+        self.access_gate_widgets["refresh"].setEnabled(has_saved_login and not is_authorizing)
+        self.access_gate_widgets["refresh"].setVisible(has_saved_login)
+        self.access_gate_widgets["logout"].setEnabled(has_saved_login and not is_authorizing)
+        self.access_gate_widgets["logout"].setVisible(has_saved_login)
         self.settings_reload_button.setEnabled(not is_authorizing)
         self.settings_logout_button.setEnabled(has_saved_login and not is_authorizing)
         self.settings_logout_button.setVisible(has_saved_login)
@@ -702,6 +901,112 @@ class MasterOverviewDialog(QDialog):
             }
             QWidget#authPage {
                 background: #f1f1ef;
+            }
+            QFrame#authDialogFrame {
+                background: transparent;
+                border: none;
+            }
+            QFrame#authDialogCard {
+                background: #ffffff;
+                border: 1px solid #ece9e1;
+                border-radius: 30px;
+            }
+            QLabel#authIconBadge {
+                background: transparent;
+                border: none;
+            }
+            QLabel#authDialogTitleLabel {
+                color: #111111;
+                font-size: 22px;
+                font-weight: 700;
+            }
+            QLabel#authDialogSubtitleLabel {
+                color: #111111;
+                font-size: 14px;
+            }
+            QLabel#authPermissionCaptionLabel {
+                color: #202020;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QFrame#authPermissionCard {
+                background: #ffffff;
+                border: 1px solid #c7c6bf;
+                border-radius: 16px;
+            }
+            QLabel#authPermissionCheckLabel {
+                color: #5fa36d;
+                font-size: 19px;
+                font-weight: 700;
+            }
+            QLabel#authPermissionTitleLabel {
+                color: #111111;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QLabel#authPermissionItemLabel {
+                color: #767676;
+                font-size: 11px;
+                padding-left: 18px;
+            }
+            QFrame#authPermissionSeparator {
+                background: #dfddd7;
+                border: none;
+                min-height: 1px;
+                max-height: 1px;
+            }
+            QLabel#authPermissionFootnoteLabel {
+                color: #8b8b8b;
+                font-size: 10px;
+                line-height: 1.4em;
+            }
+            QLabel#authDialogStatusLabel {
+                color: #6f6f6f;
+                font-size: 11px;
+                padding-left: 12px;
+                padding-right: 12px;
+            }
+            QLabel#authRedirectLabel {
+                color: #7b7b7b;
+                font-size: 11px;
+            }
+            QPushButton#authCancelButton {
+                background: #ffffff;
+                color: #111111;
+                border: 1px solid #c9c8c1;
+                border-radius: 12px;
+                padding: 10px 18px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QPushButton#authCancelButton:hover {
+                background: #f7f7f4;
+                border-color: #bcbab2;
+            }
+            QPushButton#authCancelButton:pressed {
+                background: #ecebe6;
+            }
+            QPushButton#authAuthorizeButton {
+                background: #a9c79d;
+                color: white;
+                border: 1px solid #a9c79d;
+                border-radius: 12px;
+                padding: 10px 18px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton#authAuthorizeButton:hover {
+                background: #94b688;
+                border-color: #94b688;
+            }
+            QPushButton#authAuthorizeButton:pressed {
+                background: #86a87a;
+                border-color: #86a87a;
+            }
+            QPushButton#authAuthorizeButton:disabled {
+                background: #c3d4bd;
+                color: #f7faf6;
+                border-color: #c3d4bd;
             }
             QFrame#authCard {
                 background: white;
