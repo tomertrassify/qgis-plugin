@@ -109,9 +109,11 @@ class MasterOverviewDialog(QDialog):
     FILTERS = (
         ("all", "overview.filter.all", "PhPuzzlePiece.svg"),
         ("installed", "overview.filter.installed", "IcOutlineLibraryAddCheck.svg"),
+        ("not_installed", "overview.filter.not_installed", "IcOutlineLibraryCross.svg"),
         ("background", "overview.filter.background", "PhSelectionBackground.svg"),
         ("experimental", "overview.filter.experimental", "IcOutlineScience.svg"),
         ("favorites", "overview.filter.favorites", "IcBaselineStarBorder.svg"),
+        ("other", "overview.filter.other", "PhPuzzlePiece.svg"),
     )
 
     def __init__(self, plugin_controller, parent=None):
@@ -1467,18 +1469,21 @@ class MasterOverviewDialog(QDialog):
     def _populate_filters(self):
         current_filter = self._active_filter_key()
         counts = {
-            "all": sum(
-                1 for row in self._all_rows if not row["is_experimental"]
-            ),
+            "all": len(self._all_rows),
             "installed": sum(
                 1
                 for row in self._all_rows
-                if row["is_installed"] and not row["is_experimental"]
+                if row["is_installed"]
+            ),
+            "not_installed": sum(
+                1
+                for row in self._all_rows
+                if not row["is_installed"]
             ),
             "background": sum(
                 1
                 for row in self._all_rows
-                if row["tool_type"] == "background" and not row["is_experimental"]
+                if row["tool_type"] == "background"
             ),
             "experimental": sum(
                 1 for row in self._all_rows if row["is_experimental"]
@@ -1486,7 +1491,12 @@ class MasterOverviewDialog(QDialog):
             "favorites": sum(
                 1
                 for row in self._all_rows
-                if row["is_favorite"] and not row["is_experimental"]
+                if row["is_favorite"]
+            ),
+            "other": sum(
+                1
+                for row in self._all_rows
+                if row.get("is_external")
             ),
         }
 
@@ -1594,15 +1604,19 @@ class MasterOverviewDialog(QDialog):
 
     def _matches_filter(self, row, filter_key):
         if filter_key == "all":
-            return not row["is_experimental"]
+            return True
         if filter_key == "installed":
-            return row["is_installed"] and not row["is_experimental"]
+            return row["is_installed"]
+        if filter_key == "not_installed":
+            return not row["is_installed"]
         if filter_key == "background":
-            return row["tool_type"] == filter_key and not row["is_experimental"]
+            return row["tool_type"] == "background"
         if filter_key == "experimental":
             return row["is_experimental"]
         if filter_key == "favorites":
-            return row["is_favorite"] and not row["is_experimental"]
+            return row["is_favorite"]
+        if filter_key == "other":
+            return bool(row.get("is_external"))
         return False
 
     def _filter_label(self, filter_key):

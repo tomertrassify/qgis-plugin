@@ -376,6 +376,7 @@ class TrassifyMasterToolsPlugin:
         catalog_entry = self._catalog_entry(spec)
         metadata = catalog_entry.get("metadata", {})
         local_info = self._inspect_local_plugin(spec)
+        is_external = str(spec.get("origin") or "").strip().lower() == "external"
 
         label = (
             self._localized_metadata_value(metadata, "name")
@@ -490,7 +491,8 @@ class TrassifyMasterToolsPlugin:
             ),
             "homepage": metadata.get("homepage") or "",
             "tracker": metadata.get("tracker") or "",
-            "repository": metadata.get("repository") or "",
+            "repository": metadata.get("repository") or spec.get("upstream_repository") or "",
+            "is_external": is_external,
             "is_favorite": self.is_favorite(spec["key"]),
             "icon_path": self._resolve_module_icon_path(spec, catalog_entry),
             "plugin_dir": local_info["plugin_dir"],

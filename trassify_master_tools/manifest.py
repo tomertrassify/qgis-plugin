@@ -51,6 +51,8 @@ BUNDLED_PLUGINS = (
         "package": "quick_map_services",
         "source_path": "max-wild/funktionen-temp/quick_map_services",
         "tool_type": INTERACTIVE_TOOL,
+        "origin": "external",
+        "upstream_repository": "https://github.com/nextgis/quickmapservices",
     },
     {
         "key": "grid_quick_geojson_export",
