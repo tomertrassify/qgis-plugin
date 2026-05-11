@@ -787,10 +787,42 @@ class MasterOverviewDialog(QDialog):
         except OSError:
             return QPixmap()
 
-        tint = color.name() if isinstance(color, QColor) else str(color)
-        pixmap = QPixmap()
-        if not pixmap.loadFromData(svg_text.replace("currentColor", tint).encode("utf-8"), "SVG"):
+        tint = color if isinstance(color, QColor) else QColor(str(color))
+        pixmap = self._svg_pixmap_from_text(svg_text, size)
+        if pixmap.isNull():
             return QPixmap()
+
+        if "currentColor" in svg_text:
+            tinted_pixmap = self._svg_pixmap_from_text(
+                svg_text.replace("currentColor", tint.name()),
+                size,
+            )
+            if not tinted_pixmap.isNull():
+                return tinted_pixmap
+
+        tinted = QPixmap(pixmap.size())
+        tinted.fill(Qt.transparent)
+        painter = QPainter(tinted)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(tinted.rect(), tint)
+        painter.end()
+        tinted.setDevicePixelRatio(pixmap.devicePixelRatio())
+        return tinted
+
+    def _svg_pixmap(self, asset_name, size):
+        svg_path = self.plugin_controller.plugin_dir / "assets" / asset_name
+        try:
+            svg_text = svg_path.read_text(encoding="utf-8")
+        except OSError:
+            return QPixmap()
+        return self._svg_pixmap_from_text(svg_text, size)
+
+    def _svg_pixmap_from_text(self, svg_text, size):
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(svg_text.encode("utf-8"), "SVG"):
+            return QPixmap()
+
         device_pixel_ratio = max(2.0, float(self.devicePixelRatioF()))
         target_size = max(1, int(round(size * device_pixel_ratio)))
         scaled = pixmap.scaled(
@@ -843,7 +875,7 @@ class MasterOverviewDialog(QDialog):
             button.setCursor(Qt.PointingHandCursor)
             button.setCheckable(True)
             button.setAutoRaise(True)
-            button.setIcon(QIcon(str(self.plugin_controller.plugin_dir / "assets" / f"{language_code}.svg")))
+            button.setIcon(QIcon(self._svg_pixmap(f"{language_code}.svg", 18)))
             button.setIconSize(QSize(18, 18))
             button.setFixedSize(28, 24)
             button.clicked.connect(

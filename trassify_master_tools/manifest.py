@@ -30,6 +30,8 @@ BUNDLED_PLUGINS = (
         "package": "GeoBasis_pro",
         "source_path": "geobasis-pro/GeoBasis_pro",
         "tool_type": INTERACTIVE_TOOL,
+        "origin": "external",
+        "upstream_repository": "https://github.com/geoObserver/geobasis_loader/",
     },
     {
         "key": "coordinatify",
