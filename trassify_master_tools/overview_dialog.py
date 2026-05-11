@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from html import escape
 
-from qgis.PyQt.QtCore import QSize, Qt, QTimer
+from qgis.PyQt.QtCore import QEasingCurve, QSize, Qt, QTimer, QVariantAnimation
 from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
@@ -29,6 +29,79 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from .settings_dialog import MasterSettingsWidget
+
+
+class AnimatedSidebarButton(QPushButton):
+    def __init__(self, label, icon_factory, parent=None):
+        super().__init__(label, parent)
+        self._icon_factory = icon_factory
+        self._progress = 0.0
+        self._hovered = False
+        self._animation = QVariantAnimation(self)
+        self._animation.setDuration(140)
+        self._animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._animation.valueChanged.connect(self._on_animation_value_changed)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMouseTracking(True)
+        self.toggled.connect(self._sync_visual_state)
+        self._apply_visual_state()
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self._sync_visual_state()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self._sync_visual_state()
+        super().leaveEvent(event)
+
+    def _target_progress(self):
+        return 1.0 if (self.isChecked() or self._hovered) else 0.0
+
+    def _sync_visual_state(self):
+        target = self._target_progress()
+        if abs(self._progress - target) < 0.001:
+            self._progress = target
+            self._apply_visual_state()
+            return
+        self._animation.stop()
+        self._animation.setStartValue(self._progress)
+        self._animation.setEndValue(target)
+        self._animation.start()
+
+    def _on_animation_value_changed(self, value):
+        self._progress = float(value)
+        self._apply_visual_state()
+
+    def _apply_visual_state(self):
+        background = self._blend_color(QColor("#050505"), QColor("#ffffff"), self._progress)
+        foreground = self._blend_color(QColor("#ffffff"), QColor("#111111"), self._progress)
+        border = self._blend_color(QColor("#1f1f1f"), QColor("#d9d9d4"), self._progress)
+        self.setStyleSheet(
+            (
+                "QPushButton {"
+                f"background: {background.name()};"
+                f"color: {foreground.name()};"
+                "border: none;"
+                f"border-top: 1px solid {border.name()};"
+                "text-align: left;"
+                "padding: 0 14px 0 16px;"
+                "font-size: 11px;"
+                "font-weight: 500;"
+                "}"
+            )
+        )
+        self.setIcon(self._icon_factory(foreground))
+
+    @staticmethod
+    def _blend_color(start, end, progress):
+        progress = max(0.0, min(1.0, float(progress)))
+        return QColor(
+            int(round(start.red() + (end.red() - start.red()) * progress)),
+            int(round(start.green() + (end.green() - start.green()) * progress)),
+            int(round(start.blue() + (end.blue() - start.blue()) * progress)),
+        )
 
 
 class MasterOverviewDialog(QDialog):
@@ -86,7 +159,7 @@ class MasterOverviewDialog(QDialog):
 
         self.sidebar_frame = QFrame(self.catalog_page)
         self.sidebar_frame.setObjectName("sidebarFrame")
-        self.sidebar_frame.setFixedWidth(236)
+        self.sidebar_frame.setFixedWidth(220)
         sidebar_layout = QVBoxLayout(self.sidebar_frame)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
@@ -96,18 +169,21 @@ class MasterOverviewDialog(QDialog):
         self.filter_list.setFrameShape(QFrame.Box)
         self.filter_list.setLineWidth(0)
         self.filter_list.setSpacing(0)
-        self.filter_list.setIconSize(QSize(20, 20))
+        self.filter_list.setIconSize(QSize(18, 18))
         self.filter_list.setUniformItemSizes(True)
         self.filter_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.filter_list.currentItemChanged.connect(self._handle_filter_selection_changed)
         sidebar_layout.addWidget(self.filter_list, 1)
 
-        self.settings_nav_button = QPushButton("Einstellungen", self.sidebar_frame)
+        self.settings_nav_button = AnimatedSidebarButton(
+            "Einstellungen",
+            lambda color: self._single_color_sidebar_icon("CarbonSettings.svg", color, 18),
+            self.sidebar_frame,
+        )
         self.settings_nav_button.setObjectName("sidebarSettingsButton")
         self.settings_nav_button.setCheckable(True)
-        self.settings_nav_button.setIcon(self._sidebar_icon("CarbonSettings.svg", size=20))
-        self.settings_nav_button.setIconSize(QSize(20, 20))
-        self.settings_nav_button.setFixedHeight(64)
+        self.settings_nav_button.setIconSize(QSize(18, 18))
+        self.settings_nav_button.setFixedHeight(58)
         self.settings_nav_button.clicked.connect(self._open_settings_from_sidebar)
         sidebar_layout.addWidget(self.settings_nav_button)
         layout.addWidget(self.sidebar_frame)
@@ -717,6 +793,16 @@ class MasterOverviewDialog(QDialog):
             icon.addPixmap(disabled, QIcon.Disabled, QIcon.Off)
         return icon
 
+    def _single_color_sidebar_icon(self, asset_name, color, size=18):
+        icon = QIcon()
+        pixmap = self._tinted_svg_pixmap(asset_name, color, size)
+        if not pixmap.isNull():
+            icon.addPixmap(pixmap, QIcon.Normal, QIcon.Off)
+            icon.addPixmap(pixmap, QIcon.Active, QIcon.Off)
+            icon.addPixmap(pixmap, QIcon.Selected, QIcon.Off)
+            icon.addPixmap(pixmap, QIcon.Normal, QIcon.On)
+        return icon
+
     def _cover_pixmap(self, path, width, height):
         pixmap = QPixmap(str(path))
         if pixmap.isNull():
@@ -1083,42 +1169,29 @@ class MasterOverviewDialog(QDialog):
                 outline: 0;
                 color: #f5f5f3;
                 padding: 0;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 500;
                 show-decoration-selected: 1;
             }
             QListWidget#filterList::item {
-                padding: 0 14px 0 18px;
+                padding: 0 12px 0 16px;
                 margin: 0;
                 border: none;
             }
             QListWidget#filterList::item:hover {
                 background: #737373;
                 color: #ffffff;
-                padding: 0 14px 0 18px;
+                padding: 0 12px 0 16px;
                 border: none;
             }
             QListWidget#filterList::item:selected {
                 background: #ffffff;
                 color: #111111;
-                padding: 0 14px 0 18px;
+                padding: 0 12px 0 16px;
                 border: none;
             }
             QPushButton#sidebarSettingsButton {
-                background: #050505;
-                color: #ffffff;
-                border: none;
-                border-top: 1px solid #1f1f1f;
-                text-align: left;
-                padding: 0 16px 0 18px;
-                font-size: 12px;
-                font-weight: 500;
-            }
-            QPushButton#sidebarSettingsButton:hover {
-                background: #111111;
-            }
-            QPushButton#sidebarSettingsButton:checked {
-                background: #121212;
+                border-radius: 0;
             }
             QFrame#workspaceFrame {
                 background: transparent;
@@ -1273,7 +1346,7 @@ class MasterOverviewDialog(QDialog):
             item = QListWidgetItem(self._sidebar_icon(asset_name), label)
             item.setData(Qt.UserRole, filter_key)
             item.setToolTip(f"{label}: {counts[filter_key]} Module")
-            item.setSizeHint(QSize(0, 64))
+            item.setSizeHint(QSize(0, 58))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
                 fallback_item = item
