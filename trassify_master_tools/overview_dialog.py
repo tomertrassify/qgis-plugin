@@ -878,6 +878,12 @@ class MasterOverviewDialog(QDialog):
             icon.addPixmap(pixmap, QIcon.Normal, QIcon.On)
         return icon
 
+    def _language_icon_asset(self, language_code):
+        return {
+            "de": "de.svg",
+            "en": "gb.svg",
+        }.get(language_code, f"{language_code}.svg")
+
     def _create_language_switcher(self, parent):
         frame = QFrame(parent)
         frame.setObjectName("languageSwitcherFrame")
@@ -893,7 +899,9 @@ class MasterOverviewDialog(QDialog):
             button.setCursor(Qt.PointingHandCursor)
             button.setCheckable(True)
             button.setAutoRaise(True)
-            button.setIcon(QIcon(self._svg_pixmap(f"{language_code}.svg", 18)))
+            button.setIcon(
+                QIcon(self._svg_pixmap(self._language_icon_asset(language_code), 18))
+            )
             button.setIconSize(QSize(18, 18))
             button.setFixedSize(28, 24)
             button.clicked.connect(
