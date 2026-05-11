@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -123,8 +124,8 @@ class MasterOverviewDialog(QDialog):
         self.auth_logo_path = self.plugin_controller.plugin_dir / "assets" / "trassify-logo.png"
         self._catalog_default_size = QSize(1260, 780)
         self._catalog_min_size = QSize(1080, 680)
-        self._auth_default_size = QSize(640, 880)
-        self._auth_min_size = QSize(560, 760)
+        self._auth_default_size = QSize(372, 482)
+        self._auth_min_size = QSize(340, 438)
         self._dialog_mode = None
         self._settings_active = False
 
@@ -474,28 +475,34 @@ class MasterOverviewDialog(QDialog):
     def _create_compact_auth_card(self, parent):
         frame = QFrame(parent)
         frame.setObjectName("authDialogFrame")
-        frame.setMinimumWidth(self._auth_min_size.width())
         frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(34, 26, 34, 28)
+        frame_layout.setContentsMargins(16, 10, 16, 14)
         frame_layout.setSpacing(0)
+        frame_layout.addStretch(1)
 
         dialog_card = QFrame(frame)
         dialog_card.setObjectName("authDialogCard")
-        dialog_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        frame_layout.addWidget(dialog_card, 1)
+        dialog_card.setFixedWidth(320)
+        dialog_card.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        frame_layout.addWidget(dialog_card, 0, Qt.AlignHCenter | Qt.AlignVCenter)
+        frame_layout.addStretch(1)
+
+        shadow = QGraphicsDropShadowEffect(dialog_card)
+        shadow.setBlurRadius(12)
+        shadow.setOffset(0, 1)
+        shadow.setColor(QColor(0, 0, 0, 10))
+        dialog_card.setGraphicsEffect(shadow)
 
         dialog_layout = QVBoxLayout(dialog_card)
-        dialog_layout.setContentsMargins(42, 42, 42, 34)
+        dialog_layout.setContentsMargins(22, 24, 22, 18)
         dialog_layout.setSpacing(0)
-        dialog_layout.addStretch(1)
 
         content_column = QWidget(dialog_card)
         content_column.setObjectName("authDialogColumn")
-        content_column.setMaximumWidth(520)
-        content_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
-        dialog_layout.addWidget(content_column, 0, Qt.AlignHCenter | Qt.AlignVCenter)
+        content_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        dialog_layout.addWidget(content_column)
 
         content_layout = QVBoxLayout(content_column)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -504,13 +511,13 @@ class MasterOverviewDialog(QDialog):
         icon_label = QLabel(content_column)
         icon_label.setObjectName("authIconBadge")
         icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setFixedSize(88, 88)
-        icon_pixmap = self._contain_pixmap(self.auth_icon_path, 88, 88)
+        icon_label.setFixedSize(44, 44)
+        icon_pixmap = self._contain_pixmap(self.auth_icon_path, 44, 44)
         if not icon_pixmap.isNull():
             icon_label.setPixmap(icon_pixmap)
         content_layout.addWidget(icon_label, 0, Qt.AlignHCenter)
 
-        content_layout.addSpacing(26)
+        content_layout.addSpacing(14)
 
         title_label = QLabel("Trassify Authentication", content_column)
         title_label.setObjectName("authDialogTitleLabel")
@@ -527,21 +534,24 @@ class MasterOverviewDialog(QDialog):
         subtitle_label.setAlignment(Qt.AlignCenter)
         content_layout.addWidget(subtitle_label)
 
-        content_layout.addSpacing(50)
+        content_layout.addSpacing(30)
+        body_width = 244
 
         access_label = QLabel("Trassify is requesting access to:", content_column)
         access_label.setObjectName("authPermissionCaptionLabel")
+        access_label.setFixedWidth(body_width)
         access_label.setWordWrap(True)
-        content_layout.addWidget(access_label)
+        content_layout.addWidget(access_label, 0, Qt.AlignHCenter)
 
-        content_layout.addSpacing(16)
+        content_layout.addSpacing(10)
 
         permission_card = QFrame(content_column)
         permission_card.setObjectName("authPermissionCard")
+        permission_card.setFixedWidth(body_width)
         permission_layout = QVBoxLayout(permission_card)
-        permission_layout.setContentsMargins(26, 22, 26, 20)
+        permission_layout.setContentsMargins(18, 14, 18, 14)
         permission_layout.setSpacing(0)
-        content_layout.addWidget(permission_card)
+        content_layout.addWidget(permission_card, 0, Qt.AlignHCenter)
 
         permission_header_layout = QHBoxLayout()
         permission_header_layout.setContentsMargins(0, 0, 0, 0)
@@ -556,7 +566,7 @@ class MasterOverviewDialog(QDialog):
         permission_title_label.setObjectName("authPermissionTitleLabel")
         permission_header_layout.addWidget(permission_title_label, 1)
 
-        permission_layout.addSpacing(16)
+        permission_layout.addSpacing(10)
 
         for text in (
             "Nextcloud user Account",
@@ -567,9 +577,9 @@ class MasterOverviewDialog(QDialog):
             bullet_label.setObjectName("authPermissionItemLabel")
             bullet_label.setWordWrap(True)
             permission_layout.addWidget(bullet_label)
-            permission_layout.addSpacing(10)
+            permission_layout.addSpacing(7)
 
-        permission_layout.addSpacing(6)
+        permission_layout.addSpacing(2)
 
         separator = QFrame(permission_card)
         separator.setObjectName("authPermissionSeparator")
@@ -577,7 +587,7 @@ class MasterOverviewDialog(QDialog):
         separator.setFrameShadow(QFrame.Plain)
         permission_layout.addWidget(separator)
 
-        permission_layout.addSpacing(16)
+        permission_layout.addSpacing(10)
 
         legal_label = QLabel(
             (
@@ -598,39 +608,41 @@ class MasterOverviewDialog(QDialog):
         status_label.setWordWrap(True)
         status_label.setTextFormat(Qt.PlainText)
         status_label.setAlignment(Qt.AlignCenter)
-        content_layout.addSpacing(18)
-        content_layout.addWidget(status_label)
+        status_label.setFixedWidth(body_width)
+        content_layout.addSpacing(12)
+        content_layout.addWidget(status_label, 0, Qt.AlignHCenter)
 
-        content_layout.addSpacing(28)
+        content_layout.addSpacing(14)
 
-        buttons_layout = QHBoxLayout()
+        buttons_widget = QWidget(content_column)
+        buttons_widget.setFixedWidth(body_width)
+        buttons_layout = QHBoxLayout(buttons_widget)
         buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(14)
-        content_layout.addLayout(buttons_layout)
+        buttons_layout.setSpacing(8)
+        content_layout.addWidget(buttons_widget, 0, Qt.AlignHCenter)
 
         cancel_button = QPushButton("Cancel", content_column)
         cancel_button.setObjectName("authCancelButton")
-        cancel_button.setFixedHeight(54)
+        cancel_button.setFixedHeight(34)
         cancel_button.clicked.connect(self.reject)
         buttons_layout.addWidget(cancel_button, 1)
 
         login_button = QPushButton("Authorize", content_column)
         login_button.setObjectName("authAuthorizeButton")
-        login_button.setFixedHeight(54)
+        login_button.setFixedHeight(34)
         login_button.setAutoDefault(True)
         login_button.setDefault(True)
         login_button.clicked.connect(self._start_catalog_login)
         buttons_layout.addWidget(login_button, 1)
 
-        content_layout.addSpacing(28)
+        content_layout.addSpacing(16)
 
         redirect_label = QLabel("", content_column)
         redirect_label.setObjectName("authRedirectLabel")
+        redirect_label.setFixedWidth(body_width)
         redirect_label.setWordWrap(True)
         redirect_label.setAlignment(Qt.AlignCenter)
-        content_layout.addWidget(redirect_label)
-
-        dialog_layout.addStretch(1)
+        content_layout.addWidget(redirect_label, 0, Qt.AlignHCenter)
 
         return {
             "frame": frame,
@@ -1034,7 +1046,7 @@ class MasterOverviewDialog(QDialog):
                 background: transparent;
             }
             QWidget#authPage {
-                background: #f1f1ef;
+                background: #fafafa;
             }
             QFrame#authDialogFrame {
                 background: transparent;
@@ -1042,8 +1054,8 @@ class MasterOverviewDialog(QDialog):
             }
             QFrame#authDialogCard {
                 background: #ffffff;
-                border: 1px solid #ece9e1;
-                border-radius: 30px;
+                border: 1px solid #e8e6e0;
+                border-radius: 14px;
             }
             QLabel#authIconBadge {
                 background: transparent;
@@ -1051,37 +1063,37 @@ class MasterOverviewDialog(QDialog):
             }
             QLabel#authDialogTitleLabel {
                 color: #111111;
-                font-size: 22px;
+                font-size: 13px;
                 font-weight: 700;
             }
             QLabel#authDialogSubtitleLabel {
                 color: #111111;
-                font-size: 14px;
+                font-size: 11px;
             }
             QLabel#authPermissionCaptionLabel {
                 color: #202020;
-                font-size: 13px;
+                font-size: 11px;
                 font-weight: 500;
             }
             QFrame#authPermissionCard {
                 background: #ffffff;
-                border: 1px solid #c7c6bf;
-                border-radius: 16px;
+                border: 1px solid #d3d1ca;
+                border-radius: 6px;
             }
             QLabel#authPermissionCheckLabel {
                 color: #5fa36d;
-                font-size: 19px;
+                font-size: 14px;
                 font-weight: 700;
             }
             QLabel#authPermissionTitleLabel {
                 color: #111111;
-                font-size: 12px;
+                font-size: 10px;
                 font-weight: 600;
             }
             QLabel#authPermissionItemLabel {
                 color: #767676;
-                font-size: 11px;
-                padding-left: 18px;
+                font-size: 9px;
+                padding-left: 12px;
             }
             QFrame#authPermissionSeparator {
                 background: #dfddd7;
@@ -1091,26 +1103,26 @@ class MasterOverviewDialog(QDialog):
             }
             QLabel#authPermissionFootnoteLabel {
                 color: #8b8b8b;
-                font-size: 10px;
+                font-size: 8px;
                 line-height: 1.4em;
             }
             QLabel#authDialogStatusLabel {
                 color: #6f6f6f;
-                font-size: 11px;
-                padding-left: 12px;
-                padding-right: 12px;
+                font-size: 9px;
+                padding-left: 8px;
+                padding-right: 8px;
             }
             QLabel#authRedirectLabel {
                 color: #7b7b7b;
-                font-size: 11px;
+                font-size: 8px;
             }
             QPushButton#authCancelButton {
                 background: #ffffff;
                 color: #111111;
-                border: 1px solid #c9c8c1;
-                border-radius: 12px;
-                padding: 10px 18px;
-                font-size: 13px;
+                border: 1px solid #c8c7c0;
+                border-radius: 7px;
+                padding: 6px 12px;
+                font-size: 10px;
                 font-weight: 500;
             }
             QPushButton#authCancelButton:hover {
@@ -1124,9 +1136,9 @@ class MasterOverviewDialog(QDialog):
                 background: #a9c79d;
                 color: white;
                 border: 1px solid #a9c79d;
-                border-radius: 12px;
-                padding: 10px 18px;
-                font-size: 13px;
+                border-radius: 7px;
+                padding: 6px 12px;
+                font-size: 10px;
                 font-weight: 600;
             }
             QPushButton#authAuthorizeButton:hover {
