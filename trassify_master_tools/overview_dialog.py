@@ -86,7 +86,7 @@ class MasterOverviewDialog(QDialog):
 
         self.sidebar_frame = QFrame(self.catalog_page)
         self.sidebar_frame.setObjectName("sidebarFrame")
-        self.sidebar_frame.setFixedWidth(272)
+        self.sidebar_frame.setFixedWidth(236)
         sidebar_layout = QVBoxLayout(self.sidebar_frame)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
@@ -96,7 +96,7 @@ class MasterOverviewDialog(QDialog):
         self.filter_list.setFrameShape(QFrame.Box)
         self.filter_list.setLineWidth(0)
         self.filter_list.setSpacing(0)
-        self.filter_list.setIconSize(QSize(28, 28))
+        self.filter_list.setIconSize(QSize(20, 20))
         self.filter_list.setUniformItemSizes(True)
         self.filter_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.filter_list.currentItemChanged.connect(self._handle_filter_selection_changed)
@@ -105,9 +105,9 @@ class MasterOverviewDialog(QDialog):
         self.settings_nav_button = QPushButton("Einstellungen", self.sidebar_frame)
         self.settings_nav_button.setObjectName("sidebarSettingsButton")
         self.settings_nav_button.setCheckable(True)
-        self.settings_nav_button.setIcon(self._sidebar_icon("CarbonSettings.svg"))
-        self.settings_nav_button.setIconSize(QSize(26, 26))
-        self.settings_nav_button.setFixedHeight(82)
+        self.settings_nav_button.setIcon(self._sidebar_icon("CarbonSettings.svg", size=20))
+        self.settings_nav_button.setIconSize(QSize(20, 20))
+        self.settings_nav_button.setFixedHeight(64)
         self.settings_nav_button.clicked.connect(self._open_settings_from_sidebar)
         sidebar_layout.addWidget(self.settings_nav_button)
         layout.addWidget(self.sidebar_frame)
@@ -690,13 +690,22 @@ class MasterOverviewDialog(QDialog):
         pixmap = QPixmap()
         if not pixmap.loadFromData(svg_text.replace("currentColor", tint).encode("utf-8"), "SVG"):
             return QPixmap()
-        return pixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        device_pixel_ratio = max(2.0, float(self.devicePixelRatioF()))
+        target_size = max(1, int(round(size * device_pixel_ratio)))
+        scaled = pixmap.scaled(
+            target_size,
+            target_size,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        scaled.setDevicePixelRatio(device_pixel_ratio)
+        return scaled
 
-    def _sidebar_icon(self, asset_name):
+    def _sidebar_icon(self, asset_name, size=20):
         icon = QIcon()
-        normal = self._tinted_svg_pixmap(asset_name, QColor("#f5f5f3"), 28)
-        selected = self._tinted_svg_pixmap(asset_name, QColor("#111111"), 28)
-        disabled = self._tinted_svg_pixmap(asset_name, QColor("#999999"), 28)
+        normal = self._tinted_svg_pixmap(asset_name, QColor("#f5f5f3"), size)
+        selected = self._tinted_svg_pixmap(asset_name, QColor("#111111"), size)
+        disabled = self._tinted_svg_pixmap(asset_name, QColor("#999999"), size)
         if not normal.isNull():
             icon.addPixmap(normal, QIcon.Normal, QIcon.Off)
             icon.addPixmap(normal, QIcon.Active, QIcon.Off)
@@ -1074,20 +1083,26 @@ class MasterOverviewDialog(QDialog):
                 outline: 0;
                 color: #f5f5f3;
                 padding: 0;
+                font-size: 12px;
+                font-weight: 500;
+                show-decoration-selected: 1;
             }
             QListWidget#filterList::item {
-                padding: 0 16px 0 26px;
+                padding: 0 14px 0 18px;
                 margin: 0;
+                border: none;
             }
             QListWidget#filterList::item:hover {
                 background: #737373;
                 color: #ffffff;
-                padding: 0 16px 0 26px;
+                padding: 0 14px 0 18px;
+                border: none;
             }
             QListWidget#filterList::item:selected {
                 background: #ffffff;
                 color: #111111;
-                padding: 0 16px 0 26px;
+                padding: 0 14px 0 18px;
+                border: none;
             }
             QPushButton#sidebarSettingsButton {
                 background: #050505;
@@ -1095,8 +1110,8 @@ class MasterOverviewDialog(QDialog):
                 border: none;
                 border-top: 1px solid #1f1f1f;
                 text-align: left;
-                padding: 0 18px 0 26px;
-                font-size: 14px;
+                padding: 0 16px 0 18px;
+                font-size: 12px;
                 font-weight: 500;
             }
             QPushButton#sidebarSettingsButton:hover {
@@ -1258,7 +1273,7 @@ class MasterOverviewDialog(QDialog):
             item = QListWidgetItem(self._sidebar_icon(asset_name), label)
             item.setData(Qt.UserRole, filter_key)
             item.setToolTip(f"{label}: {counts[filter_key]} Module")
-            item.setSizeHint(QSize(0, 84))
+            item.setSizeHint(QSize(0, 64))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
                 fallback_item = item
