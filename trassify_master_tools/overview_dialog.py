@@ -107,11 +107,11 @@ class AnimatedSidebarButton(QPushButton):
 
 class MasterOverviewDialog(QDialog):
     FILTERS = (
-        ("all", "Alle Plugins", "PhPuzzlePiece.svg"),
-        ("installed", "Installierte Plugins", "IcOutlineLibraryAddCheck.svg"),
-        ("background", "Hintergrundtools", "PhSelectionBackground.svg"),
-        ("experimental", "Experimental", "IcOutlineScience.svg"),
-        ("favorites", "Favoriten", "IcBaselineStarBorder.svg"),
+        ("all", "overview.filter.all", "PhPuzzlePiece.svg"),
+        ("installed", "overview.filter.installed", "IcOutlineLibraryAddCheck.svg"),
+        ("background", "overview.filter.background", "PhSelectionBackground.svg"),
+        ("experimental", "overview.filter.experimental", "IcOutlineScience.svg"),
+        ("favorites", "overview.filter.favorites", "IcBaselineStarBorder.svg"),
     )
 
     def __init__(self, plugin_controller, parent=None):
@@ -128,9 +128,10 @@ class MasterOverviewDialog(QDialog):
         self._auth_min_size = QSize(340, 438)
         self._dialog_mode = None
         self._settings_active = False
+        self._language_switchers = []
 
         self.setObjectName("masterOverviewDialog")
-        self.setWindowTitle("Erweiterungen | Katalog")
+        self.setWindowTitle(self._tr("overview.window.catalog_plain"))
         self.setWindowIcon(QIcon(str(plugin_controller.plugin_dir / "icon.svg")))
         self.resize(self._catalog_default_size)
         self.setMinimumSize(self._catalog_min_size)
@@ -146,8 +147,15 @@ class MasterOverviewDialog(QDialog):
         self.auth_page = QWidget(self.page_stack)
         self.auth_page.setObjectName("authPage")
         auth_page_layout = QVBoxLayout(self.auth_page)
-        auth_page_layout.setContentsMargins(0, 0, 0, 0)
+        auth_page_layout.setContentsMargins(10, 10, 10, 0)
         auth_page_layout.setSpacing(0)
+        auth_header_layout = QHBoxLayout()
+        auth_header_layout.setContentsMargins(0, 0, 0, 0)
+        auth_header_layout.setSpacing(0)
+        auth_header_layout.addStretch(1)
+        self.auth_language_switcher = self._create_language_switcher(self.auth_page)
+        auth_header_layout.addWidget(self.auth_language_switcher["widget"], 0, Qt.AlignTop | Qt.AlignRight)
+        auth_page_layout.addLayout(auth_header_layout)
         self.auth_widgets = self._create_auth_card(self.auth_page, compact=True)
         auth_page_layout.addWidget(self.auth_widgets["frame"], 1)
         self.page_stack.addWidget(self.auth_page)
@@ -177,7 +185,7 @@ class MasterOverviewDialog(QDialog):
         sidebar_layout.addWidget(self.filter_list, 1)
 
         self.settings_nav_button = AnimatedSidebarButton(
-            "Einstellungen",
+            self._tr("overview.sidebar.settings"),
             lambda color: self._single_color_sidebar_icon("CarbonSettings.svg", color, 18),
             self.sidebar_frame,
         )
@@ -211,11 +219,11 @@ class MasterOverviewDialog(QDialog):
         header_text_layout.setSpacing(4)
         header_top_layout.addLayout(header_text_layout, 1)
 
-        self.workspace_title_label = QLabel("Plugin-Katalog", self.header_frame)
+        self.workspace_title_label = QLabel(self._tr("overview.header.catalog_title"), self.header_frame)
         self.workspace_title_label.setObjectName("workspaceTitleLabel")
         header_text_layout.addWidget(self.workspace_title_label)
 
-        self.workspace_subtitle_label = QLabel("Verwalten direkt aus dem Mastertool.", self.header_frame)
+        self.workspace_subtitle_label = QLabel(self._tr("overview.header.catalog_subtitle"), self.header_frame)
         self.workspace_subtitle_label.setObjectName("workspaceSubtitleLabel")
         self.workspace_subtitle_label.setWordWrap(True)
         header_text_layout.addWidget(self.workspace_subtitle_label)
@@ -225,13 +233,16 @@ class MasterOverviewDialog(QDialog):
         self.catalog_count_badge.setAlignment(Qt.AlignCenter)
         header_top_layout.addWidget(self.catalog_count_badge, 0, Qt.AlignTop)
 
+        self.catalog_language_switcher = self._create_language_switcher(self.header_frame)
+        header_top_layout.addWidget(self.catalog_language_switcher["widget"], 0, Qt.AlignTop | Qt.AlignRight)
+
         controls_layout = QHBoxLayout()
         controls_layout.setSpacing(8)
         header_layout.addLayout(controls_layout)
 
         self.search_field = QLineEdit(self.header_frame)
         self.search_field.setObjectName("searchField")
-        self.search_field.setPlaceholderText("Plugins durchsuchen...")
+        self.search_field.setPlaceholderText(self._tr("overview.search_placeholder"))
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self._apply_filters)
         controls_layout.addWidget(self.search_field, 1)
@@ -260,24 +271,24 @@ class MasterOverviewDialog(QDialog):
         settings_actions_layout.setSpacing(8)
         settings_layout.addLayout(settings_actions_layout)
 
-        self.settings_save_button = QPushButton("Speichern", self.settings_frame)
+        self.settings_save_button = QPushButton(self._tr("overview.settings.save"), self.settings_frame)
         self.settings_save_button.setObjectName("primaryButton")
         self.settings_save_button.clicked.connect(self._save_settings_view)
         settings_actions_layout.addWidget(self.settings_save_button)
 
-        self.settings_restore_button = QPushButton("Standardwerte", self.settings_frame)
+        self.settings_restore_button = QPushButton(self._tr("overview.settings.restore"), self.settings_frame)
         self.settings_restore_button.setObjectName("subtleButton")
         self.settings_restore_button.clicked.connect(self._restore_settings_view)
         settings_actions_layout.addWidget(self.settings_restore_button)
 
         settings_actions_layout.addStretch(1)
 
-        self.settings_reload_button = QPushButton("Katalog neu laden", self.settings_frame)
+        self.settings_reload_button = QPushButton(self._tr("overview.settings.reload"), self.settings_frame)
         self.settings_reload_button.setObjectName("subtleButton")
         self.settings_reload_button.clicked.connect(self._refresh_catalog_and_view)
         settings_actions_layout.addWidget(self.settings_reload_button)
 
-        self.settings_logout_button = QPushButton("Nextcloud abmelden", self.settings_frame)
+        self.settings_logout_button = QPushButton(self._tr("overview.settings.logout"), self.settings_frame)
         self.settings_logout_button.setObjectName("subtleButton")
         self.settings_logout_button.clicked.connect(self._remove_catalog_login)
         settings_actions_layout.addWidget(self.settings_logout_button)
@@ -300,7 +311,7 @@ class MasterOverviewDialog(QDialog):
         module_header_layout.setSpacing(10)
         module_layout.addLayout(module_header_layout)
 
-        self.module_section_label = QLabel("Alle Module", module_panel)
+        self.module_section_label = QLabel(self._tr("overview.section.all_modules"), module_panel)
         self.module_section_label.setObjectName("sectionTitleLabel")
         module_header_layout.addWidget(self.module_section_label, 1)
 
@@ -400,16 +411,16 @@ class MasterOverviewDialog(QDialog):
         self.version_value = self._create_value_label(detail_panel)
         self.links_value = self._create_value_label(detail_panel, rich_text=True)
 
-        self.metadata_form.addRow("Kategorie", self.category_value)
-        self.metadata_form.addRow("Typ", self.type_value)
-        self.metadata_form.addRow("Favorit", self.favorite_value)
-        self.metadata_form.addRow("Paket", self.package_value)
-        self.metadata_form.addRow("Verwaltung", self.management_value)
-        self.metadata_form.addRow("Freigabe", self.release_value)
-        self.metadata_form.addRow("Tags", self.tags_value)
-        self.metadata_form.addRow("Autor", self.author_value)
-        self.metadata_form.addRow("Version", self.version_value)
-        self.metadata_form.addRow("Weitere Informationen", self.links_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.category"), self.category_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.type"), self.type_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.favorite"), self.favorite_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.package"), self.package_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.management"), self.management_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.release"), self.release_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.tags"), self.tags_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.author"), self.author_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.version"), self.version_value)
+        self.metadata_form.addRow(self._tr("overview.metadata.links"), self.links_value)
 
         detail_layout.addStretch(1)
         self.content_splitter.addWidget(detail_panel)
@@ -433,20 +444,20 @@ class MasterOverviewDialog(QDialog):
         self.favorite_button.clicked.connect(self._toggle_selected_favorite)
         actions_layout.addWidget(self.favorite_button)
 
-        self.open_button = QPushButton("Oeffnen", self.footer_frame)
+        self.open_button = QPushButton(self._tr("overview.action.open"), self.footer_frame)
         self.open_button.setObjectName("subtleButton")
         self.open_button.setFixedHeight(button_height)
         self.open_button.clicked.connect(self._open_selected_module)
         self.open_button.hide()
         actions_layout.addWidget(self.open_button)
 
-        self.primary_button = QPushButton("Installieren", self.footer_frame)
+        self.primary_button = QPushButton(self._tr("overview.action.install"), self.footer_frame)
         self.primary_button.setObjectName("primaryButton")
         self.primary_button.setFixedHeight(button_height)
         self.primary_button.clicked.connect(self._run_primary_action)
         actions_layout.addWidget(self.primary_button)
 
-        self.secondary_button = QPushButton("Entfernen", self.footer_frame)
+        self.secondary_button = QPushButton(self._tr("overview.action.remove"), self.footer_frame)
         self.secondary_button.setObjectName("secondaryButton")
         self.secondary_button.setFixedHeight(button_height)
         self.secondary_button.clicked.connect(self._run_secondary_action)
@@ -461,10 +472,12 @@ class MasterOverviewDialog(QDialog):
         if close_button is not None:
             close_button.setObjectName("subtleButton")
             close_button.setFixedHeight(button_height)
+            close_button.setText(self._tr("overview.action.close"))
         actions_layout.addWidget(button_box)
 
         self.page_stack.addWidget(self.catalog_page)
         self._apply_window_styling()
+        self._apply_language_to_static_widgets()
         self.refresh()
 
     def _create_auth_card(self, parent, compact):
@@ -519,14 +532,14 @@ class MasterOverviewDialog(QDialog):
 
         content_layout.addSpacing(14)
 
-        title_label = QLabel("Trassify Authentication", content_column)
+        title_label = QLabel(self._tr("overview.auth.dialog.title"), content_column)
         title_label.setObjectName("authDialogTitleLabel")
         title_label.setWordWrap(True)
         title_label.setAlignment(Qt.AlignCenter)
         content_layout.addWidget(title_label)
 
         subtitle_label = QLabel(
-            "for QGIS Master Tool Plugin",
+            self._tr("overview.auth.dialog.subtitle"),
             content_column,
         )
         subtitle_label.setObjectName("authDialogSubtitleLabel")
@@ -537,7 +550,7 @@ class MasterOverviewDialog(QDialog):
         content_layout.addSpacing(30)
         body_width = 244
 
-        access_label = QLabel("Trassify is requesting access to:", content_column)
+        access_label = QLabel(self._tr("overview.auth.dialog.access"), content_column)
         access_label.setObjectName("authPermissionCaptionLabel")
         access_label.setFixedWidth(body_width)
         access_label.setWordWrap(True)
@@ -562,22 +575,24 @@ class MasterOverviewDialog(QDialog):
         permission_check_label.setObjectName("authPermissionCheckLabel")
         permission_header_layout.addWidget(permission_check_label, 0, Qt.AlignTop)
 
-        permission_title_label = QLabel("Nextcloud user data", permission_card)
+        permission_title_label = QLabel(self._tr("overview.auth.dialog.permission_title"), permission_card)
         permission_title_label.setObjectName("authPermissionTitleLabel")
         permission_header_layout.addWidget(permission_title_label, 1)
 
         permission_layout.addSpacing(10)
 
+        permission_item_labels = []
         for text in (
-            "Nextcloud user Account",
-            "User E-Mail",
-            "User Password",
+            self._tr("overview.auth.dialog.permission_item_account"),
+            self._tr("overview.auth.dialog.permission_item_email"),
+            self._tr("overview.auth.dialog.permission_item_password"),
         ):
             bullet_label = QLabel(f"•    {text}", permission_card)
             bullet_label.setObjectName("authPermissionItemLabel")
             bullet_label.setWordWrap(True)
             permission_layout.addWidget(bullet_label)
             permission_layout.addSpacing(7)
+            permission_item_labels.append(bullet_label)
 
         permission_layout.addSpacing(2)
 
@@ -589,15 +604,7 @@ class MasterOverviewDialog(QDialog):
 
         permission_layout.addSpacing(10)
 
-        legal_label = QLabel(
-            (
-                "By authorizing access, you also agree with the Nextcloud "
-                "<span style=\"color:#9bbb93; font-weight:600;\">Terms of Use</span> "
-                "and "
-                "<span style=\"color:#9bbb93; font-weight:600;\">Privacy Policy</span>."
-            ),
-            permission_card,
-        )
+        legal_label = QLabel(self._tr("overview.auth.dialog.legal"), permission_card)
         legal_label.setObjectName("authPermissionFootnoteLabel")
         legal_label.setWordWrap(True)
         legal_label.setTextFormat(Qt.RichText)
@@ -621,13 +628,13 @@ class MasterOverviewDialog(QDialog):
         buttons_layout.setSpacing(8)
         content_layout.addWidget(buttons_widget, 0, Qt.AlignHCenter)
 
-        cancel_button = QPushButton("Cancel", content_column)
+        cancel_button = QPushButton(self._tr("overview.auth.dialog.cancel"), content_column)
         cancel_button.setObjectName("authCancelButton")
         cancel_button.setFixedHeight(34)
         cancel_button.clicked.connect(self.reject)
         buttons_layout.addWidget(cancel_button, 1)
 
-        login_button = QPushButton("Authorize", content_column)
+        login_button = QPushButton(self._tr("overview.auth.dialog.authorize"), content_column)
         login_button.setObjectName("authAuthorizeButton")
         login_button.setFixedHeight(34)
         login_button.setAutoDefault(True)
@@ -649,6 +656,10 @@ class MasterOverviewDialog(QDialog):
             "compact": True,
             "title": title_label,
             "subtitle": subtitle_label,
+            "access": access_label,
+            "permission_title": permission_title_label,
+            "permission_items": permission_item_labels,
+            "legal": legal_label,
             "status": status_label,
             "login": login_button,
             "cancel": cancel_button,
@@ -684,14 +695,14 @@ class MasterOverviewDialog(QDialog):
         logo_label.setAlignment(Qt.AlignCenter)
         content_layout.addWidget(logo_label, 0, Qt.AlignHCenter)
 
-        title_label = QLabel("Willkommen bei Trassify", content_widget)
+        title_label = QLabel(self._tr("overview.auth.gate.welcome_title"), content_widget)
         title_label.setObjectName("authTitleLabel")
         title_label.setWordWrap(True)
         title_label.setAlignment(Qt.AlignCenter)
         content_layout.addWidget(title_label)
 
         intro_label = QLabel(
-            "Melde dich mit deinem Trassify-Account an, um Zugriff auf unsere Plugin-Collection zu erhalten.",
+            self._tr("overview.auth.gate.welcome_intro"),
             content_widget,
         )
         intro_label.setObjectName("authIntroLabel")
@@ -717,7 +728,7 @@ class MasterOverviewDialog(QDialog):
         primary_row.addStretch(1)
         content_layout.addLayout(primary_row)
 
-        login_button = QPushButton("Log In", content_widget)
+        login_button = QPushButton(self._tr("overview.auth.gate.login"), content_widget)
         login_button.setObjectName("authPrimaryButton")
         login_button.setFixedWidth(132)
         login_button.setFixedHeight(36)
@@ -732,13 +743,13 @@ class MasterOverviewDialog(QDialog):
         footer_row.addStretch(1)
         content_layout.addLayout(footer_row)
 
-        refresh_button = QPushButton("Verbindung pruefen", content_widget)
+        refresh_button = QPushButton(self._tr("overview.auth.gate.refresh"), content_widget)
         refresh_button.setObjectName("authTextButton")
         refresh_button.setFlat(True)
         refresh_button.clicked.connect(self._refresh_catalog_login)
         footer_row.addWidget(refresh_button)
 
-        logout_button = QPushButton("Anmeldung entfernen", content_widget)
+        logout_button = QPushButton(self._tr("overview.auth.gate.logout"), content_widget)
         logout_button.setObjectName("authTextButton")
         logout_button.setFlat(True)
         logout_button.clicked.connect(self._remove_catalog_login)
@@ -815,6 +826,93 @@ class MasterOverviewDialog(QDialog):
             icon.addPixmap(pixmap, QIcon.Normal, QIcon.On)
         return icon
 
+    def _create_language_switcher(self, parent):
+        frame = QFrame(parent)
+        frame.setObjectName("languageSwitcherFrame")
+
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        buttons = {"widget": frame}
+        for language_code in ("de", "en"):
+            button = QToolButton(frame)
+            button.setObjectName("languageSwitcherButton")
+            button.setCursor(Qt.PointingHandCursor)
+            button.setCheckable(True)
+            button.setAutoRaise(True)
+            button.setIcon(QIcon(str(self.plugin_controller.plugin_dir / "assets" / f"{language_code}.svg")))
+            button.setIconSize(QSize(18, 18))
+            button.setFixedSize(28, 24)
+            button.clicked.connect(
+                lambda _checked=False, lang=language_code: self._set_language(lang)
+            )
+            layout.addWidget(button)
+            buttons[language_code] = button
+
+        self._language_switchers.append(buttons)
+        return buttons
+
+    def _sync_language_switchers(self):
+        current_language = self._current_language()
+        for switcher in self._language_switchers:
+            for language_code in ("de", "en"):
+                button = switcher.get(language_code)
+                if button is None:
+                    continue
+                button.blockSignals(True)
+                button.setChecked(language_code == current_language)
+                button.setToolTip(self._tr(f"language.{language_code}"))
+                button.blockSignals(False)
+
+    def _apply_language_to_static_widgets(self):
+        self.settings_nav_button.setText(self._tr("overview.sidebar.settings"))
+        self.search_field.setPlaceholderText(self._tr("overview.search_placeholder"))
+        self.module_section_label.setText(self._tr("overview.section.all_modules"))
+        self.settings_save_button.setText(self._tr("overview.settings.save"))
+        self.settings_restore_button.setText(self._tr("overview.settings.restore"))
+        self.settings_reload_button.setText(self._tr("overview.settings.reload"))
+        self.settings_logout_button.setText(self._tr("overview.settings.logout"))
+        self.open_button.setText(self._tr("overview.action.open"))
+        self.primary_button.setText(self._tr("overview.action.install"))
+        self.secondary_button.setText(self._tr("overview.action.remove"))
+
+        metadata_labels = (
+            (self.category_value, "overview.metadata.category"),
+            (self.type_value, "overview.metadata.type"),
+            (self.favorite_value, "overview.metadata.favorite"),
+            (self.package_value, "overview.metadata.package"),
+            (self.management_value, "overview.metadata.management"),
+            (self.release_value, "overview.metadata.release"),
+            (self.tags_value, "overview.metadata.tags"),
+            (self.author_value, "overview.metadata.author"),
+            (self.version_value, "overview.metadata.version"),
+            (self.links_value, "overview.metadata.links"),
+        )
+        for field, key in metadata_labels:
+            label = self.metadata_form.labelForField(field)
+            if label is not None:
+                label.setText(self._tr(key))
+
+        close_button = self.findChild(QDialogButtonBox, "dialogButtonBox")
+        if close_button is not None:
+            button = close_button.button(QDialogButtonBox.Close)
+            if button is not None:
+                button.setText(self._tr("overview.action.close"))
+
+        self.settings_widget.apply_language()
+        self._sync_language_switchers()
+
+    def _set_language(self, language):
+        self.plugin_controller.set_ui_language(language)
+        self.refresh()
+
+    def _current_language(self):
+        return self.plugin_controller.get_ui_language()
+
+    def _tr(self, key, **kwargs):
+        return self.plugin_controller.tr(key, **kwargs)
+
     def _cover_pixmap(self, path, width, height):
         pixmap = QPixmap(str(path))
         if pixmap.isNull():
@@ -863,11 +961,12 @@ class MasterOverviewDialog(QDialog):
         )
 
     def refresh(self):
+        self._apply_language_to_static_widgets()
         self._sync_auth_page()
         if not self.plugin_controller.can_access_catalog():
             self._set_dialog_mode("auth")
             self.page_stack.setCurrentWidget(self.auth_page)
-            self.setWindowTitle("Authorize Trassify")
+            self.setWindowTitle(self._tr("overview.window.auth"))
             return
 
         self._set_dialog_mode("catalog")
@@ -885,20 +984,20 @@ class MasterOverviewDialog(QDialog):
             self.page_stack.setCurrentWidget(self.catalog_page)
             self._set_catalog_access_state(False)
             self._sync_empty_catalog_gate()
-            self.setWindowTitle("Erweiterungen | Nextcloud")
+            self.setWindowTitle(self._tr("overview.window.nextcloud"))
             return
 
         self.page_stack.setCurrentWidget(self.catalog_page)
         self._set_catalog_access_state(True)
         self._populate_filters()
         self._apply_filters(preferred_key=current_key)
-        self.catalog_count_badge.setText(f"{len(self._all_rows)} Module")
+        self.catalog_count_badge.setText(
+            self._tr("overview.count_badge", count=len(self._all_rows))
+        )
         if self._settings_active:
-            self.setWindowTitle("Erweiterungen | Einstellungen")
+            self.setWindowTitle(self._tr("overview.window.settings"))
         else:
-            self.setWindowTitle(
-                f"Erweiterungen | Katalog ({len(self._all_rows)})"
-            )
+            self.setWindowTitle(self._tr("overview.window.catalog", count=len(self._all_rows)))
 
     def _sync_auth_page(self):
         status = self.plugin_controller.auth_status()
@@ -912,76 +1011,96 @@ class MasterOverviewDialog(QDialog):
         if base_url and not base_url.endswith("/"):
             base_url = f"{base_url}/"
 
-        gate_intro = (
-            "Melde dich mit deinem Trassify-Account an, um Zugriff auf unsere Plugin-Collection zu erhalten."
-        )
+        gate_intro = self._tr("overview.auth.gate.welcome_intro")
 
         if can_access:
-            gate_title_text = "Nextcloud verbunden"
-            gate_intro_text = "Dein Trassify-Konto ist verbunden. Der geschuetzte Plugin-Katalog kann geladen werden."
+            gate_title_text = self._tr("overview.auth.gate.connected_title")
+            gate_intro_text = self._tr("overview.auth.gate.connected_intro")
         elif status == "authorizing":
-            gate_title_text = "Browser-Login laeuft"
-            gate_intro_text = "Schliesse die Anmeldung in deinem Browser ab, um die Plugin-Collection freizuschalten."
+            gate_title_text = self._tr("overview.auth.gate.authorizing_title")
+            gate_intro_text = self._tr("overview.auth.gate.authorizing_intro")
         elif has_saved_login:
-            gate_title_text = "Gespeicherte Anmeldung pruefen"
-            gate_intro_text = "Es ist bereits eine Anmeldung gespeichert. Du kannst die Verbindung pruefen oder dich neu anmelden."
+            gate_title_text = self._tr("overview.auth.gate.saved_title")
+            gate_intro_text = self._tr("overview.auth.gate.saved_intro")
         else:
-            gate_title_text = "Willkommen bei Trassify"
+            gate_title_text = self._tr("overview.auth.gate.welcome_title")
             gate_intro_text = gate_intro
 
         if status == "authorizing":
-            gate_login_text = "Browser offen..."
+            gate_login_text = self._tr("overview.auth.gate.browser_open")
         elif has_saved_login and not can_access:
-            gate_login_text = "Neu anmelden"
+            gate_login_text = self._tr("overview.auth.gate.relogin")
         elif can_access:
-            gate_login_text = "Erneut anmelden"
+            gate_login_text = self._tr("overview.auth.gate.reauth")
         else:
-            gate_login_text = "Log In"
+            gate_login_text = self._tr("overview.auth.gate.login")
 
         if status == "authorizing":
-            popup_status_text = (
-                "Browser-Login geoeffnet. Bitte schliesse die Anmeldung in Nextcloud ab."
-            )
+            popup_status_text = self._tr("overview.auth.gate.compact_authorizing")
         elif detail:
             popup_status_text = detail.strip()
         elif has_saved_login and not can_access:
-            popup_status_text = (
-                "Eine gespeicherte Anmeldung ist vorhanden, der Zugriff muss aber erneut bestaetigt werden."
-            )
+            popup_status_text = self._tr("overview.auth.gate.saved_login_notice")
         else:
             popup_status_text = ""
 
-        self.auth_widgets["title"].setText("Trassify Authentication")
-        self.auth_widgets["subtitle"].setText("for QGIS Master Tool Plugin")
+        self.auth_widgets["title"].setText(self._tr("overview.auth.dialog.title"))
+        self.auth_widgets["subtitle"].setText(self._tr("overview.auth.dialog.subtitle"))
+        self.auth_widgets["access"].setText(self._tr("overview.auth.dialog.access"))
+        self.auth_widgets["permission_title"].setText(
+            self._tr("overview.auth.dialog.permission_title")
+        )
+        permission_item_texts = (
+            self._tr("overview.auth.dialog.permission_item_account"),
+            self._tr("overview.auth.dialog.permission_item_email"),
+            self._tr("overview.auth.dialog.permission_item_password"),
+        )
+        for label, text in zip(self.auth_widgets["permission_items"], permission_item_texts):
+            label.setText(f"•    {text}")
+        self.auth_widgets["legal"].setText(self._tr("overview.auth.dialog.legal"))
         self.auth_widgets["status"].setText(popup_status_text)
         self.auth_widgets["status"].setVisible(bool(popup_status_text))
         self.auth_widgets["redirect"].setText(
-            "You will be redirected to\n"
-            f"{base_url or 'https://nextcloud.trassify.cloud/'}"
+            self._tr(
+                "overview.auth.dialog.redirect",
+                url=base_url or "https://nextcloud.trassify.cloud/",
+            )
         )
         self.auth_widgets["login"].setText(
-            "Authorizing..." if status == "authorizing" else "Authorize"
+            self._tr("overview.auth.dialog.authorizing")
+            if status == "authorizing"
+            else self._tr("overview.auth.dialog.authorize")
         )
         self.auth_widgets["login"].setEnabled(status != "authorizing")
         self.auth_widgets["cancel"].setEnabled(status != "authorizing")
+        self.auth_widgets["cancel"].setText(self._tr("overview.auth.dialog.cancel"))
 
         self.access_gate_widgets["title"].setText(gate_title_text)
         self.access_gate_widgets["intro"].setText(gate_intro_text)
         self.access_gate_widgets["login"].setText(gate_login_text)
+        self.access_gate_widgets["refresh"].setText(self._tr("overview.auth.gate.refresh"))
+        self.access_gate_widgets["logout"].setText(self._tr("overview.auth.gate.logout"))
 
         status_text = (detail or "").strip()
         show_status = bool(status_text)
         if status == "authorizing" and not show_status:
-            status_text = "Warte auf die Rueckmeldung aus Nextcloud."
+            status_text = self._tr("overview.auth.gate.waiting")
             show_status = True
 
         self.access_gate_widgets["status"].setText(status_text)
 
         account_parts = []
         if display_name:
-            account_parts.append(f"<b>Konto:</b> {escape(display_name)}")
+            account_parts.append(
+                self._tr("overview.auth.gate.account", account=escape(display_name))
+            )
         if groups:
-            account_parts.append(f"<b>Gruppen:</b> {escape(', '.join(groups))}")
+            account_parts.append(
+                self._tr(
+                    "overview.auth.gate.groups",
+                    groups=escape(", ".join(groups)),
+                )
+            )
         account_text = "<br>".join(account_parts)
         self.access_gate_widgets["account"].setText(account_text)
         self.access_gate_widgets["account"].setTextFormat(Qt.RichText)
@@ -1012,25 +1131,28 @@ class MasterOverviewDialog(QDialog):
         ).strip()
         groups = [group for group in self.plugin_controller.auth_groups() if group]
         if error_detail:
-            self.access_gate_widgets["title"].setText("Katalog konnte nicht geladen werden")
+            self.access_gate_widgets["title"].setText(self._tr("overview.auth.gate.empty_error_title"))
             self.access_gate_widgets["intro"].setText(
-                "Die Anmeldung ist vorhanden, aber der geschuetzte Katalog konnte nicht geladen werden."
+                self._tr("overview.auth.gate.empty_error_intro")
             )
             self.access_gate_widgets["status"].setText(error_detail)
             self.access_gate_widgets["status"].setVisible(True)
             return
 
-        self.access_gate_widgets["title"].setText("Keine Plugins verfuegbar")
+        self.access_gate_widgets["title"].setText(self._tr("overview.auth.gate.empty_none_title"))
         self.access_gate_widgets["intro"].setText(
-            "Die Anmeldung ist vorhanden, aber aktuell sind keine Plugins fuer dieses Konto sichtbar."
+            self._tr("overview.auth.gate.empty_none_intro")
         )
         if groups:
             self.access_gate_widgets["status"].setText(
-                f"Keine freigeschalteten Plugins fuer Gruppen: {', '.join(groups)}."
+                self._tr(
+                    "overview.auth.gate.empty_none_groups",
+                    groups=", ".join(groups),
+                )
             )
         else:
             self.access_gate_widgets["status"].setText(
-                "Keine freigeschalteten Plugins fuer dieses Konto gefunden."
+                self._tr("overview.auth.gate.empty_none_account")
             )
         self.access_gate_widgets["status"].setVisible(True)
 
@@ -1047,6 +1169,24 @@ class MasterOverviewDialog(QDialog):
             }
             QWidget#authPage {
                 background: #fafafa;
+            }
+            QFrame#languageSwitcherFrame {
+                background: transparent;
+                border: none;
+            }
+            QToolButton#languageSwitcherButton {
+                background: rgba(255, 255, 255, 0.92);
+                border: 1px solid #d8d8d3;
+                border-radius: 6px;
+                padding: 2px;
+            }
+            QToolButton#languageSwitcherButton:hover {
+                border-color: #9bbb93;
+                background: #ffffff;
+            }
+            QToolButton#languageSwitcherButton:checked {
+                border-color: #6f9158;
+                background: #edf5ea;
             }
             QFrame#authDialogFrame {
                 background: transparent;
@@ -1354,10 +1494,17 @@ class MasterOverviewDialog(QDialog):
         self.filter_list.clear()
         fallback_item = None
 
-        for filter_key, label, asset_name in self.FILTERS:
+        for filter_key, label_key, asset_name in self.FILTERS:
+            label = self._tr(label_key)
             item = QListWidgetItem(self._sidebar_icon(asset_name), label)
             item.setData(Qt.UserRole, filter_key)
-            item.setToolTip(f"{label}: {counts[filter_key]} Module")
+            item.setToolTip(
+                self._tr(
+                    "overview.filter.tooltip",
+                    label=label,
+                    count=counts[filter_key],
+                )
+            )
             item.setSizeHint(QSize(0, 58))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
@@ -1388,7 +1535,7 @@ class MasterOverviewDialog(QDialog):
     def _apply_filters(self, *_args, preferred_key=None):
         if self._settings_active:
             self._show_settings_view()
-            self.setWindowTitle("Erweiterungen | Einstellungen")
+            self.setWindowTitle(self._tr("overview.window.settings"))
             return
 
         filter_key = self._active_filter_key()
@@ -1459,20 +1606,24 @@ class MasterOverviewDialog(QDialog):
         return False
 
     def _filter_label(self, filter_key):
-        for candidate_key, label, _asset_name in self.FILTERS:
+        for candidate_key, label_key, _asset_name in self.FILTERS:
             if candidate_key == filter_key:
-                return label
-        return "Alle Plugins"
+                return self._tr(label_key)
+        return self._tr("overview.filter.all")
 
     def _module_list_label(self, row):
         label = row["label"]
         if row.get("is_experimental"):
-            return f"{label} [Experimental]"
+            return f"{label} [{self._tr('plugin.release.experimental')}]"
         return label
 
     def _results_summary_text(self, result_count, filter_key):
         filter_label = self._filter_label(filter_key)
-        return f"{result_count} Module | {filter_label}"
+        return self._tr(
+            "overview.results_summary",
+            count=result_count,
+            label=filter_label,
+        )
 
     def _matches_search(self, row, search_term):
         search_haystack = " ".join(
@@ -1487,7 +1638,7 @@ class MasterOverviewDialog(QDialog):
                 row["release_state_label"],
                 row["detail"],
                 row["management_text"],
-                "favorit" if row["is_favorite"] else "",
+                self._tr("overview.filter.favorites").lower() if row["is_favorite"] else "",
                 " ".join(row["tags"]),
             ]
         ).lower()
@@ -1510,8 +1661,8 @@ class MasterOverviewDialog(QDialog):
             self.open_button.hide()
             self.primary_button.setEnabled(False)
             self.secondary_button.setEnabled(False)
-            self.primary_button.setText("Installieren")
-            self.secondary_button.setText("Entfernen")
+            self.primary_button.setText(self._tr("overview.action.install"))
+            self.secondary_button.setText(self._tr("overview.action.remove"))
             return
 
         row = self._rows_by_key.get(item.data(0, Qt.UserRole))
@@ -1521,8 +1672,8 @@ class MasterOverviewDialog(QDialog):
             self.open_button.hide()
             self.primary_button.setEnabled(False)
             self.secondary_button.setEnabled(False)
-            self.primary_button.setText("Installieren")
-            self.secondary_button.setText("Entfernen")
+            self.primary_button.setText(self._tr("overview.action.install"))
+            self.secondary_button.setText(self._tr("overview.action.remove"))
             return
 
         self._update_favorite_button(row)
@@ -1530,33 +1681,36 @@ class MasterOverviewDialog(QDialog):
         self.open_button.setVisible(can_open)
         self.open_button.setEnabled(can_open)
         self.open_button.setText(
-            self.plugin_controller.get_open_action_label(row) or "Oeffnen"
+            self.plugin_controller.get_open_action_label(row)
+            or self._tr("overview.action.open")
         )
         self.primary_button.setEnabled(
             self.plugin_controller.can_run_primary_action(row)
         )
         self.primary_button.setText(
-            self.plugin_controller.get_primary_action_label(row) or "Aktion"
+            self.plugin_controller.get_primary_action_label(row)
+            or self._tr("plugin.action.fallback")
         )
         self.secondary_button.setEnabled(
             self.plugin_controller.can_run_secondary_action(row)
         )
         self.secondary_button.setText(
-            self.plugin_controller.get_secondary_action_label(row) or "Entfernen"
+            self.plugin_controller.get_secondary_action_label(row)
+            or self._tr("overview.action.remove")
         )
         self._render_module_details(row)
 
     def _render_empty_state(self, search_term):
-        self.title_label.setText("Keine Module gefunden")
+        self.title_label.setText(self._tr("overview.empty.title"))
         if search_term:
             self.description_label.setText(
-                f"Keine Treffer fuer '{escape(search_term)}'."
+                self._tr("overview.empty.search", term=escape(search_term))
             )
         else:
-            self.description_label.setText("Der aktuelle Filter enthaelt keine Module.")
-        self.status_label.setText("Passe Suche oder Filter an.")
+            self.description_label.setText(self._tr("overview.empty.filter"))
+        self.status_label.setText(self._tr("overview.empty.status"))
         self.about_label.setText(
-            "Der Trassify-Masterkatalog orientiert sich an der nativen QGIS-Erweiterungsliste."
+            self._tr("overview.empty.about")
         )
         self.category_value.setText("-")
         self.type_value.setText("-")
@@ -1575,38 +1729,30 @@ class MasterOverviewDialog(QDialog):
     def _render_module_details(self, row):
         self.title_label.setText(row["label"])
         self.description_label.setText(
-            row["description"] or "Kein Beschreibungstext verfuegbar."
+            row["description"] or self._tr("overview.detail.no_description")
         )
         self.status_label.setText(
-            f"<b>Status:</b> {escape(row['status_text'])} | {escape(row['detail'])}"
+            self._tr(
+                "overview.detail.status",
+                status=escape(row["status_text"]),
+                detail=escape(row["detail"]),
+            )
         )
         self.status_label.setTextFormat(Qt.RichText)
 
         about_text = row["about"]
         favorite_hint = ""
         if row["is_favorite"] and row["tool_type"] == "background":
-            favorite_hint = (
-                " Dieses Hintergrundtool ist als Favorit gespeichert und erscheint in der Favoritenliste."
-            )
+            favorite_hint = self._tr("overview.detail.favorite_background")
         elif row["is_favorite"]:
-            favorite_hint = (
-                " Dieses Tool ist als Favorit gespeichert und bleibt als Merkliste im Master-Katalog sichtbar."
-            )
+            favorite_hint = self._tr("overview.detail.favorite_regular")
 
         if about_text and about_text != row["description"]:
             self.about_label.setText(about_text + favorite_hint)
         elif row["tool_type"] == "background":
-            self.about_label.setText(
-                "Dieses Modul ist als Hintergrundtool vorgesehen. Nach der Installation kann es bei Bedarf aktiviert werden, "
-                "um Kontextmenues oder stille Hilfsfunktionen bereitzustellen."
-                + favorite_hint
-            )
+            self.about_label.setText(self._tr("overview.detail.background_default") + favorite_hint)
         else:
-            self.about_label.setText(
-                "Dieses Modul wird bei Bedarf separat installiert und erst danach in QGIS aktiviert. "
-                "Sobald es im lokalen QGIS-Profil liegt, kann der Master auch Aktualisieren und Entfernen uebernehmen."
-                + favorite_hint
-            )
+            self.about_label.setText(self._tr("overview.detail.regular_default") + favorite_hint)
 
         self.category_value.setText(row["category"] or "-")
         self.type_value.setText(row["tool_type_label"] or "-")
@@ -1615,7 +1761,9 @@ class MasterOverviewDialog(QDialog):
             self._favorite_icon(row["is_favorite"]).pixmap(18, 18)
         )
         self.favorite_value.setToolTip(
-            "Favorit gespeichert" if row["is_favorite"] else "Nicht als Favorit gespeichert"
+            self._tr("overview.favorite.saved")
+            if row["is_favorite"]
+            else self._tr("overview.favorite.not_saved")
         )
         self.package_value.setText(row["package"] or "-")
         self.management_value.setText(row["management_text"] or "-")
@@ -1639,15 +1787,15 @@ class MasterOverviewDialog(QDialog):
         links = []
         if row["homepage"]:
             links.append(
-                f"<a href=\"{escape(row['homepage'])}\">Homepage</a>"
+                f"<a href=\"{escape(row['homepage'])}\">{self._tr('overview.links.homepage')}</a>"
             )
         if row["tracker"]:
             links.append(
-                f"<a href=\"{escape(row['tracker'])}\">Fehlerverfolgung</a>"
+                f"<a href=\"{escape(row['tracker'])}\">{self._tr('overview.links.tracker')}</a>"
             )
         if row["repository"]:
             links.append(
-                f"<a href=\"{escape(row['repository'])}\">Coderepository</a>"
+                f"<a href=\"{escape(row['repository'])}\">{self._tr('overview.links.repository')}</a>"
             )
         return "   ".join(links) or "-"
 
@@ -1710,9 +1858,9 @@ class MasterOverviewDialog(QDialog):
     def _show_settings_view(self):
         self._settings_active = True
         self.settings_nav_button.setChecked(True)
-        self.workspace_title_label.setText("Einstellungen")
+        self.workspace_title_label.setText(self._tr("overview.header.settings_title"))
         self.workspace_subtitle_label.setText(
-            "Zentrale Master-Einstellungen fuer separat installierbare Module."
+            self._tr("overview.header.settings_subtitle")
         )
         self.catalog_count_badge.hide()
         self.search_field.hide()
@@ -1725,8 +1873,8 @@ class MasterOverviewDialog(QDialog):
     def _show_catalog_view(self):
         self._settings_active = False
         self.settings_nav_button.setChecked(False)
-        self.workspace_title_label.setText("Plugin-Katalog")
-        self.workspace_subtitle_label.setText("Verwalten direkt aus dem Mastertool.")
+        self.workspace_title_label.setText(self._tr("overview.header.catalog_title"))
+        self.workspace_subtitle_label.setText(self._tr("overview.header.catalog_subtitle"))
         self.catalog_count_badge.show()
         self.search_field.show()
         self.settings_frame.hide()
@@ -1752,7 +1900,7 @@ class MasterOverviewDialog(QDialog):
     def _restore_settings_view(self):
         self.settings_widget.restore_defaults()
         self.settings_status_label.setText(
-            "Standardwerte geladen. Noch nicht gespeichert."
+            self._tr("overview.settings.saved_defaults")
         )
         self.settings_status_label.show()
 
@@ -1830,6 +1978,8 @@ class MasterOverviewDialog(QDialog):
         self.favorite_button.setEnabled(is_enabled)
         self.favorite_button.setIcon(self._favorite_icon(is_favorite))
         self.favorite_button.setToolTip(
-            "Aus Favoriten entfernen" if is_favorite else "Als Favorit speichern"
+            self._tr("overview.favorite.remove")
+            if is_favorite
+            else self._tr("overview.favorite.add")
         )
         self.favorite_button.setStatusTip(self.favorite_button.toolTip())

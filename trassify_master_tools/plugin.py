@@ -19,6 +19,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar
 from qgis.core import Qgis, QgsApplication, QgsMessageLog
 
+from .i18n import localized_value, tr
 from .manifest import BACKGROUND_TOOL, BUNDLED_PLUGINS, INTERACTIVE_TOOL
 from .nextcloud_integration import (
     NextcloudAuthManager,
@@ -31,21 +32,18 @@ from .shared_settings import (
     has_saved_shared_settings,
     load_favorite_module_keys,
     load_shared_settings,
+    load_ui_language,
     save_favorite_module_keys,
     save_shared_settings,
+    save_ui_language,
     sync_attribution_butler_settings,
 )
 
 
 class TrassifyMasterToolsPlugin:
     MENU_TITLE = "Trassify Master Tools"
-    OVERVIEW_ACTION_TEXT = "Master-Uebersicht oeffnen"
     TOOLBAR_OBJECT_NAME = "TrassifyMasterToolsToolbar"
     LOG_TAG = "Trassify Master Tools"
-    TOOL_TYPE_LABELS = {
-        INTERACTIVE_TOOL: "Normales Tool",
-        BACKGROUND_TOOL: "Hintergrundtool",
-    }
     CATALOG_RELATIVE_PATH = Path("catalog") / "plugins.json"
     CATALOG_USER_AGENT = "TrassifyMasterTools/2.0"
     DEFAULT_OPEN_METHOD_CANDIDATES = ("show_overview", "run", "show_dialog")
@@ -65,11 +63,13 @@ class TrassifyMasterToolsPlugin:
         self.catalog_entries_by_key: dict[str, dict] = {}
         self.secure_catalog_entries_by_key: dict[str, dict] = {}
         self.catalog_refresh_error = ""
+        self._ui_language = load_ui_language()
         self.auth_manager = NextcloudAuthManager(
             self.get_shared_settings,
             self.save_shared_settings,
             self._push_message,
             self.CATALOG_USER_AGENT,
+            language_getter=self.get_ui_language,
         )
         self.auth_manager.state_changed.connect(self._handle_auth_state_changed)
         stored_favorite_keys = load_favorite_module_keys()
@@ -90,7 +90,7 @@ class TrassifyMasterToolsPlugin:
 
         self.overview_action = QAction(
             QIcon(str(self.plugin_dir / "icon.svg")),
-            self.OVERVIEW_ACTION_TEXT,
+            self._tr("plugin.overview_action"),
             self.iface.mainWindow(),
         )
         self.overview_action.triggered.connect(self.show_overview)
@@ -153,9 +153,9 @@ class TrassifyMasterToolsPlugin:
         settings = self.save_shared_settings(values)
         self.auth_manager.refresh_session(announce=False)
         has_database_uri = bool(build_postgres_ogr_uri(settings))
-        message = "Zentrale Einstellungen gespeichert."
+        message = self._tr("plugin.settings_saved")
         if has_database_uri:
-            message += " Datenbank-URI fuer kompatible Plugins ist verfuegbar."
+            message += self._tr("plugin.settings_saved_database")
 
         if self.auth_manager.is_authorized():
             self.refresh_catalog(announce=False)
@@ -179,7 +179,7 @@ class TrassifyMasterToolsPlugin:
             self._refresh_ui_state()
             if announce:
                 self._push_message(
-                    "Bitte zuerst bei Nextcloud anmelden, bevor der Plugin-Katalog geladen wird.",
+                    self._tr("plugin.login_required_before_catalog"),
                     Qgis.Info,
                     5,
                 )
@@ -191,14 +191,14 @@ class TrassifyMasterToolsPlugin:
             self.catalog_refresh_error = ""
             self._refresh_ui_state()
             if announce:
-                self._push_message("Geschuetzten Katalog aktualisiert.", Qgis.Info, 4)
+                self._push_message(self._tr("plugin.secure_catalog_updated"), Qgis.Info, 4)
         except Exception as exc:
             self.catalog_refresh_error = f"{type(exc).__name__}: {exc}"
             self.secure_catalog_entries_by_key = {}
             self._refresh_ui_state()
             if announce:
                 self._push_message(
-                    "Geschuetzter Katalog konnte nicht geladen werden.",
+                    self._tr("plugin.secure_catalog_failed"),
                     Qgis.Warning,
                     6,
                 )
@@ -213,6 +213,24 @@ class TrassifyMasterToolsPlugin:
 
     def is_favorite(self, key):
         return key in self.favorite_module_keys
+
+    def get_ui_language(self):
+        return self._ui_language
+
+    def set_ui_language(self, language):
+        normalized = save_ui_language(language)
+        if normalized == self._ui_language:
+            return normalized
+
+        self._ui_language = normalized
+        self.auth_manager.retranslate_state()
+        if self._is_qt_object_alive(self.overview_action):
+            self.overview_action.setText(self._tr("plugin.overview_action"))
+        self._refresh_ui_state()
+        return normalized
+
+    def tr(self, key, **kwargs):
+        return self._tr(key, **kwargs)
 
     def toggle_favorite_by_key(self, key):
         favorite_keys = self._sanitize_favorite_module_keys(self.favorite_module_keys)
@@ -243,28 +261,28 @@ class TrassifyMasterToolsPlugin:
     def get_primary_action_label(self, row):
         status_code = row["status_code"]
         if status_code == "available":
-            return "Installieren"
+            return self._tr("plugin.action.install")
         if status_code == "installed":
-            return "Aktivieren"
+            return self._tr("plugin.action.activate")
         if status_code == "active":
-            return "Deaktivieren"
+            return self._tr("plugin.action.deactivate")
         if status_code == "update":
-            return "Aktualisieren"
+            return self._tr("plugin.action.update")
         if status_code == "error":
-            return "Erneut versuchen"
+            return self._tr("plugin.action.retry")
         return ""
 
     def can_run_primary_action(self, row):
         return row["status_code"] in {"available", "installed", "active", "update", "error"}
 
     def get_secondary_action_label(self, row):
-        return "Entfernen" if row.get("can_uninstall") else ""
+        return self._tr("plugin.action.remove") if row.get("can_uninstall") else ""
 
     def can_run_secondary_action(self, row):
         return bool(row.get("can_uninstall"))
 
     def get_open_action_label(self, row):
-        return "Oeffnen" if row.get("can_open") else ""
+        return self._tr("plugin.action.open") if row.get("can_open") else ""
 
     def can_open_module(self, row):
         return bool(row.get("can_open"))
@@ -345,7 +363,7 @@ class TrassifyMasterToolsPlugin:
         question = QMessageBox.question(
             self.iface.mainWindow(),
             self.MENU_TITLE,
-            f"{row['label']} wirklich aus dem lokalen QGIS-Profil entfernen?",
+            self._tr("plugin.uninstall.confirm", label=row["label"]),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -359,15 +377,27 @@ class TrassifyMasterToolsPlugin:
         metadata = catalog_entry.get("metadata", {})
         local_info = self._inspect_local_plugin(spec)
 
-        label = metadata.get("name") or spec["label"]
-        description = metadata.get("description") or metadata.get("about") or ""
-        about = metadata.get("about") or description
+        label = (
+            self._localized_metadata_value(metadata, "name")
+            or self._localized_spec_value(spec, "label")
+            or spec["label"]
+        )
+        description = (
+            self._localized_metadata_value(metadata, "description")
+            or self._localized_metadata_value(metadata, "about")
+            or ""
+        )
+        about = self._localized_metadata_value(metadata, "about") or description
         is_experimental = self._metadata_bool(metadata, "experimental")
-        release_state_label = "Experimental" if is_experimental else "Nutzbar"
+        release_state_label = (
+            self._tr("plugin.release.experimental")
+            if is_experimental
+            else self._tr("plugin.release.usable")
+        )
         release_state_note = (
-            "Dieses Plugin ist bereits nutzbar."
+            self._tr("plugin.release.note_usable")
             if not is_experimental
-            else "Dieses Plugin ist noch als Experimental markiert."
+            else self._tr("plugin.release.note_experimental")
         )
         catalog_version = (
             catalog_entry.get("remote_version")
@@ -382,57 +412,49 @@ class TrassifyMasterToolsPlugin:
         )
 
         status_code = "available"
-        status_text = "Nicht installiert"
-        detail = (
-            f"{label} ist noch nicht installiert und wird erst bei Bedarf heruntergeladen."
-        )
-        management_text = (
-            "Noch nicht installiert. Bei Bedarf wird das Plugin in das lokale QGIS-Profil geladen."
-        )
+        status_text = self._tr("plugin.status.available")
+        detail = self._tr("plugin.detail.not_installed", label=label)
+        management_text = self._tr("plugin.management.not_installed")
 
         if local_info["is_installed"]:
             if update_available:
                 status_code = "update"
-                status_text = "Update verfuegbar"
-                detail = (
-                    f"Installiert: {installed_version or '?'} | "
-                    f"Verfuegbar: {catalog_version or '?'}."
+                status_text = self._tr("plugin.status.update")
+                detail = self._tr(
+                    "plugin.detail.update_versions",
+                    installed=installed_version or "?",
+                    available=catalog_version or "?",
                 )
                 if local_info["is_active"]:
-                    detail += " Das Plugin ist aktuell in QGIS aktiv."
+                    detail += self._tr("plugin.detail.active_now")
             elif local_info["is_active"]:
                 status_code = "active"
-                status_text = "Aktiv"
-                detail = (
-                    f"{label} ist installiert und aktuell in QGIS aktiv."
-                )
+                status_text = self._tr("plugin.status.active")
+                detail = self._tr("plugin.detail.active", label=label)
             else:
                 status_code = "installed"
-                status_text = "Installiert"
-                detail = (
-                    f"{label} ist installiert, aber aktuell nicht aktiv."
-                )
+                status_text = self._tr("plugin.status.installed")
+                detail = self._tr("plugin.detail.installed_inactive", label=label)
 
             if local_info["can_manage"]:
-                detail += " Die Installation liegt im lokalen QGIS-Profil und kann hier aktualisiert oder entfernt werden."
-                management_text = (
-                    "Im lokalen QGIS-Profil installiert. Dieses Plugin kann hier installiert, aktualisiert, aktiviert und entfernt werden."
-                )
+                detail += self._tr("plugin.detail.manageable_suffix")
+                management_text = self._tr("plugin.management.manageable")
             else:
-                detail += " Die Installation liegt ausserhalb des lokalen QGIS-Profils und wird hier nur angezeigt."
-                management_text = (
-                    "Ausserhalb des lokalen QGIS-Profils installiert. Aktivieren und Deaktivieren bleiben moeglich, "
-                    "Datei-Updates und Entfernen sind hier deaktiviert."
-                )
+                detail += self._tr("plugin.detail.external_suffix")
+                management_text = self._tr("plugin.management.external")
 
         error_message = self.module_action_errors.get(spec["key"], "").strip()
         if error_message:
             if not local_info["is_installed"]:
                 status_code = "error"
-                status_text = "Fehler"
+                status_text = self._tr("plugin.status.error")
                 detail = error_message
             else:
-                detail = f"{detail} Letzter Fehler: {error_message}"
+                detail = self._tr(
+                    "plugin.detail.last_error",
+                    detail=detail,
+                    error=error_message,
+                )
 
         version_text = catalog_version or "-"
         if installed_version and installed_version != catalog_version:
@@ -447,22 +469,25 @@ class TrassifyMasterToolsPlugin:
             "label": label,
             "package": spec["package"],
             "tool_type": spec.get("tool_type", INTERACTIVE_TOOL),
-            "tool_type_label": self.TOOL_TYPE_LABELS.get(
-                spec.get("tool_type", INTERACTIVE_TOOL),
-                "Tool",
+            "tool_type_label": self._tool_type_label(
+                spec.get("tool_type", INTERACTIVE_TOOL)
             ),
             "status_code": status_code,
             "status_text": status_text,
             "detail": detail,
             "description": description,
             "about": about,
-            "author": metadata.get("author") or "",
+            "author": self._localized_metadata_value(metadata, "author") or "",
             "version": version_text,
             "release_state_label": release_state_label,
             "release_state_note": release_state_note,
             "is_experimental": is_experimental,
-            "category": metadata.get("category") or "Plugins",
-            "tags": self._split_tags(metadata.get("tags")),
+            "category": self._localized_metadata_value(metadata, "category")
+            or self._tr("plugin.category.default"),
+            "tags": self._split_tags(
+                self._localized_metadata_value(metadata, "tags")
+                or metadata.get("tags")
+            ),
             "homepage": metadata.get("homepage") or "",
             "tracker": metadata.get("tracker") or "",
             "repository": metadata.get("repository") or "",
@@ -607,7 +632,7 @@ class TrassifyMasterToolsPlugin:
         if row["is_installed"] and not row["is_managed"]:
             self._record_error(
                 spec,
-                "Plugin liegt ausserhalb des lokalen QGIS-Profils und wird hier nicht ueberschrieben.",
+                self._tr("plugin.install.external_blocked"),
             )
             self._refresh_ui_state()
             return False
@@ -616,7 +641,7 @@ class TrassifyMasterToolsPlugin:
         if not remote_archive_path:
             self._record_error(
                 spec,
-                "Fuer dieses Plugin ist im geschuetzten Katalog kein Paketpfad hinterlegt.",
+                self._tr("plugin.install.missing_archive"),
             )
             self._refresh_ui_state()
             return False
@@ -653,12 +678,20 @@ class TrassifyMasterToolsPlugin:
 
             if activate_after_install:
                 if not self._activate_installed_module(spec, announce=False):
-                    raise RuntimeError("Plugin wurde installiert, konnte aber nicht aktiviert werden.")
+                    raise RuntimeError(self._tr("plugin.install.activation_failed"))
 
-            action_label = "aktualisiert" if row["is_installed"] else "installiert"
-            message = f"{row['label']} wurde {action_label}."
+            action_label = (
+                self._tr("plugin.install.action_updated")
+                if row["is_installed"]
+                else self._tr("plugin.install.action_installed")
+            )
+            message = self._tr(
+                "plugin.install.done",
+                label=row["label"],
+                action=action_label,
+            )
             if activate_after_install:
-                message += " Das Plugin ist jetzt aktiv."
+                message += self._tr("plugin.install.activated_after")
 
             self.iface.messageBar().pushMessage(
                 self.MENU_TITLE,
@@ -676,7 +709,7 @@ class TrassifyMasterToolsPlugin:
             self._record_error(spec, f"{type(exc).__name__}: {exc}")
             self.iface.messageBar().pushMessage(
                 self.MENU_TITLE,
-                f"{row['label']} konnte nicht installiert werden.",
+                self._tr("plugin.install.failed", label=row["label"]),
                 level=Qgis.Warning,
                 duration=6,
             )
@@ -704,7 +737,7 @@ class TrassifyMasterToolsPlugin:
             if announce:
                 self.iface.messageBar().pushMessage(
                     self.MENU_TITLE,
-                    f"{row['label']} ist jetzt aktiv.",
+                    self._tr("plugin.activate.done", label=row["label"]),
                     level=Qgis.Info,
                     duration=4,
                 )
@@ -715,7 +748,7 @@ class TrassifyMasterToolsPlugin:
             if announce:
                 self.iface.messageBar().pushMessage(
                     self.MENU_TITLE,
-                    f"{row['label']} konnte nicht aktiviert werden.",
+                    self._tr("plugin.activate.failed", label=row["label"]),
                     level=Qgis.Warning,
                     duration=6,
                 )
@@ -737,7 +770,7 @@ class TrassifyMasterToolsPlugin:
             if announce:
                 self.iface.messageBar().pushMessage(
                     self.MENU_TITLE,
-                    f"{row['label']} wurde deaktiviert.",
+                    self._tr("plugin.deactivate.done", label=row["label"]),
                     level=Qgis.Info,
                     duration=4,
                 )
@@ -749,7 +782,7 @@ class TrassifyMasterToolsPlugin:
             if announce:
                 self.iface.messageBar().pushMessage(
                     self.MENU_TITLE,
-                    f"{row['label']} konnte nicht deaktiviert werden.",
+                    self._tr("plugin.deactivate.failed", label=row["label"]),
                     level=Qgis.Warning,
                     duration=6,
                 )
@@ -776,7 +809,7 @@ class TrassifyMasterToolsPlugin:
 
             self.iface.messageBar().pushMessage(
                 self.MENU_TITLE,
-                f"{row['label']} wurde aus dem lokalen Profil entfernt.",
+                self._tr("plugin.remove.done", label=row["label"]),
                 level=Qgis.Info,
                 duration=5,
             )
@@ -786,7 +819,7 @@ class TrassifyMasterToolsPlugin:
             self._record_error(spec, f"{type(exc).__name__}: {exc}")
             self.iface.messageBar().pushMessage(
                 self.MENU_TITLE,
-                f"{row['label']} konnte nicht entfernt werden.",
+                self._tr("plugin.remove.failed", label=row["label"]),
                 level=Qgis.Warning,
                 duration=6,
             )
@@ -802,7 +835,7 @@ class TrassifyMasterToolsPlugin:
             if not self._activate_installed_module(spec, announce=False):
                 self.iface.messageBar().pushMessage(
                     self.MENU_TITLE,
-                    f"{row['label']} konnte nicht geoeffnet werden, weil das Plugin nicht aktiviert werden konnte.",
+                    self._tr("plugin.open.activate_failed", label=row["label"]),
                     level=Qgis.Warning,
                     duration=6,
                 )
@@ -812,10 +845,10 @@ class TrassifyMasterToolsPlugin:
         plugin_instance = self._loaded_plugin_instance(spec["package"])
         open_method_name = self._resolve_plugin_open_method_name(spec, plugin_instance)
         if plugin_instance is None or not open_method_name:
-            self._record_error(spec, "Fuer dieses Plugin ist kein direkter Oeffnen-Einstiegspunkt verfuegbar.")
+            self._record_error(spec, self._tr("plugin.open.entry_missing"))
             self.iface.messageBar().pushMessage(
                 self.MENU_TITLE,
-                f"{row['label']} bietet derzeit kein direktes Oeffnen aus dem Mastertool an.",
+                self._tr("plugin.open.info_missing", label=row["label"]),
                 level=Qgis.Info,
                 duration=5,
             )
@@ -831,7 +864,7 @@ class TrassifyMasterToolsPlugin:
             self._record_error(spec, f"{type(exc).__name__}: {exc}")
             self.iface.messageBar().pushMessage(
                 self.MENU_TITLE,
-                f"{row['label']} konnte nicht geoeffnet werden.",
+                self._tr("plugin.open.failed", label=row["label"]),
                 level=Qgis.Warning,
                 duration=6,
             )
@@ -846,7 +879,7 @@ class TrassifyMasterToolsPlugin:
             for member_name in archive.namelist():
                 member_path = Path(member_name)
                 if member_path.is_absolute() or ".." in member_path.parts:
-                    raise RuntimeError("ZIP enthaelt ungueltige Pfade.")
+                    raise RuntimeError(self._tr("plugin.archive.invalid_paths"))
                 if member_path.parts:
                     top_level_entries.append(member_path.parts[0])
 
@@ -867,7 +900,7 @@ class TrassifyMasterToolsPlugin:
                 return fallback_candidate
 
         raise RuntimeError(
-            f"ZIP enthaelt kein Plugin-Verzeichnis fuer {package_name}."
+            self._tr("plugin.archive.invalid_root", package=package_name)
         )
 
     def _replace_plugin_dir(self, target_dir, source_dir):
@@ -1039,9 +1072,9 @@ class TrassifyMasterToolsPlugin:
         self.module_action_errors.pop(spec["key"], None)
 
     def _show_startup_message(self):
-        message = "Master-Katalog aktiv. Plugin-Downloads laufen ueber den geschuetzten Nextcloud-Katalog."
+        message = self._tr("plugin.startup")
         if not self.auth_manager.has_saved_credentials():
-            message += " Vor dem Laden ist eine Nextcloud-Anmeldung erforderlich."
+            message += self._tr("plugin.startup_requires_login")
         self._push_message(message, Qgis.Info, 6)
 
     def _refresh_overview_dialog(self):
@@ -1182,6 +1215,19 @@ class TrassifyMasterToolsPlugin:
         value = str((metadata or {}).get(key, "")).strip().lower()
         return value in {"1", "true", "yes", "on"}
 
+    def _localized_metadata_value(self, metadata, key, fallback=""):
+        return localized_value(metadata, self._ui_language, key, fallback=fallback)
+
+    def _localized_spec_value(self, spec, key, fallback=""):
+        return localized_value(spec, self._ui_language, key, fallback=fallback)
+
+    def _tool_type_label(self, tool_type):
+        if tool_type == BACKGROUND_TOOL:
+            return self._tr("plugin.tool_type.background")
+        if tool_type == INTERACTIVE_TOOL:
+            return self._tr("plugin.tool_type.interactive")
+        return self._tr("plugin.tool_type.fallback")
+
     def _normalized_groups(self, raw_groups):
         if isinstance(raw_groups, list):
             return [
@@ -1286,3 +1332,6 @@ class TrassifyMasterToolsPlugin:
             return None
         except ReferenceError:
             return None
+
+    def _tr(self, key, **kwargs):
+        return tr(self._ui_language, key, **kwargs)

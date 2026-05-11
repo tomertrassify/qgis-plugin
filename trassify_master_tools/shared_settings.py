@@ -9,6 +9,7 @@ SETTINGS_PREFIX = "TrassifyMasterTools/shared_settings"
 UI_SETTINGS_PREFIX = "TrassifyMasterTools/ui"
 ATTRIBUTION_BUTTLER_PREFIX = "AttributionButler/user_config"
 DEFAULT_NEXTCLOUD_CATALOG_ROOT = "Trassify Allgemein/Qgis Plugins/nextcloud-master-catalog"
+DEFAULT_UI_LANGUAGE = "de"
 LEGACY_NEXTCLOUD_CATALOG_ROOTS = (
     "Trassify Allgemein/Plug-In/nextcloud-master-catalog",
     "Trassify Master Tools",
@@ -89,6 +90,19 @@ def load_favorite_module_keys() -> list[str]:
     return _parse_string_list(raw)
 
 
+def load_ui_language() -> str:
+    settings = QSettings()
+    raw = settings.value(ui_setting_key("language"), DEFAULT_UI_LANGUAGE)
+    return normalize_ui_language(raw)
+
+
+def save_ui_language(language: str) -> str:
+    settings = QSettings()
+    normalized = normalize_ui_language(language)
+    settings.setValue(ui_setting_key("language"), normalized)
+    return normalized
+
+
 def save_favorite_module_keys(keys: list[str] | tuple[str, ...]) -> list[str]:
     settings = QSettings()
     normalized = []
@@ -117,6 +131,13 @@ def save_shared_settings(config: dict) -> dict:
             settings.setValue(setting_key(key), str(value or "").strip())
 
     return normalized
+
+
+def normalize_ui_language(language: str | None) -> str:
+    value = str(language or "").strip().lower()
+    if value.startswith("en"):
+        return "en"
+    return DEFAULT_UI_LANGUAGE
 
 
 def normalize_shared_settings(config: dict | None) -> dict:

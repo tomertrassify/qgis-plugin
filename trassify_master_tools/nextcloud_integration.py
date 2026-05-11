@@ -11,6 +11,7 @@ from qgis.PyQt.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QDesktopServices
 from qgis.core import Qgis
 
+from .i18n import tr
 from .shared_settings import (
     DEFAULT_NEXTCLOUD_CATALOG_ROOT,
     LEGACY_NEXTCLOUD_CATALOG_ROOTS,
@@ -251,12 +252,14 @@ class NextcloudAuthManager(QObject):
         settings_saver,
         message_callback,
         user_agent: str,
+        language_getter=None,
         parent=None,
     ):
         super().__init__(parent)
         self._settings_loader = settings_loader
         self._settings_saver = settings_saver
         self._message_callback = message_callback
+        self._language_getter = language_getter or (lambda: "de")
         self._api = NextcloudApiClient(user_agent)
 
         self._poll_timer = QTimer(self)
@@ -264,7 +267,7 @@ class NextcloudAuthManager(QObject):
         self._poll_timer.timeout.connect(self._poll_login_flow_v2)
 
         self._status = "anonymous"
-        self._status_detail = "Noch nicht bei Nextcloud angemeldet."
+        self._status_detail = self._tr("nextcloud.not_logged_in")
         self._base_url = ""
         self._catalog_root = ""
         self._login_name = ""
@@ -307,14 +310,20 @@ class NextcloudAuthManager(QObject):
     def is_authorizing(self) -> bool:
         return self._status == "authorizing"
 
+    def retranslate_state(self) -> None:
+        detail = self._translated_detail_for_state()
+        if detail is None:
+            return
+        self._status_detail = str(detail or "").strip()
+
     def refresh_session(self, announce: bool = False) -> bool:
         self._reload_from_settings()
         if not self._base_url:
-            self._set_state("error", "In den Master-Einstellungen fehlt die Nextcloud-URL.")
+            self._set_state("error", self._tr("nextcloud.missing_url"))
             return False
         if not self._login_name or not self._app_password:
             self._profile = NextcloudUserProfile()
-            self._set_state("anonymous", "Noch nicht bei Nextcloud angemeldet.")
+            self._set_state("anonymous", self._tr("nextcloud.not_logged_in"))
             return False
 
         try:
@@ -323,13 +332,19 @@ class NextcloudAuthManager(QObject):
                 self._login_name,
                 self._app_password,
             )
-            detail = f"Angemeldet als {self._profile.display_name or self._login_name}."
+            detail = self._tr(
+                "nextcloud.logged_in_as",
+                account=self._profile.display_name or self._login_name,
+            )
             if self._profile.groups:
-                detail += f" Gruppen: {', '.join(self._profile.groups)}."
+                detail += " " + self._tr(
+                    "nextcloud.groups_suffix",
+                    groups=", ".join(self._profile.groups),
+                )
             self._set_state("authorized", detail)
             if announce:
                 self._message_callback(
-                    "Nextcloud-Verbindung erfolgreich aktualisiert.",
+                    self._tr("nextcloud.connection_updated"),
                     Qgis.Success,
                     4,
                 )
@@ -340,13 +355,13 @@ class NextcloudAuthManager(QObject):
                 self._profile = NextcloudUserProfile()
                 self._set_state(
                     "anonymous",
-                    "Die gespeicherte Nextcloud-Anmeldung ist nicht mehr gueltig.",
+                    self._tr("nextcloud.login_invalid"),
                 )
             else:
                 self._profile = NextcloudUserProfile()
                 self._set_state(
                     "error",
-                    f"Nextcloud konnte nicht erreicht werden: {exc}",
+                    self._tr("nextcloud.unreachable", error=exc),
                 )
             if announce:
                 self._message_callback(
@@ -359,7 +374,7 @@ class NextcloudAuthManager(QObject):
     def begin_login(self) -> bool:
         self._reload_from_settings()
         if not self._base_url:
-            self._set_state("error", "In den Master-Einstellungen fehlt die Nextcloud-URL.")
+            self._set_state("error", self._tr("nextcloud.missing_url"))
             self._message_callback(self._status_detail, Qgis.Warning, 6)
             return False
 
@@ -370,17 +385,17 @@ class NextcloudAuthManager(QObject):
             self._poll_endpoint = str(poll.get("endpoint") or "").strip()
             login_url = str(flow_data.get("login") or "").strip()
             if not self._poll_token or not self._poll_endpoint or not login_url:
-                raise NextcloudApiError("Login Flow v2 hat unvollstaendige Daten geliefert.")
+                raise NextcloudApiError(self._tr("nextcloud.login_flow_incomplete"))
 
             self._set_state(
                 "authorizing",
-                "Browser-Login geoeffnet. Bitte bei Nextcloud anmelden und diese Seite danach offen lassen, bis die Rueckgabe abgeschlossen ist.",
+                self._tr("nextcloud.login_browser_opened"),
             )
             self._poll_timer.start()
             QDesktopServices.openUrl(QUrl(login_url))
             return True
         except NextcloudApiError as exc:
-            self._set_state("error", f"Nextcloud-Login konnte nicht gestartet werden: {exc}")
+            self._set_state("error", self._tr("nextcloud.login_start_failed", error=exc))
             self._message_callback(self._status_detail, Qgis.Warning, 6)
             return False
 
@@ -396,15 +411,15 @@ class NextcloudAuthManager(QObject):
         self._profile = NextcloudUserProfile()
         self._poll_endpoint = ""
         self._poll_token = ""
-        self._set_state("anonymous", "Nextcloud-Anmeldung wurde entfernt.")
-        self._message_callback("Nextcloud-Anmeldung wurde entfernt.", Qgis.Info, 4)
+        self._set_state("anonymous", self._tr("nextcloud.login_removed"))
+        self._message_callback(self._tr("nextcloud.login_removed"), Qgis.Info, 4)
 
     def load_secure_catalog(self) -> dict:
         if not self.is_authorized():
-            raise NextcloudApiError("Bitte zuerst bei Nextcloud anmelden.")
+            raise NextcloudApiError(self._tr("nextcloud.login_required"))
         if not self._catalog_root:
             raise NextcloudApiError(
-                "In den Master-Einstellungen fehlt der Pfad zum geschuetzten Plugin-Katalog."
+                self._tr("nextcloud.missing_catalog_root")
             )
         attempted_roots = self._catalog_root_candidates()
         last_error = None
@@ -428,16 +443,19 @@ class NextcloudAuthManager(QObject):
 
         attempted_text = ", ".join(attempted_roots)
         if last_error is None:
-            raise NextcloudApiError("Der geschuetzte Plugin-Katalog konnte nicht geladen werden.")
+            raise NextcloudApiError(self._tr("nextcloud.catalog_load_failed"))
         raise NextcloudApiError(
-            f"Katalogordner nicht gefunden. Geprueft: {attempted_text}. "
-            f"Letzte Servermeldung: {last_error}",
+            self._tr(
+                "nextcloud.catalog_not_found",
+                attempted=attempted_text,
+                error=last_error,
+            ),
             status_code=last_error.status_code,
         )
 
     def download_remote_file(self, remote_path: str, destination_path) -> None:
         if not self.is_authorized():
-            raise NextcloudApiError("Bitte zuerst bei Nextcloud anmelden.")
+            raise NextcloudApiError(self._tr("nextcloud.login_required"))
         attempted_paths = self._download_path_candidates(remote_path)
         last_error = None
 
@@ -459,10 +477,13 @@ class NextcloudAuthManager(QObject):
 
         attempted_text = ", ".join(attempted_paths)
         if last_error is None:
-            raise NextcloudApiError("Das Plugin-Paket konnte nicht geladen werden.")
+            raise NextcloudApiError(self._tr("nextcloud.package_load_failed"))
         raise NextcloudApiError(
-            f"Plugin-Paket nicht gefunden. Geprueft: {attempted_text}. "
-            f"Letzte Servermeldung: {last_error}",
+            self._tr(
+                "nextcloud.package_not_found",
+                attempted=attempted_text,
+                error=last_error,
+            ),
             status_code=last_error.status_code,
         )
 
@@ -488,7 +509,7 @@ class NextcloudAuthManager(QObject):
             self.refresh_session(announce=True)
         except NextcloudApiError as exc:
             self._poll_timer.stop()
-            self._set_state("error", f"Nextcloud-Login wurde abgebrochen: {exc}")
+            self._set_state("error", self._tr("nextcloud.login_aborted", error=exc))
             self._message_callback(self._status_detail, Qgis.Warning, 6)
 
     def _reload_from_settings(self) -> None:
@@ -502,12 +523,13 @@ class NextcloudAuthManager(QObject):
         if self._status not in {"authorized", "authorizing"}:
             if self._login_name and self._app_password:
                 self._status = "saved"
-                self._status_detail = (
-                    f"Gespeicherte Nextcloud-Anmeldung fuer {self._login_name} gefunden."
+                self._status_detail = self._tr(
+                    "nextcloud.saved_login_found",
+                    login=self._login_name,
                 )
             else:
                 self._status = "anonymous"
-                self._status_detail = "Noch nicht bei Nextcloud angemeldet."
+                self._status_detail = self._tr("nextcloud.not_logged_in")
 
     def _clear_saved_credentials(self) -> None:
         settings = dict(self._settings_loader() or {})
@@ -570,3 +592,26 @@ class NextcloudAuthManager(QObject):
         self._status_detail = str(detail or "").strip()
         if changed:
             self.state_changed.emit()
+
+    def _translated_detail_for_state(self) -> str | None:
+        if self._status == "anonymous":
+            return self._tr("nextcloud.not_logged_in")
+        if self._status == "saved" and self._login_name:
+            return self._tr("nextcloud.saved_login_found", login=self._login_name)
+        if self._status == "authorized":
+            detail = self._tr(
+                "nextcloud.logged_in_as",
+                account=self._profile.display_name or self._login_name,
+            )
+            if self._profile.groups:
+                detail += " " + self._tr(
+                    "nextcloud.groups_suffix",
+                    groups=", ".join(self._profile.groups),
+                )
+            return detail
+        if self._status == "authorizing":
+            return self._tr("nextcloud.login_browser_opened")
+        return None
+
+    def _tr(self, key: str, **kwargs) -> str:
+        return tr(self._language_getter(), key, **kwargs)
