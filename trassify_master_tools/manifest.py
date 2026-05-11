@@ -57,6 +57,15 @@ BUNDLED_PLUGINS = (
         "upstream_repository": "https://github.com/nextgis/quickmapservices",
     },
     {
+        "key": "nominatim",
+        "label": "OSM place search",
+        "package": "nominatim",
+        "source_path": "other-tools/nominatim",
+        "tool_type": INTERACTIVE_TOOL,
+        "origin": "external",
+        "upstream_repository": "https://github.com/xcaeag/Nominatim-Qgis-Plugin",
+    },
+    {
         "key": "grid_quick_geojson_export",
         "label": "Grid Quick GeoJSON Export",
         "package": "grid_quick_geojson_export",

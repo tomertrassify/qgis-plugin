@@ -57,6 +57,14 @@
       "groups": []
     },
     {
+      "key": "nominatim",
+      "label": "OSM place search",
+      "package": "nominatim",
+      "version": "1.6.0",
+      "archive_path": "packages/nominatim.zip",
+      "groups": []
+    },
+    {
       "key": "grid_quick_geojson_export",
       "label": "Grid Quick GeoJSON Export",
       "package": "grid_quick_geojson_export",

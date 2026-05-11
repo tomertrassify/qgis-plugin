@@ -1,0 +1,57 @@
+[general]
+name=OSM place search
+qgisMinimumVersion=3.40
+qgisMaximumVersion=4.98
+description=Location search helper
+about=Based on OSM data, Nominatim online tool (https://operations.osmfoundation.org/policies/nominatim/)
+version=1.6.0
+supportsQt6=True
+
+changelog=
+    1.6.0 : QGis 4.0 Compatible
+    1.5.0 : support Qt6
+    1.4.5 : fix #19
+    1.4.4 : fix panel management pb
+    1.4.3 : fix help loading on Windows. Thanks to https://github.com/AlisterH
+    1.4.2 : fix Help is not showing  
+    1.4.1 : The reverse search returns geometry
+    1.4.0 : Use OSM-ID instead of Nominatim's internal place_id as ID. issues #13. Thanks to https://github.com/kannes
+    1.3.1 : default language provided to OSM queries. Chinese translation. Thanks to https://github.com/wsk170
+    1.3.0 : code reorganization, deprecation warning deleted, improved mask style
+    1.2.8 : pull #12 - Russian translation, thanks to Petr Tsymbarovich (https://github.com/mentaljam)
+    1.2.7 : fix #11 - pb projection
+    1.2.6 : fix #10
+    1.2.5 : fix https://github.com/xcaeag/Nominatim-Qgis-Plugin/issues/8
+    1.2.4 : use of QgsNetworkAccessManager rather than requests
+    1.2.3 : geocoding service 'nominatim.openstreetmap.org' over https
+    1.2.2 : qgisMinimumVersion=3.0
+    1.2.1 : adaptation to API changes (QgsCoordinateTransform)
+    1.2 : Fix configuration dialog pb
+    1.1 : Code cleaning
+    1.0 : Migration to QGis 3
+    0.9.3 : Change from Mapquest API to OSM Api (Mapquest require key)
+    0.9.2 : Fix wrong panel management. Thanks to https://github.com/Andre-J
+    0.9.1 : Few minor changes (readme, mask dependence)
+    0.9 : QGis 2.4 more compatible, use mask plugin if exists
+    0.8.3 : fix encoding pb (http://hub.qgis.org/issues/10920, thanks to Augustin Roche)
+    0.8.2 : fix error on install
+    0.8 : on 'add to layer' action, it is possible not to create a layer for each object (see configuration dialog)
+    0.7 : fix projection problem (for new layer and mask)
+	0.6 : fix proxy connection pb, and bug in search limited to extent
+	0.5 : proxy configuration is now taken into account if there
+    0.4 : last dock position maintained on startup
+    0.3 : simple_json dependence replaced with json
+    0.2 : QGis 2.0 compatible
+
+tags=location search helper osm
+
+homepage=https://github.com/xcaeag/Nominatim-Qgis-Plugin
+tracker=https://github.com/xcaeag/Nominatim-Qgis-Plugin/issues
+repository=https://github.com/xcaeag/Nominatim-Qgis-Plugin
+icon=resources/nominatim.png
+experimental=False
+
+deprecated=False
+
+author=Xavier Culos (Agence de l'eau Adour Garonne)
+email=xavier.culos@eau-adour-garonne.fr

@@ -18,6 +18,7 @@ from qgis.PyQt.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -344,7 +345,24 @@ class MasterOverviewDialog(QDialog):
         detail_panel = QFrame(self.content_splitter)
         detail_panel.setObjectName("detailPanel")
         detail_panel.setMinimumWidth(420)
-        detail_layout = QVBoxLayout(detail_panel)
+        detail_panel_layout = QVBoxLayout(detail_panel)
+        detail_panel_layout.setContentsMargins(0, 0, 0, 0)
+        detail_panel_layout.setSpacing(0)
+
+        self.detail_scroll_area = QScrollArea(detail_panel)
+        self.detail_scroll_area.setObjectName("detailScrollArea")
+        self.detail_scroll_area.setWidgetResizable(True)
+        self.detail_scroll_area.setFrameShape(QFrame.NoFrame)
+        self.detail_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.detail_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.detail_scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        detail_panel_layout.addWidget(self.detail_scroll_area)
+
+        self.detail_content = QWidget(self.detail_scroll_area)
+        self.detail_content.setObjectName("detailContent")
+        self.detail_scroll_area.setWidget(self.detail_content)
+
+        detail_layout = QVBoxLayout(self.detail_content)
         detail_layout.setContentsMargins(12, 12, 12, 12)
         detail_layout.setSpacing(12)
 
@@ -356,7 +374,7 @@ class MasterOverviewDialog(QDialog):
         title_layout.setSpacing(6)
         header_layout.addLayout(title_layout, 1)
 
-        self.title_label = QLabel(detail_panel)
+        self.title_label = QLabel(self.detail_content)
         self.title_label.setObjectName("detailTitleLabel")
         title_font = QFont(self.font())
         title_font.setPointSize(title_font.pointSize() + 12)
@@ -365,7 +383,7 @@ class MasterOverviewDialog(QDialog):
         self.title_label.setWordWrap(True)
         title_layout.addWidget(self.title_label)
 
-        self.description_label = QLabel(detail_panel)
+        self.description_label = QLabel(self.detail_content)
         self.description_label.setObjectName("detailDescriptionLabel")
         description_font = QFont(self.font())
         description_font.setPointSize(description_font.pointSize() + 3)
@@ -374,23 +392,23 @@ class MasterOverviewDialog(QDialog):
         self.description_label.setWordWrap(True)
         title_layout.addWidget(self.description_label)
 
-        self.status_label = QLabel(detail_panel)
+        self.status_label = QLabel(self.detail_content)
         self.status_label.setObjectName("detailStatusLabel")
         self.status_label.setWordWrap(True)
         title_layout.addWidget(self.status_label)
 
-        self.icon_label = QLabel(detail_panel)
+        self.icon_label = QLabel(self.detail_content)
         self.icon_label.setFixedSize(88, 88)
         self.icon_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
         header_layout.addWidget(self.icon_label, 0, Qt.AlignTop)
 
-        self.about_label = QLabel(detail_panel)
+        self.about_label = QLabel(self.detail_content)
         self.about_label.setObjectName("detailAboutLabel")
         self.about_label.setWordWrap(True)
         self.about_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         detail_layout.addWidget(self.about_label)
 
-        separator = QFrame(detail_panel)
+        separator = QFrame(self.detail_content)
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
         detail_layout.addWidget(separator)
@@ -402,16 +420,16 @@ class MasterOverviewDialog(QDialog):
         self.metadata_form.setVerticalSpacing(10)
         detail_layout.addLayout(self.metadata_form)
 
-        self.category_value = self._create_value_label(detail_panel)
-        self.type_value = self._create_value_label(detail_panel)
-        self.favorite_value = self._create_value_label(detail_panel)
-        self.package_value = self._create_value_label(detail_panel)
-        self.management_value = self._create_value_label(detail_panel)
-        self.release_value = self._create_value_label(detail_panel)
-        self.tags_value = self._create_value_label(detail_panel)
-        self.author_value = self._create_value_label(detail_panel)
-        self.version_value = self._create_value_label(detail_panel)
-        self.links_value = self._create_value_label(detail_panel, rich_text=True)
+        self.category_value = self._create_value_label(self.detail_content)
+        self.type_value = self._create_value_label(self.detail_content)
+        self.favorite_value = self._create_value_label(self.detail_content)
+        self.package_value = self._create_value_label(self.detail_content)
+        self.management_value = self._create_value_label(self.detail_content)
+        self.release_value = self._create_value_label(self.detail_content)
+        self.tags_value = self._create_value_label(self.detail_content)
+        self.author_value = self._create_value_label(self.detail_content)
+        self.version_value = self._create_value_label(self.detail_content)
+        self.links_value = self._create_value_label(self.detail_content, rich_text=True)
 
         self.metadata_form.addRow(self._tr("overview.metadata.category"), self.category_value)
         self.metadata_form.addRow(self._tr("overview.metadata.type"), self.type_value)
@@ -1390,6 +1408,11 @@ class MasterOverviewDialog(QDialog):
                 background: transparent;
                 border: none;
             }
+            QScrollArea#detailScrollArea,
+            QWidget#detailContent {
+                background: transparent;
+                border: none;
+            }
             QLabel#workspaceTitleLabel {
                 color: palette(window-text);
                 font-size: 17px;
@@ -1773,6 +1796,7 @@ class MasterOverviewDialog(QDialog):
         ).pixmap(88, 88))
 
     def _render_module_details(self, row):
+        self.detail_scroll_area.verticalScrollBar().setValue(0)
         self.title_label.setText(row["label"])
         self.description_label.setText(
             row["description"] or self._tr("overview.detail.no_description")
