@@ -33,12 +33,11 @@ from .settings_dialog import MasterSettingsWidget
 
 class MasterOverviewDialog(QDialog):
     FILTERS = (
-        ("all", "Alle", QStyle.SP_FileDialogDetailedView),
-        ("interactive", "Normale Tools", QStyle.SP_FileDialogListView),
-        ("background", "Hintergrundtools", QStyle.SP_ComputerIcon),
-        ("experimental", "Experimental", QStyle.SP_MessageBoxWarning),
-        ("favorites", "Favoriten", QStyle.SP_DirHomeIcon),
-        ("settings", "Einstellungen", QStyle.SP_FileDialogContentsView),
+        ("all", "Alle Plugins", "PhPuzzlePiece.svg"),
+        ("installed", "Installierte Plugins", "IcOutlineLibraryAddCheck.svg"),
+        ("background", "Hintergrundtools", "PhSelectionBackground.svg"),
+        ("experimental", "Experimental", "IcOutlineScience.svg"),
+        ("favorites", "Favoriten", "IcBaselineStarBorder.svg"),
     )
 
     def __init__(self, plugin_controller, parent=None):
@@ -54,6 +53,7 @@ class MasterOverviewDialog(QDialog):
         self._auth_default_size = QSize(640, 880)
         self._auth_min_size = QSize(560, 760)
         self._dialog_mode = None
+        self._settings_active = False
 
         self.setObjectName("masterOverviewDialog")
         self.setWindowTitle("Erweiterungen | Katalog")
@@ -86,7 +86,7 @@ class MasterOverviewDialog(QDialog):
 
         self.sidebar_frame = QFrame(self.catalog_page)
         self.sidebar_frame.setObjectName("sidebarFrame")
-        self.sidebar_frame.setFixedWidth(184)
+        self.sidebar_frame.setFixedWidth(272)
         sidebar_layout = QVBoxLayout(self.sidebar_frame)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
@@ -98,8 +98,18 @@ class MasterOverviewDialog(QDialog):
         self.filter_list.setSpacing(0)
         self.filter_list.setIconSize(QSize(28, 28))
         self.filter_list.setUniformItemSizes(True)
-        self.filter_list.currentItemChanged.connect(self._apply_filters)
+        self.filter_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.filter_list.currentItemChanged.connect(self._handle_filter_selection_changed)
         sidebar_layout.addWidget(self.filter_list, 1)
+
+        self.settings_nav_button = QPushButton("Einstellungen", self.sidebar_frame)
+        self.settings_nav_button.setObjectName("sidebarSettingsButton")
+        self.settings_nav_button.setCheckable(True)
+        self.settings_nav_button.setIcon(self._sidebar_icon("CarbonSettings.svg"))
+        self.settings_nav_button.setIconSize(QSize(26, 26))
+        self.settings_nav_button.setFixedHeight(82)
+        self.settings_nav_button.clicked.connect(self._open_settings_from_sidebar)
+        sidebar_layout.addWidget(self.settings_nav_button)
         layout.addWidget(self.sidebar_frame)
 
         self.workspace_frame = QFrame(self.catalog_page)
@@ -669,6 +679,35 @@ class MasterOverviewDialog(QDialog):
             return QPixmap()
         return pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
+    def _tinted_svg_pixmap(self, asset_name, color, size):
+        svg_path = self.plugin_controller.plugin_dir / "assets" / asset_name
+        try:
+            svg_text = svg_path.read_text(encoding="utf-8")
+        except OSError:
+            return QPixmap()
+
+        tint = color.name() if isinstance(color, QColor) else str(color)
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(svg_text.replace("currentColor", tint).encode("utf-8"), "SVG"):
+            return QPixmap()
+        return pixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+    def _sidebar_icon(self, asset_name):
+        icon = QIcon()
+        normal = self._tinted_svg_pixmap(asset_name, QColor("#f5f5f3"), 28)
+        selected = self._tinted_svg_pixmap(asset_name, QColor("#111111"), 28)
+        disabled = self._tinted_svg_pixmap(asset_name, QColor("#999999"), 28)
+        if not normal.isNull():
+            icon.addPixmap(normal, QIcon.Normal, QIcon.Off)
+            icon.addPixmap(normal, QIcon.Active, QIcon.Off)
+        if not selected.isNull():
+            icon.addPixmap(selected, QIcon.Selected, QIcon.Off)
+            icon.addPixmap(selected, QIcon.Normal, QIcon.On)
+            icon.addPixmap(selected, QIcon.Active, QIcon.On)
+        if not disabled.isNull():
+            icon.addPixmap(disabled, QIcon.Disabled, QIcon.Off)
+        return icon
+
     def _cover_pixmap(self, path, width, height):
         pixmap = QPixmap(str(path))
         if pixmap.isNull():
@@ -747,7 +786,7 @@ class MasterOverviewDialog(QDialog):
         self._populate_filters()
         self._apply_filters(preferred_key=current_key)
         self.catalog_count_badge.setText(f"{len(self._all_rows)} Module")
-        if self._active_filter_key() == "settings":
+        if self._settings_active:
             self.setWindowTitle("Erweiterungen | Einstellungen")
         else:
             self.setWindowTitle(
@@ -1026,28 +1065,45 @@ class MasterOverviewDialog(QDialog):
                 border: none;
             }
             QFrame#sidebarFrame {
-                background: #8f8f8f;
-                border-right: 1px solid palette(mid);
+                background: #666666;
+                border-right: 1px solid #5d5d5d;
             }
             QListWidget#filterList {
-                background: #8f8f8f;
+                background: transparent;
                 border: none;
                 outline: 0;
-                color: white;
+                color: #f5f5f3;
                 padding: 0;
             }
             QListWidget#filterList::item {
-                padding: 7px 8px 7px 18px;
+                padding: 0 16px 0 26px;
                 margin: 0;
             }
             QListWidget#filterList::item:hover {
-                background: #9a9a9a;
-                padding: 7px 8px 7px 18px;
+                background: #737373;
+                color: #ffffff;
+                padding: 0 16px 0 26px;
             }
             QListWidget#filterList::item:selected {
-                background: palette(window);
-                color: palette(window-text);
-                padding: 7px 8px 7px 18px;
+                background: #ffffff;
+                color: #111111;
+                padding: 0 16px 0 26px;
+            }
+            QPushButton#sidebarSettingsButton {
+                background: #050505;
+                color: #ffffff;
+                border: none;
+                border-top: 1px solid #1f1f1f;
+                text-align: left;
+                padding: 0 18px 0 26px;
+                font-size: 14px;
+                font-weight: 500;
+            }
+            QPushButton#sidebarSettingsButton:hover {
+                background: #111111;
+            }
+            QPushButton#sidebarSettingsButton:checked {
+                background: #121212;
             }
             QFrame#workspaceFrame {
                 background: transparent;
@@ -1174,10 +1230,10 @@ class MasterOverviewDialog(QDialog):
             "all": sum(
                 1 for row in self._all_rows if not row["is_experimental"]
             ),
-            "interactive": sum(
+            "installed": sum(
                 1
                 for row in self._all_rows
-                if row["tool_type"] == "interactive" and not row["is_experimental"]
+                if row["is_installed"] and not row["is_experimental"]
             ),
             "background": sum(
                 1
@@ -1192,22 +1248,17 @@ class MasterOverviewDialog(QDialog):
                 for row in self._all_rows
                 if row["is_favorite"] and not row["is_experimental"]
             ),
-            "settings": 0,
         }
 
         self.filter_list.blockSignals(True)
         self.filter_list.clear()
-        style = self.style()
         fallback_item = None
 
-        for filter_key, label, icon_role in self.FILTERS:
-            item = QListWidgetItem(style.standardIcon(icon_role), label)
+        for filter_key, label, asset_name in self.FILTERS:
+            item = QListWidgetItem(self._sidebar_icon(asset_name), label)
             item.setData(Qt.UserRole, filter_key)
-            if filter_key == "settings":
-                item.setToolTip(label)
-            else:
-                item.setToolTip(f"{label}: {counts[filter_key]} Module")
-            item.setSizeHint(QSize(0, 50))
+            item.setToolTip(f"{label}: {counts[filter_key]} Module")
+            item.setSizeHint(QSize(0, 84))
             self.filter_list.addItem(item)
             if filter_key == current_filter:
                 fallback_item = item
@@ -1224,12 +1275,23 @@ class MasterOverviewDialog(QDialog):
             return "all"
         return current_item.data(Qt.UserRole) or "all"
 
+    def _handle_filter_selection_changed(self, *_args):
+        self._settings_active = False
+        self.settings_nav_button.setChecked(False)
+        self._apply_filters()
+
+    def _open_settings_from_sidebar(self):
+        self._settings_active = True
+        self.settings_nav_button.setChecked(True)
+        self._apply_filters()
+
     def _apply_filters(self, *_args, preferred_key=None):
-        filter_key = self._active_filter_key()
-        if filter_key == "settings":
+        if self._settings_active:
             self._show_settings_view()
+            self.setWindowTitle("Erweiterungen | Einstellungen")
             return
 
+        filter_key = self._active_filter_key()
         self._show_catalog_view()
         search_term = self.search_field.text().strip().lower()
 
@@ -1286,21 +1348,21 @@ class MasterOverviewDialog(QDialog):
     def _matches_filter(self, row, filter_key):
         if filter_key == "all":
             return not row["is_experimental"]
-        if filter_key in {"interactive", "background"}:
+        if filter_key == "installed":
+            return row["is_installed"] and not row["is_experimental"]
+        if filter_key == "background":
             return row["tool_type"] == filter_key and not row["is_experimental"]
         if filter_key == "experimental":
             return row["is_experimental"]
         if filter_key == "favorites":
             return row["is_favorite"] and not row["is_experimental"]
-        if filter_key == "settings":
-            return False
         return False
 
     def _filter_label(self, filter_key):
-        for candidate_key, label, _icon_role in self.FILTERS:
+        for candidate_key, label, _asset_name in self.FILTERS:
             if candidate_key == filter_key:
                 return label
-        return "Alle"
+        return "Alle Plugins"
 
     def _module_list_label(self, row):
         label = row["label"]
@@ -1309,8 +1371,6 @@ class MasterOverviewDialog(QDialog):
         return label
 
     def _results_summary_text(self, result_count, filter_key):
-        if filter_key == "settings":
-            return ""
         filter_label = self._filter_label(filter_key)
         return f"{result_count} Module | {filter_label}"
 
@@ -1341,7 +1401,7 @@ class MasterOverviewDialog(QDialog):
         return None
 
     def _sync_details(self):
-        if self._active_filter_key() == "settings":
+        if self._settings_active:
             return
         item = self.module_list.currentItem()
         if item is None:
@@ -1548,6 +1608,8 @@ class MasterOverviewDialog(QDialog):
         self.refresh()
 
     def _show_settings_view(self):
+        self._settings_active = True
+        self.settings_nav_button.setChecked(True)
         self.workspace_title_label.setText("Einstellungen")
         self.workspace_subtitle_label.setText(
             "Zentrale Master-Einstellungen fuer separat installierbare Module."
@@ -1561,6 +1623,8 @@ class MasterOverviewDialog(QDialog):
         self.settings_widget.set_values(self.plugin_controller.get_shared_settings())
 
     def _show_catalog_view(self):
+        self._settings_active = False
+        self.settings_nav_button.setChecked(False)
         self.workspace_title_label.setText("Plugin-Katalog")
         self.workspace_subtitle_label.setText("Verwalten direkt aus dem Mastertool.")
         self.catalog_count_badge.show()
