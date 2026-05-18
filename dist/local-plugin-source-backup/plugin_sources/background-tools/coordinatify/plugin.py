@@ -97,6 +97,12 @@ class CoordinatifyPlugin:
         )
         menu.addAction(action_satellite)
 
+        action_osm_standard = QAction("OSM Standard", menu)
+        action_osm_standard.triggered.connect(
+            lambda _checked=False: self._load_osm_standard()
+        )
+        menu.addAction(action_osm_standard)
+
         action_maps = QAction("In Google Maps öffnen", menu)
         action_maps.setIcon(self._icon("icons8-google-maps-neu.svg"))
         action_maps.triggered.connect(
@@ -141,6 +147,142 @@ class CoordinatifyPlugin:
             f"&map_action=pano&viewpoint={lat:.8f},{lon:.8f}"
         )
         self._open_url(url, "Street View")
+
+    def _load_osm_standard(self):
+        if self._try_load_osm_standard_via_qms() or self._load_osm_standard_fallback():
+            self.iface.messageBar().pushMessage(
+                "Coordinatify",
+                "OSM Standard wurde geladen.",
+                level=Qgis.Success,
+                duration=3,
+            )
+            return
+
+        self.iface.messageBar().pushMessage(
+            "Coordinatify",
+            "OSM Standard konnte nicht geladen werden.",
+            level=Qgis.Warning,
+            duration=4,
+        )
+
+    def _try_load_osm_standard_via_qms(self):
+        ds = self._resolve_qms_datasource("osm_mapnik")
+        if ds is None:
+            return False
+
+        try:
+            from quick_map_services.qgis_map_helpers import add_layer_to_map
+        except Exception:
+            return False
+
+        try:
+            add_layer_to_map(ds)
+        except Exception:
+            return False
+
+        return True
+
+    def _resolve_qms_datasource(self, data_source_id):
+        plugin = self._find_quick_map_services_plugin()
+        ds_list = getattr(plugin, "ds_list", None) if plugin is not None else None
+        data_sources = getattr(ds_list, "data_sources", None)
+        if isinstance(data_sources, dict):
+            ds = data_sources.get(data_source_id)
+            if ds is not None:
+                return ds
+
+        try:
+            from quick_map_services.data_sources_list import DataSourcesList
+        except Exception:
+            return None
+
+        try:
+            imported_ds_list = DataSourcesList()
+        except Exception:
+            return None
+
+        data_sources = getattr(imported_ds_list, "data_sources", None)
+        if not isinstance(data_sources, dict):
+            return None
+        return data_sources.get(data_source_id)
+
+    def _find_quick_map_services_plugin(self):
+        try:
+            import qgis.utils as qgis_utils
+        except Exception:
+            return None
+
+        plugins = getattr(qgis_utils, "plugins", {}) or {}
+        plugin = plugins.get("quick_map_services")
+        if plugin is not None:
+            return plugin
+
+        for candidate in plugins.values():
+            if candidate is None:
+                continue
+            if candidate.__class__.__name__ in {
+                "QuickMapServices",
+                "QuickMapServicesPluginStub",
+            }:
+                return candidate
+
+        return None
+
+    def _load_osm_standard_fallback(self):
+        try:
+            from qgis.core import QgsRasterLayer
+        except Exception:
+            return False
+
+        service_url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        qgis_tms_uri = "type=xyz&zmin=0&zmax=19&url={0}".format(
+            service_url.replace("=", "%3D").replace("&", "%26")
+        )
+        layer = QgsRasterLayer(qgis_tms_uri, "OSM Standard", "wms")
+        if not layer.isValid():
+            return False
+
+        try:
+            server_properties = layer.serverProperties()
+        except Exception:
+            server_properties = None
+
+        if server_properties is not None:
+            try:
+                server_properties.setAttribution(
+                    "© OpenStreetMap contributors, CC-BY-SA"
+                )
+                server_properties.setAttributionUrl(
+                    "https://www.openstreetmap.org/copyright"
+                )
+            except Exception:
+                pass
+        else:
+            try:
+                layer.setAttribution("© OpenStreetMap contributors, CC-BY-SA")
+                layer.setAttributionUrl(
+                    "https://www.openstreetmap.org/copyright"
+                )
+            except Exception:
+                pass
+
+        try:
+            layer.setCrs(QgsCoordinateReferenceSystem.fromEpsgId(3857))
+        except Exception:
+            pass
+
+        toc_root = QgsProject.instance().layerTreeRoot()
+        selected_node = self.iface.layerTreeView().currentNode()
+        if (
+            selected_node
+            and hasattr(selected_node, "nodeType")
+            and selected_node.nodeType() == selected_node.NodeGroup
+        ):
+            toc_root = selected_node
+
+        QgsProject.instance().addMapLayer(layer, False)
+        toc_root.insertLayer(len(toc_root.children()), layer)
+        return True
 
     def _open_url(self, url, title="Web"):
         if QWebEngineView is not None:

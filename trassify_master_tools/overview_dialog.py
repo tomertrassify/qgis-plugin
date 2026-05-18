@@ -6,6 +6,7 @@ from qgis.PyQt.QtCore import QEasingCurve, QSize, Qt, QTimer, QVariantAnimation
 from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -317,6 +318,13 @@ class MasterOverviewDialog(QDialog):
         self.module_section_label = QLabel(self._tr("overview.section.all_modules"), module_panel)
         self.module_section_label.setObjectName("sectionTitleLabel")
         module_header_layout.addWidget(self.module_section_label, 1)
+
+        self.show_experimental_checkbox = QCheckBox(module_panel)
+        self.show_experimental_checkbox.setObjectName("showExperimentalCheckbox")
+        self.show_experimental_checkbox.setChecked(False)
+        self.show_experimental_checkbox.setVisible(False)
+        self.show_experimental_checkbox.toggled.connect(self._apply_filters)
+        module_header_layout.addWidget(self.show_experimental_checkbox, 0, Qt.AlignVCenter)
 
         self.results_summary_label = QLabel("", module_panel)
         self.results_summary_label.setObjectName("resultsSummaryLabel")
@@ -929,6 +937,9 @@ class MasterOverviewDialog(QDialog):
         self.settings_nav_button.setText(self._tr("overview.sidebar.settings"))
         self.search_field.setPlaceholderText(self._tr("overview.search_placeholder"))
         self.module_section_label.setText(self._tr("overview.section.all_modules"))
+        self.show_experimental_checkbox.setText(
+            self._tr("overview.filter.show_experimental")
+        )
         self.settings_save_button.setText(self._tr("overview.settings.save"))
         self.settings_restore_button.setText(self._tr("overview.settings.restore"))
         self.settings_reload_button.setText(self._tr("overview.settings.reload"))
@@ -1431,6 +1442,10 @@ class MasterOverviewDialog(QDialog):
             QLabel#detailAboutLabel {
                 color: palette(mid);
             }
+            QCheckBox#showExperimentalCheckbox {
+                color: palette(mid);
+                spacing: 6px;
+            }
             QLabel#catalogCountBadge {
                 color: palette(mid);
                 font-weight: 700;
@@ -1613,6 +1628,7 @@ class MasterOverviewDialog(QDialog):
 
         filter_key = self._active_filter_key()
         self._show_catalog_view()
+        self.show_experimental_checkbox.setVisible(filter_key == "all")
         search_term = self.search_field.text().strip().lower()
 
         self.module_list.blockSignals(True)
@@ -1667,7 +1683,9 @@ class MasterOverviewDialog(QDialog):
 
     def _matches_filter(self, row, filter_key):
         if filter_key == "all":
-            return True
+            if self.show_experimental_checkbox.isChecked():
+                return True
+            return not row["is_experimental"]
         if filter_key == "installed":
             return row["is_installed"]
         if filter_key == "not_installed":
