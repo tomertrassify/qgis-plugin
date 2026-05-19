@@ -144,7 +144,7 @@ class TrassifyMasterToolsPlugin:
 
     def show_settings(self):
         dialog = MasterSettingsDialog(self, self.iface.mainWindow())
-        if dialog.exec_() != dialog.Accepted:
+        if dialog.exec() != dialog.Accepted:
             return
 
         self.apply_settings_values(dialog.values(), announce=True)

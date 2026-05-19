@@ -1,5 +1,5 @@
 {
-  "generated_on": "2026-05-11",
+  "generated_on": "2026-05-19",
   "plugins_xml_url": "https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugins.xml",
   "modules": [
     {
@@ -126,11 +126,11 @@
       "metadata": {
         "name": "Coordinatify",
         "qgisMinimumVersion": "3.16",
-        "description": "F\u00fcgt im Karten-Rechtsklickmen\u00fc Aktionen f\u00fcr Google Maps und Street View im QGIS-Fenster sowie Adresse kopieren hinzu.",
-        "version": "1.3.1",
+        "description": "F\u00fcgt im Karten-Rechtsklickmen\u00fc Aktionen f\u00fcr Google Maps, Street View, OSM Standard und Adresse kopieren hinzu.",
+        "version": "1.4.0",
         "author": "Codex",
         "email": "",
-        "about": "Rechtsklick auf die Karte: Google Maps und Street View im QGIS-Fenster \u00f6ffnen, Adresse kopieren und Bundesland anzeigen.",
+        "about": "Rechtsklick auf die Karte: Google Maps und Street View im QGIS-Fenster \u00f6ffnen, Adresse kopieren, OSM Standard direkt laden und das Bundesland anzeigen. OSM Standard nutzt bevorzugt die QuickMapServices-Ladelogik und f\u00e4llt sonst auf einen direkten XYZ-Layer zur\u00fcck.",
         "category": "Web",
         "icon": "assets/TablerMapPin.svg",
         "experimental": "False",
@@ -479,9 +479,9 @@
       "metadata": {
         "name": "Custom Toolbar Overlay",
         "description": "Erstellt eigene QGIS-Werkzeugleisten aus vorhandenen Toolbar-Tools und blendet ungenutzte Standardleisten aus.",
-        "version": "0.3.22",
+        "version": "0.3.23",
         "qgisMinimumVersion": "3.28",
-        "qgisMaximumVersion": "3.99",
+        "qgisMaximumVersion": "4.99",
         "author": "OpenAI Codex",
         "email": "",
         "about": "Mit diesem Plugin lassen sich kompakte eigene Werkzeugleisten aus vorhandenen QGIS-Toolbar-Actions aufbauen. Im Dialog koennen Standardleisten ein- oder ausgeblendet, eingebaute Vorlagen genutzt, bestehende QGIS-Standardleisten als eigene Kopie uebernommen, eigene Leisten mit doppelten Werkzeugen oder eigenen Dropdown-Gruppen angelegt sowie Branding und Plugin-Button per Checkbox gesteuert werden. Sichtbarkeitsaenderungen an Werkzeugleisten, die direkt in QGIS erfolgen, werden zurueck in die Plugin-Einstellungen synchronisiert. Eigene Werkzeugleisten verwenden statische Proxy-Kopien, damit originale QGIS-Tools und Dropdowns technisch unangetastet bleiben, spiegeln aber weiterhin den aktiv/deaktiviert-Status der QGIS-Originale inklusive des echten Toolbar-Widget-Status. Native QGIS-Dropdown-Buttons verwenden stabile Root-IDs statt fluechtiger Unteraktions-IDs, folgen dem aktuell im Original ausgewaehlten Unterwerkzeug samt Icon und behandeln geloeschte Qt-Widgets als harmlosen Refresh-Ausfall statt als Python-Fehler. Fuer das QGIS-Stuetzpunkt-/Knotenwerkzeug wird zusaetzlich ein gezielter Sonderfall ueber die offiziellen Interface-Actions genutzt, damit Hauptklick und Dropdown nicht an einem falschen generischen Geometriemenue haengen. Der Disabled-Zustand wird zusaetzlich visuell als deaktiviertes Icon auf dem Custom-Button gerendert. Tools aus Nebenfenstern wie Georeferenzierer werden aus Sicherheitsgruenden nicht mehr als generische Quelle uebernommen. Positionen eigener Werkzeugleisten bleiben beim Speichern erhalten und werden bei einem normalen QGIS-Neustart wiederhergestellt. Ein Toolbar-Debug-Export hilft bei QGIS-Sonderfaellen. Ein Reset-Button setzt die Plugin-Konfiguration auf den sichtbaren QGIS-Standard zurueck.",
@@ -493,7 +493,6 @@
         "repository": "",
         "experimental": "False",
         "deprecated": "False",
-        "supportsQt6": "True",
         "hasProcessingProvider": "False"
       }
     },
