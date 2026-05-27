@@ -48,14 +48,18 @@ def main() -> int:
     )
     master_entry = build_master_entry(root_dir, raw_base_url=raw_base_url)
     catalog_entries = []
+    packaged_catalog_entries = []
     if args.include_public_packages:
         catalog_entries = build_catalog_entries(root_dir, raw_base_url)
+        packaged_catalog_entries = [
+            entry for entry in catalog_entries if entry.get("source_dir")
+        ]
 
     build_master_zip(root_dir)
     copy_master_zip_to_root(root_dir, dist_dir, master_entry["metadata"]["version"])
 
     if args.include_public_packages:
-        for entry in catalog_entries:
+        for entry in packaged_catalog_entries:
             source_dir = Path(entry["source_dir"])
             version = entry["metadata"].get("version", "").strip() or "dev"
             versioned_zip = versioned_zip_path(dist_dir, entry["package"], version)
@@ -64,7 +68,7 @@ def main() -> int:
             build_plugin_zip(source_dir, entry["package"], versioned_zip)
             shutil.copyfile(versioned_zip, stable_zip)
 
-    write_plugins_xml([master_entry, *catalog_entries], root_dir / "plugins.xml")
+    write_plugins_xml([master_entry, *packaged_catalog_entries], root_dir / "plugins.xml")
     return 0
 
 

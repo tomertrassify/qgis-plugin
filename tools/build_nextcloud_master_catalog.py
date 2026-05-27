@@ -343,22 +343,38 @@ def build_catalog(repo_root: Path, output_dir: Path) -> tuple[int, list[str]]:
     for plugin_spec in manifest:
         package_name = str(plugin_spec["package"]).strip()
         source_dir = source_dir_for_spec(repo_root, plugin_spec)
-        metadata = read_metadata(source_dir / "metadata.txt")
+        has_local_source = source_dir is not None and source_dir.is_dir()
+        metadata = dict(plugin_spec.get("metadata") or {})
+        if has_local_source:
+            source_metadata = read_metadata(source_dir / "metadata.txt")
+            if source_metadata:
+                metadata = {**metadata, **source_metadata}
 
-        if not source_dir.is_dir():
+        archive_path = str(plugin_spec.get("archive_path") or "").strip()
+        remote_version = str(
+            plugin_spec.get("remote_version")
+            or metadata.get("version")
+            or ""
+        ).strip()
+        groups = list(plugin_spec.get("groups") or [])
+
+        if has_local_source:
+            target_zip = packages_dir / f"{package_name}.zip"
+            build_plugin_zip(source_dir, package_name, target_zip)
+            archive_path = archive_path or f"packages/{target_zip.name}"
+            remote_version = remote_version or str(metadata.get("version") or "").strip()
+        elif not archive_path:
             warnings.append(f"Fehlende Plugin-Quelle uebersprungen: {package_name}")
             continue
 
-        target_zip = packages_dir / f"{package_name}.zip"
-        build_plugin_zip(source_dir, package_name, target_zip)
         modules.append(
             {
                 "key": plugin_spec["key"],
                 "label": plugin_spec["label"],
                 "package": package_name,
-                "version": str(metadata.get("version") or "").strip(),
-                "archive_path": f"packages/{target_zip.name}",
-                "groups": [],
+                "version": remote_version,
+                "archive_path": archive_path,
+                "groups": groups,
             }
         )
 

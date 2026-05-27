@@ -99,8 +99,12 @@ def build_plugins_xml_url(raw_base_url: str) -> str:
     return f"{raw_base_url}/plugins.xml"
 
 
-def source_dir_for_spec(root_dir: Path, spec: dict) -> Path:
-    source_path = Path(str(spec["source_path"] or "").strip())
+def source_dir_for_spec(root_dir: Path, spec: dict) -> Path | None:
+    source_path_text = str(spec.get("source_path") or "").strip()
+    if not source_path_text:
+        return None
+
+    source_path = Path(source_path_text)
     backup_dir = root_dir / LOCAL_PLUGIN_SOURCE_BACKUP_DIR / source_path
     if backup_dir.is_dir():
         return backup_dir
@@ -121,29 +125,47 @@ def build_catalog_entries(root_dir: Path, raw_base_url: str) -> list[dict]:
 
     for spec in load_manifest(root_dir):
         source_dir = source_dir_for_spec(root_dir, spec)
-        metadata_path = source_dir / "metadata.txt"
-        metadata = read_metadata(metadata_path)
-        icon_source_path = resolve_icon_source_path(source_dir, metadata.get("icon", ""))
+        has_local_source = source_dir is not None and source_dir.is_dir()
+        metadata = dict(spec.get("metadata") or {})
+        metadata_path = None
+        if has_local_source:
+            metadata_path = source_dir / "metadata.txt"
+            source_metadata = read_metadata(metadata_path)
+            if source_metadata:
+                metadata = {**metadata, **source_metadata}
 
-        icon_relative_path = ""
-        if icon_source_path is not None:
+        icon_source_path = None
+        if has_local_source:
+            icon_source_path = resolve_icon_source_path(source_dir, metadata.get("icon", ""))
+
+        icon_relative_path = str(spec.get("icon_relative_path") or "").strip()
+        if not icon_relative_path and icon_source_path is not None:
             icon_relative_path = f"icons/{spec['package']}{icon_source_path.suffix.lower() or '.svg'}"
+
+        download_url = str(spec.get("download_url") or "").strip()
+        if not download_url and has_local_source:
+            download_url = f"{raw_base_url}/{stable_zip_name(spec['package'])}"
+
+        icon_url = str(spec.get("icon_url") or "").strip()
+        if not icon_url:
+            icon_url = build_icon_url(raw_base_url, icon_source_path, root_dir)
 
         entry = {
             "key": spec["key"],
             "label": spec["label"],
             "package": spec["package"],
-            "source_path": spec["source_path"],
+            "source_path": str(spec.get("source_path") or "").strip(),
             "tool_type": spec["tool_type"],
             "zip_name": stable_zip_name(spec["package"]),
-            "download_url": f"{raw_base_url}/{stable_zip_name(spec['package'])}",
+            "download_url": download_url,
             "plugins_xml_url": plugins_xml_url,
             "icon_relative_path": icon_relative_path,
-            "icon_url": build_icon_url(raw_base_url, icon_source_path, root_dir),
+            "icon_url": icon_url,
             "metadata": metadata,
-            "source_dir": str(source_dir),
-            "metadata_path": str(metadata_path),
+            "source_dir": str(source_dir) if has_local_source else "",
+            "metadata_path": str(metadata_path) if metadata_path else "",
             "icon_source_path": str(icon_source_path) if icon_source_path else "",
+            "has_local_source": has_local_source,
         }
         entries.append(entry)
 

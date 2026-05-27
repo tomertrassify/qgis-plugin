@@ -129,6 +129,30 @@ BUNDLED_PLUGINS = (
         "tool_type": INTERACTIVE_TOOL,
     },
     {
+        "key": "parallel_offset_digitizer",
+        "label": "Parallel Offset Digitizer",
+        "package": "parallel_offset_digitizer",
+        "source_path": "",
+        "tool_type": INTERACTIVE_TOOL,
+        "archive_path": "packages/parallel_offset_digitizer.zip",
+        "metadata": {
+            "name": "Parallel Offset Digitizer",
+            "version": "1.2.1",
+        },
+    },
+    {
+        "key": "pdf2vektor",
+        "label": "PDF2Vektor",
+        "package": "pdf2vektor",
+        "source_path": "",
+        "tool_type": INTERACTIVE_TOOL,
+        "archive_path": "packages/pdf2vektor.zip",
+        "metadata": {
+            "name": "PDF2Vektor",
+            "version": "2.0.0",
+        },
+    },
+    {
         "key": "export_pro",
         "label": "Export Pro",
         "package": "verpacken_pro",

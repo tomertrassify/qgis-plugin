@@ -36,7 +36,7 @@
       "key": "coordinatify",
       "label": "Coordinatify",
       "package": "coordinatify",
-      "version": "1.3.1",
+      "version": "1.4.0",
       "archive_path": "packages/coordinatify.zip",
       "groups": []
     },
@@ -132,8 +132,24 @@
       "key": "custom_toolbar_overlay",
       "label": "Custom Toolbar Overlay",
       "package": "custom_toolbar_overlay",
-      "version": "0.3.22",
+      "version": "0.3.23",
       "archive_path": "packages/custom_toolbar_overlay.zip",
+      "groups": []
+    },
+    {
+      "key": "parallel_offset_digitizer",
+      "label": "Parallel Offset Digitizer",
+      "package": "parallel_offset_digitizer",
+      "version": "1.2.1",
+      "archive_path": "packages/parallel_offset_digitizer.zip",
+      "groups": []
+    },
+    {
+      "key": "pdf2vektor",
+      "label": "PDF2Vektor",
+      "package": "pdf2vektor",
+      "version": "2.0.0",
+      "archive_path": "packages/pdf2vektor.zip",
       "groups": []
     },
     {
