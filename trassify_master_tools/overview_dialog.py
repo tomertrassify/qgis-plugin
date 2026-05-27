@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from html import escape
 
-from qgis.PyQt.QtCore import QEasingCurve, QSize, Qt, QTimer, QVariantAnimation
+from qgis.PyQt.QtCore import QSize, QTimer, QVariantAnimation
 from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
-    QAbstractItemView,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -13,14 +12,12 @@ from qgis.PyQt.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QStyle,
@@ -31,6 +28,17 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from .qt_compat import (
+    QAbstractItemViewCompat,
+    QDialogButtonBoxCompat,
+    QEasingCurveCompat,
+    QFrameCompat,
+    QHeaderViewCompat,
+    QIconCompat,
+    QPainterCompat,
+    QSizePolicyCompat,
+    QtCompat,
+)
 from .settings_dialog import MasterSettingsWidget
 
 
@@ -42,9 +50,9 @@ class AnimatedSidebarButton(QPushButton):
         self._hovered = False
         self._animation = QVariantAnimation(self)
         self._animation.setDuration(140)
-        self._animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._animation.setEasingCurve(QEasingCurveCompat.OutCubic)
         self._animation.valueChanged.connect(self._on_animation_value_changed)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(QtCompat.PointingHandCursor)
         self.setMouseTracking(True)
         self.toggled.connect(self._sync_visual_state)
         self._apply_visual_state()
@@ -158,7 +166,11 @@ class MasterOverviewDialog(QDialog):
         auth_header_layout.setSpacing(0)
         auth_header_layout.addStretch(1)
         self.auth_language_switcher = self._create_language_switcher(self.auth_page)
-        auth_header_layout.addWidget(self.auth_language_switcher["widget"], 0, Qt.AlignTop | Qt.AlignRight)
+        auth_header_layout.addWidget(
+            self.auth_language_switcher["widget"],
+            0,
+            QtCompat.AlignTop | QtCompat.AlignRight,
+        )
         auth_page_layout.addLayout(auth_header_layout)
         self.auth_widgets = self._create_auth_card(self.auth_page, compact=True)
         auth_page_layout.addWidget(self.auth_widgets["frame"], 1)
@@ -179,12 +191,12 @@ class MasterOverviewDialog(QDialog):
 
         self.filter_list = QListWidget(self.sidebar_frame)
         self.filter_list.setObjectName("filterList")
-        self.filter_list.setFrameShape(QFrame.Box)
+        self.filter_list.setFrameShape(QFrameCompat.Box)
         self.filter_list.setLineWidth(0)
         self.filter_list.setSpacing(0)
         self.filter_list.setIconSize(QSize(18, 18))
         self.filter_list.setUniformItemSizes(True)
-        self.filter_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.filter_list.setHorizontalScrollBarPolicy(QtCompat.ScrollBarAlwaysOff)
         self.filter_list.currentItemChanged.connect(self._handle_filter_selection_changed)
         sidebar_layout.addWidget(self.filter_list, 1)
 
@@ -234,11 +246,15 @@ class MasterOverviewDialog(QDialog):
 
         self.catalog_count_badge = QLabel("", self.header_frame)
         self.catalog_count_badge.setObjectName("catalogCountBadge")
-        self.catalog_count_badge.setAlignment(Qt.AlignCenter)
-        header_top_layout.addWidget(self.catalog_count_badge, 0, Qt.AlignTop)
+        self.catalog_count_badge.setAlignment(QtCompat.AlignCenter)
+        header_top_layout.addWidget(self.catalog_count_badge, 0, QtCompat.AlignTop)
 
         self.catalog_language_switcher = self._create_language_switcher(self.header_frame)
-        header_top_layout.addWidget(self.catalog_language_switcher["widget"], 0, Qt.AlignTop | Qt.AlignRight)
+        header_top_layout.addWidget(
+            self.catalog_language_switcher["widget"],
+            0,
+            QtCompat.AlignTop | QtCompat.AlignRight,
+        )
 
         controls_layout = QHBoxLayout()
         controls_layout.setSpacing(8)
@@ -253,7 +269,7 @@ class MasterOverviewDialog(QDialog):
 
         self.access_gate_widgets = self._create_auth_card(self.workspace_frame, compact=False)
         self.access_gate_frame = self.access_gate_widgets["frame"]
-        workspace_layout.addWidget(self.access_gate_frame, 0, Qt.AlignHCenter)
+        workspace_layout.addWidget(self.access_gate_frame, 0, QtCompat.AlignHCenter)
 
         self.settings_frame = QFrame(self.workspace_frame)
         self.settings_frame.setObjectName("settingsFrame")
@@ -299,7 +315,7 @@ class MasterOverviewDialog(QDialog):
 
         workspace_layout.addWidget(self.settings_frame, 1)
 
-        self.content_splitter = QSplitter(Qt.Horizontal, self.workspace_frame)
+        self.content_splitter = QSplitter(QtCompat.Horizontal, self.workspace_frame)
         self.content_splitter.setObjectName("contentSplitter")
         self.content_splitter.setChildrenCollapsible(False)
         self.content_splitter.setHandleWidth(1)
@@ -324,11 +340,15 @@ class MasterOverviewDialog(QDialog):
         self.show_experimental_checkbox.setChecked(False)
         self.show_experimental_checkbox.setVisible(False)
         self.show_experimental_checkbox.toggled.connect(self._apply_filters)
-        module_header_layout.addWidget(self.show_experimental_checkbox, 0, Qt.AlignVCenter)
+        module_header_layout.addWidget(
+            self.show_experimental_checkbox, 0, QtCompat.AlignVCenter
+        )
 
         self.results_summary_label = QLabel("", module_panel)
         self.results_summary_label.setObjectName("resultsSummaryLabel")
-        self.results_summary_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.results_summary_label.setAlignment(
+            QtCompat.AlignRight | QtCompat.AlignVCenter
+        )
         module_header_layout.addWidget(self.results_summary_label)
 
         self.module_list = QTreeWidget(module_panel)
@@ -339,12 +359,14 @@ class MasterOverviewDialog(QDialog):
         self.module_list.setIndentation(0)
         self.module_list.setAlternatingRowColors(True)
         self.module_list.setUniformRowHeights(True)
-        self.module_list.setFrameShape(QFrame.NoFrame)
-        self.module_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.module_list.setFrameShape(QFrameCompat.NoFrame)
+        self.module_list.setSelectionMode(QAbstractItemViewCompat.SingleSelection)
         self.module_list.setIconSize(QSize(20, 20))
         self.module_list.header().setStretchLastSection(False)
-        self.module_list.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.module_list.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.module_list.header().setSectionResizeMode(0, QHeaderViewCompat.Stretch)
+        self.module_list.header().setSectionResizeMode(
+            1, QHeaderViewCompat.ResizeToContents
+        )
         self.module_list.itemSelectionChanged.connect(self._sync_details)
         self.module_list.itemDoubleClicked.connect(self._handle_item_double_click)
         module_layout.addWidget(self.module_list, 1)
@@ -360,10 +382,17 @@ class MasterOverviewDialog(QDialog):
         self.detail_scroll_area = QScrollArea(detail_panel)
         self.detail_scroll_area.setObjectName("detailScrollArea")
         self.detail_scroll_area.setWidgetResizable(True)
-        self.detail_scroll_area.setFrameShape(QFrame.NoFrame)
-        self.detail_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.detail_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.detail_scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.detail_scroll_area.setFrameShape(QFrameCompat.NoFrame)
+        self.detail_scroll_area.setHorizontalScrollBarPolicy(
+            QtCompat.ScrollBarAlwaysOff
+        )
+        self.detail_scroll_area.setVerticalScrollBarPolicy(
+            QtCompat.ScrollBarAsNeeded
+        )
+        self.detail_scroll_area.setSizePolicy(
+            QSizePolicyCompat.Expanding,
+            QSizePolicyCompat.Expanding,
+        )
         detail_panel_layout.addWidget(self.detail_scroll_area)
 
         self.detail_content = QWidget(self.detail_scroll_area)
@@ -407,23 +436,25 @@ class MasterOverviewDialog(QDialog):
 
         self.icon_label = QLabel(self.detail_content)
         self.icon_label.setFixedSize(88, 88)
-        self.icon_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
-        header_layout.addWidget(self.icon_label, 0, Qt.AlignTop)
+        self.icon_label.setAlignment(QtCompat.AlignRight | QtCompat.AlignTop)
+        header_layout.addWidget(self.icon_label, 0, QtCompat.AlignTop)
 
         self.about_label = QLabel(self.detail_content)
         self.about_label.setObjectName("detailAboutLabel")
         self.about_label.setWordWrap(True)
-        self.about_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.about_label.setTextInteractionFlags(QtCompat.TextSelectableByMouse)
         detail_layout.addWidget(self.about_label)
 
         separator = QFrame(self.detail_content)
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
+        separator.setFrameShape(QFrameCompat.HLine)
+        separator.setFrameShadow(QFrameCompat.Sunken)
         detail_layout.addWidget(separator)
 
         self.metadata_form = QFormLayout()
-        self.metadata_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.metadata_form.setFormAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.metadata_form.setLabelAlignment(
+            QtCompat.AlignRight | QtCompat.AlignVCenter
+        )
+        self.metadata_form.setFormAlignment(QtCompat.AlignTop | QtCompat.AlignLeft)
         self.metadata_form.setHorizontalSpacing(16)
         self.metadata_form.setVerticalSpacing(10)
         detail_layout.addLayout(self.metadata_form)
@@ -466,7 +497,7 @@ class MasterOverviewDialog(QDialog):
         self.favorite_button = QToolButton(self.footer_frame)
         self.favorite_button.setObjectName("favoriteButton")
         self.favorite_button.setText("")
-        self.favorite_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.favorite_button.setToolButtonStyle(QtCompat.ToolButtonIconOnly)
         self.favorite_button.setIconSize(QSize(18, 18))
         self.favorite_button.setFixedSize(button_height, button_height)
         self.favorite_button.clicked.connect(self._toggle_selected_favorite)
@@ -493,10 +524,10 @@ class MasterOverviewDialog(QDialog):
 
         actions_layout.addStretch(1)
 
-        button_box = QDialogButtonBox(QDialogButtonBox.Close, self.footer_frame)
+        button_box = QDialogButtonBox(QDialogButtonBoxCompat.Close, self.footer_frame)
         button_box.setObjectName("dialogButtonBox")
         button_box.rejected.connect(self.reject)
-        close_button = button_box.button(QDialogButtonBox.Close)
+        close_button = button_box.button(QDialogButtonBoxCompat.Close)
         if close_button is not None:
             close_button.setObjectName("subtleButton")
             close_button.setFixedHeight(button_height)
@@ -516,7 +547,10 @@ class MasterOverviewDialog(QDialog):
     def _create_compact_auth_card(self, parent):
         frame = QFrame(parent)
         frame.setObjectName("authDialogFrame")
-        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        frame.setSizePolicy(
+            QSizePolicyCompat.Expanding,
+            QSizePolicyCompat.Expanding,
+        )
 
         frame_layout = QVBoxLayout(frame)
         frame_layout.setContentsMargins(16, 10, 16, 14)
@@ -526,8 +560,12 @@ class MasterOverviewDialog(QDialog):
         dialog_card = QFrame(frame)
         dialog_card.setObjectName("authDialogCard")
         dialog_card.setFixedWidth(320)
-        dialog_card.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        frame_layout.addWidget(dialog_card, 0, Qt.AlignHCenter | Qt.AlignVCenter)
+        dialog_card.setSizePolicy(QSizePolicyCompat.Fixed, QSizePolicyCompat.Fixed)
+        frame_layout.addWidget(
+            dialog_card,
+            0,
+            QtCompat.AlignHCenter | QtCompat.AlignVCenter,
+        )
         frame_layout.addStretch(1)
 
         shadow = QGraphicsDropShadowEffect(dialog_card)
@@ -542,7 +580,10 @@ class MasterOverviewDialog(QDialog):
 
         content_column = QWidget(dialog_card)
         content_column.setObjectName("authDialogColumn")
-        content_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        content_column.setSizePolicy(
+            QSizePolicyCompat.Expanding,
+            QSizePolicyCompat.Minimum,
+        )
         dialog_layout.addWidget(content_column)
 
         content_layout = QVBoxLayout(content_column)
@@ -551,19 +592,19 @@ class MasterOverviewDialog(QDialog):
 
         icon_label = QLabel(content_column)
         icon_label.setObjectName("authIconBadge")
-        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setAlignment(QtCompat.AlignCenter)
         icon_label.setFixedSize(44, 44)
         icon_pixmap = self._contain_pixmap(self.auth_icon_path, 44, 44)
         if not icon_pixmap.isNull():
             icon_label.setPixmap(icon_pixmap)
-        content_layout.addWidget(icon_label, 0, Qt.AlignHCenter)
+        content_layout.addWidget(icon_label, 0, QtCompat.AlignHCenter)
 
         content_layout.addSpacing(14)
 
         title_label = QLabel(self._tr("overview.auth.dialog.title"), content_column)
         title_label.setObjectName("authDialogTitleLabel")
         title_label.setWordWrap(True)
-        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setAlignment(QtCompat.AlignCenter)
         content_layout.addWidget(title_label)
 
         subtitle_label = QLabel(
@@ -572,7 +613,7 @@ class MasterOverviewDialog(QDialog):
         )
         subtitle_label.setObjectName("authDialogSubtitleLabel")
         subtitle_label.setWordWrap(True)
-        subtitle_label.setAlignment(Qt.AlignCenter)
+        subtitle_label.setAlignment(QtCompat.AlignCenter)
         content_layout.addWidget(subtitle_label)
 
         content_layout.addSpacing(30)
@@ -582,7 +623,7 @@ class MasterOverviewDialog(QDialog):
         access_label.setObjectName("authPermissionCaptionLabel")
         access_label.setFixedWidth(body_width)
         access_label.setWordWrap(True)
-        content_layout.addWidget(access_label, 0, Qt.AlignHCenter)
+        content_layout.addWidget(access_label, 0, QtCompat.AlignHCenter)
 
         content_layout.addSpacing(10)
 
@@ -592,7 +633,7 @@ class MasterOverviewDialog(QDialog):
         permission_layout = QVBoxLayout(permission_card)
         permission_layout.setContentsMargins(18, 14, 18, 14)
         permission_layout.setSpacing(0)
-        content_layout.addWidget(permission_card, 0, Qt.AlignHCenter)
+        content_layout.addWidget(permission_card, 0, QtCompat.AlignHCenter)
 
         permission_header_layout = QHBoxLayout()
         permission_header_layout.setContentsMargins(0, 0, 0, 0)
@@ -601,7 +642,7 @@ class MasterOverviewDialog(QDialog):
 
         permission_check_label = QLabel("✓", permission_card)
         permission_check_label.setObjectName("authPermissionCheckLabel")
-        permission_header_layout.addWidget(permission_check_label, 0, Qt.AlignTop)
+        permission_header_layout.addWidget(permission_check_label, 0, QtCompat.AlignTop)
 
         permission_title_label = QLabel(self._tr("overview.auth.dialog.permission_title"), permission_card)
         permission_title_label.setObjectName("authPermissionTitleLabel")
@@ -626,8 +667,8 @@ class MasterOverviewDialog(QDialog):
 
         separator = QFrame(permission_card)
         separator.setObjectName("authPermissionSeparator")
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Plain)
+        separator.setFrameShape(QFrameCompat.HLine)
+        separator.setFrameShadow(QFrameCompat.Plain)
         permission_layout.addWidget(separator)
 
         permission_layout.addSpacing(10)
@@ -635,17 +676,17 @@ class MasterOverviewDialog(QDialog):
         legal_label = QLabel(self._tr("overview.auth.dialog.legal"), permission_card)
         legal_label.setObjectName("authPermissionFootnoteLabel")
         legal_label.setWordWrap(True)
-        legal_label.setTextFormat(Qt.RichText)
+        legal_label.setTextFormat(QtCompat.RichText)
         permission_layout.addWidget(legal_label)
 
         status_label = QLabel("", content_column)
         status_label.setObjectName("authDialogStatusLabel")
         status_label.setWordWrap(True)
-        status_label.setTextFormat(Qt.PlainText)
-        status_label.setAlignment(Qt.AlignCenter)
+        status_label.setTextFormat(QtCompat.PlainText)
+        status_label.setAlignment(QtCompat.AlignCenter)
         status_label.setFixedWidth(body_width)
         content_layout.addSpacing(12)
-        content_layout.addWidget(status_label, 0, Qt.AlignHCenter)
+        content_layout.addWidget(status_label, 0, QtCompat.AlignHCenter)
 
         content_layout.addSpacing(14)
 
@@ -654,7 +695,7 @@ class MasterOverviewDialog(QDialog):
         buttons_layout = QHBoxLayout(buttons_widget)
         buttons_layout.setContentsMargins(0, 0, 0, 0)
         buttons_layout.setSpacing(8)
-        content_layout.addWidget(buttons_widget, 0, Qt.AlignHCenter)
+        content_layout.addWidget(buttons_widget, 0, QtCompat.AlignHCenter)
 
         cancel_button = QPushButton(self._tr("overview.auth.dialog.cancel"), content_column)
         cancel_button.setObjectName("authCancelButton")
@@ -676,8 +717,8 @@ class MasterOverviewDialog(QDialog):
         redirect_label.setObjectName("authRedirectLabel")
         redirect_label.setFixedWidth(body_width)
         redirect_label.setWordWrap(True)
-        redirect_label.setAlignment(Qt.AlignCenter)
-        content_layout.addWidget(redirect_label, 0, Qt.AlignHCenter)
+        redirect_label.setAlignment(QtCompat.AlignCenter)
+        content_layout.addWidget(redirect_label, 0, QtCompat.AlignHCenter)
 
         return {
             "frame": frame,
@@ -698,7 +739,7 @@ class MasterOverviewDialog(QDialog):
         frame = QFrame(parent)
         frame.setObjectName("authCard")
         frame.setFixedWidth(566)
-        frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        frame.setSizePolicy(QSizePolicyCompat.Fixed, QSizePolicyCompat.Preferred)
 
         card_layout = QVBoxLayout(frame)
         card_layout.setContentsMargins(0, 0, 0, 0)
@@ -707,26 +748,32 @@ class MasterOverviewDialog(QDialog):
         hero_image = QLabel(frame)
         hero_image.setObjectName("authHeroImage")
         hero_image.setFixedHeight(150)
-        hero_image.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        hero_image.setAlignment(Qt.AlignCenter)
+        hero_image.setSizePolicy(
+            QSizePolicyCompat.Expanding,
+            QSizePolicyCompat.Fixed,
+        )
+        hero_image.setAlignment(QtCompat.AlignCenter)
         hero_image.setMargin(0)
         card_layout.addWidget(hero_image)
 
         content_widget = QWidget(frame)
-        content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        content_widget.setSizePolicy(
+            QSizePolicyCompat.Expanding,
+            QSizePolicyCompat.Expanding,
+        )
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(24, 20, 24, 24)
         content_layout.setSpacing(12)
 
         logo_label = QLabel(content_widget)
         logo_label.setObjectName("authLogoLabel")
-        logo_label.setAlignment(Qt.AlignCenter)
-        content_layout.addWidget(logo_label, 0, Qt.AlignHCenter)
+        logo_label.setAlignment(QtCompat.AlignCenter)
+        content_layout.addWidget(logo_label, 0, QtCompat.AlignHCenter)
 
         title_label = QLabel(self._tr("overview.auth.gate.welcome_title"), content_widget)
         title_label.setObjectName("authTitleLabel")
         title_label.setWordWrap(True)
-        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setAlignment(QtCompat.AlignCenter)
         content_layout.addWidget(title_label)
 
         intro_label = QLabel(
@@ -735,20 +782,20 @@ class MasterOverviewDialog(QDialog):
         )
         intro_label.setObjectName("authIntroLabel")
         intro_label.setWordWrap(True)
-        intro_label.setAlignment(Qt.AlignCenter)
+        intro_label.setAlignment(QtCompat.AlignCenter)
         content_layout.addWidget(intro_label)
 
         status_label = QLabel("", content_widget)
         status_label.setObjectName("authStatusCardLabel")
         status_label.setWordWrap(True)
-        status_label.setTextFormat(Qt.PlainText)
-        status_label.setAlignment(Qt.AlignCenter)
+        status_label.setTextFormat(QtCompat.PlainText)
+        status_label.setAlignment(QtCompat.AlignCenter)
         content_layout.addWidget(status_label)
 
         account_label = QLabel("", content_widget)
         account_label.setObjectName("authAccountLabel")
         account_label.setWordWrap(True)
-        account_label.setAlignment(Qt.AlignCenter)
+        account_label.setAlignment(QtCompat.AlignCenter)
         content_layout.addWidget(account_label)
 
         primary_row = QHBoxLayout()
@@ -804,7 +851,12 @@ class MasterOverviewDialog(QDialog):
         pixmap = QPixmap(str(path))
         if pixmap.isNull():
             return QPixmap()
-        return pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return pixmap.scaled(
+            width,
+            height,
+            QtCompat.KeepAspectRatio,
+            QtCompat.SmoothTransformation,
+        )
 
     def _tinted_svg_pixmap(self, asset_name, color, size):
         svg_path = self.plugin_controller.plugin_dir / "assets" / asset_name
@@ -827,10 +879,10 @@ class MasterOverviewDialog(QDialog):
                 return tinted_pixmap
 
         tinted = QPixmap(pixmap.size())
-        tinted.fill(Qt.transparent)
+        tinted.fill(QtCompat.Transparent)
         painter = QPainter(tinted)
         painter.drawPixmap(0, 0, pixmap)
-        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.setCompositionMode(QPainterCompat.CompositionMode_SourceIn)
         painter.fillRect(tinted.rect(), tint)
         painter.end()
         tinted.setDevicePixelRatio(pixmap.devicePixelRatio())
@@ -854,8 +906,8 @@ class MasterOverviewDialog(QDialog):
         scaled = pixmap.scaled(
             target_size,
             target_size,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
+            QtCompat.KeepAspectRatio,
+            QtCompat.SmoothTransformation,
         )
         scaled.setDevicePixelRatio(device_pixel_ratio)
         return scaled
@@ -866,24 +918,24 @@ class MasterOverviewDialog(QDialog):
         selected = self._tinted_svg_pixmap(asset_name, QColor("#111111"), size)
         disabled = self._tinted_svg_pixmap(asset_name, QColor("#999999"), size)
         if not normal.isNull():
-            icon.addPixmap(normal, QIcon.Normal, QIcon.Off)
-            icon.addPixmap(normal, QIcon.Active, QIcon.Off)
+            icon.addPixmap(normal, QIconCompat.Normal, QIconCompat.Off)
+            icon.addPixmap(normal, QIconCompat.Active, QIconCompat.Off)
         if not selected.isNull():
-            icon.addPixmap(selected, QIcon.Selected, QIcon.Off)
-            icon.addPixmap(selected, QIcon.Normal, QIcon.On)
-            icon.addPixmap(selected, QIcon.Active, QIcon.On)
+            icon.addPixmap(selected, QIconCompat.Selected, QIconCompat.Off)
+            icon.addPixmap(selected, QIconCompat.Normal, QIconCompat.On)
+            icon.addPixmap(selected, QIconCompat.Active, QIconCompat.On)
         if not disabled.isNull():
-            icon.addPixmap(disabled, QIcon.Disabled, QIcon.Off)
+            icon.addPixmap(disabled, QIconCompat.Disabled, QIconCompat.Off)
         return icon
 
     def _single_color_sidebar_icon(self, asset_name, color, size=18):
         icon = QIcon()
         pixmap = self._tinted_svg_pixmap(asset_name, color, size)
         if not pixmap.isNull():
-            icon.addPixmap(pixmap, QIcon.Normal, QIcon.Off)
-            icon.addPixmap(pixmap, QIcon.Active, QIcon.Off)
-            icon.addPixmap(pixmap, QIcon.Selected, QIcon.Off)
-            icon.addPixmap(pixmap, QIcon.Normal, QIcon.On)
+            icon.addPixmap(pixmap, QIconCompat.Normal, QIconCompat.Off)
+            icon.addPixmap(pixmap, QIconCompat.Active, QIconCompat.Off)
+            icon.addPixmap(pixmap, QIconCompat.Selected, QIconCompat.Off)
+            icon.addPixmap(pixmap, QIconCompat.Normal, QIconCompat.On)
         return icon
 
     def _language_icon_asset(self, language_code):
@@ -904,7 +956,7 @@ class MasterOverviewDialog(QDialog):
         for language_code in ("de", "en"):
             button = QToolButton(frame)
             button.setObjectName("languageSwitcherButton")
-            button.setCursor(Qt.PointingHandCursor)
+            button.setCursor(QtCompat.PointingHandCursor)
             button.setCheckable(True)
             button.setAutoRaise(True)
             button.setIcon(
@@ -967,7 +1019,7 @@ class MasterOverviewDialog(QDialog):
 
         close_button = self.findChild(QDialogButtonBox, "dialogButtonBox")
         if close_button is not None:
-            button = close_button.button(QDialogButtonBox.Close)
+            button = close_button.button(QDialogButtonBoxCompat.Close)
             if button is not None:
                 button.setText(self._tr("overview.action.close"))
 
@@ -988,7 +1040,12 @@ class MasterOverviewDialog(QDialog):
         pixmap = QPixmap(str(path))
         if pixmap.isNull():
             return QPixmap()
-        scaled = pixmap.scaled(width, height, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        scaled = pixmap.scaled(
+            width,
+            height,
+            QtCompat.KeepAspectRatioByExpanding,
+            QtCompat.SmoothTransformation,
+        )
         offset_x = max(0, (scaled.width() - width) // 2)
         offset_y = max(0, (scaled.height() - height) // 2)
         return scaled.copy(offset_x, offset_y, width, height)
@@ -1042,7 +1099,11 @@ class MasterOverviewDialog(QDialog):
 
         self._set_dialog_mode("catalog")
         current_item = self.module_list.currentItem()
-        current_key = current_item.data(0, Qt.UserRole) if current_item is not None else None
+        current_key = (
+            current_item.data(0, QtCompat.UserRole)
+            if current_item is not None
+            else None
+        )
         self._all_rows = sorted(
             self.plugin_controller.get_module_rows(),
             key=lambda row: row["label"].lower(),
@@ -1174,7 +1235,7 @@ class MasterOverviewDialog(QDialog):
             )
         account_text = "<br>".join(account_parts)
         self.access_gate_widgets["account"].setText(account_text)
-        self.access_gate_widgets["account"].setTextFormat(Qt.RichText)
+        self.access_gate_widgets["account"].setTextFormat(QtCompat.RichText)
 
         is_authorizing = status == "authorizing"
         self.access_gate_widgets["login"].setEnabled(not is_authorizing)
@@ -1585,7 +1646,7 @@ class MasterOverviewDialog(QDialog):
         for filter_key, label_key, asset_name in self.FILTERS:
             label = self._tr(label_key)
             item = QListWidgetItem(self._sidebar_icon(asset_name), label)
-            item.setData(Qt.UserRole, filter_key)
+            item.setData(QtCompat.UserRole, filter_key)
             item.setToolTip(
                 self._tr(
                     "overview.filter.tooltip",
@@ -1608,7 +1669,7 @@ class MasterOverviewDialog(QDialog):
         current_item = self.filter_list.currentItem()
         if current_item is None:
             return "all"
-        return current_item.data(Qt.UserRole) or "all"
+        return current_item.data(QtCompat.UserRole) or "all"
 
     def _handle_filter_selection_changed(self, *_args):
         self._settings_active = False
@@ -1649,11 +1710,11 @@ class MasterOverviewDialog(QDialog):
 
         for row in visible_rows:
             item = QTreeWidgetItem([self._module_list_label(row), ""])
-            item.setData(0, Qt.UserRole, row["key"])
-            item.setData(0, Qt.UserRole + 1, row["status_code"])
+            item.setData(0, QtCompat.UserRole, row["key"])
+            item.setData(0, QtCompat.UserRole + 1, row["status_code"])
             item.setToolTip(0, f"{row['status_text']}: {row['detail']}")
             item.setIcon(0, self._decorated_module_icon(row, 20, 12, show_favorite_badge=False))
-            item.setTextAlignment(1, Qt.AlignCenter)
+            item.setTextAlignment(1, QtCompat.AlignCenter)
             item.setToolTip(1, item.toolTip(0))
             status_icon = self._status_icon(row)
             if status_icon is not None:
@@ -1742,7 +1803,7 @@ class MasterOverviewDialog(QDialog):
     def _find_item_by_key(self, wanted_key):
         for index in range(self.module_list.topLevelItemCount()):
             item = self.module_list.topLevelItem(index)
-            if item.data(0, Qt.UserRole) == wanted_key:
+            if item.data(0, QtCompat.UserRole) == wanted_key:
                 return item
         return None
 
@@ -1760,7 +1821,7 @@ class MasterOverviewDialog(QDialog):
             self.secondary_button.setText(self._tr("overview.action.remove"))
             return
 
-        row = self._rows_by_key.get(item.data(0, Qt.UserRole))
+        row = self._rows_by_key.get(item.data(0, QtCompat.UserRole))
         if row is None:
             self._update_favorite_button(None)
             self.open_button.setEnabled(False)
@@ -1834,7 +1895,7 @@ class MasterOverviewDialog(QDialog):
                 detail=escape(row["detail"]),
             )
         )
-        self.status_label.setTextFormat(Qt.RichText)
+        self.status_label.setTextFormat(QtCompat.RichText)
 
         about_text = row["about"]
         favorite_hint = ""
@@ -1898,11 +1959,11 @@ class MasterOverviewDialog(QDialog):
     def _create_value_label(self, parent, rich_text=False):
         label = QLabel(parent)
         label.setWordWrap(True)
-        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        label.setTextInteractionFlags(QtCompat.TextSelectableByMouse)
         if rich_text:
-            label.setTextFormat(Qt.RichText)
+            label.setTextFormat(QtCompat.RichText)
             label.setOpenExternalLinks(True)
-            label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            label.setTextInteractionFlags(QtCompat.TextBrowserInteraction)
         return label
 
     def _run_primary_action(self):
@@ -1910,7 +1971,7 @@ class MasterOverviewDialog(QDialog):
         if item is None:
             return
 
-        key = item.data(0, Qt.UserRole)
+        key = item.data(0, QtCompat.UserRole)
         if key is None:
             return
 
@@ -1922,7 +1983,7 @@ class MasterOverviewDialog(QDialog):
         if item is None:
             return
 
-        key = item.data(0, Qt.UserRole)
+        key = item.data(0, QtCompat.UserRole)
         if key is None:
             return
 
@@ -1934,7 +1995,7 @@ class MasterOverviewDialog(QDialog):
         if item is None:
             return
 
-        key = item.data(0, Qt.UserRole)
+        key = item.data(0, QtCompat.UserRole)
         if key is None:
             return
 
@@ -1942,7 +2003,7 @@ class MasterOverviewDialog(QDialog):
         self.refresh()
 
     def _handle_item_double_click(self, item, _column):
-        row = self._rows_by_key.get(item.data(0, Qt.UserRole))
+        row = self._rows_by_key.get(item.data(0, QtCompat.UserRole))
         if row is None or not self.plugin_controller.can_run_primary_action(row):
             return
         self._run_primary_action()
@@ -2005,7 +2066,7 @@ class MasterOverviewDialog(QDialog):
         if item is None:
             return
 
-        key = item.data(0, Qt.UserRole)
+        key = item.data(0, QtCompat.UserRole)
         if key is None:
             return
 
@@ -2040,7 +2101,7 @@ class MasterOverviewDialog(QDialog):
         base_pixmap = base_icon.pixmap(size, size)
         if base_pixmap.isNull():
             pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.transparent)
+            pixmap.fill(QtCompat.Transparent)
         else:
             pixmap = QPixmap(base_pixmap)
 
@@ -2048,15 +2109,15 @@ class MasterOverviewDialog(QDialog):
             return pixmap
 
         painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        painter.setRenderHint(QPainterCompat.Antialiasing)
+        painter.setRenderHint(QPainterCompat.SmoothPixmapTransform)
 
         badge_icon = self._favorite_icon(row["is_favorite"])
         badge_padding = max(1, badge_size // 6)
         badge_diameter = badge_size + (badge_padding * 2)
         badge_x = size - badge_diameter
         badge_y = size - badge_diameter
-        painter.setPen(Qt.NoPen)
+        painter.setPen(QtCompat.NoPen)
         painter.setBrush(QColor(255, 255, 255, 235))
         painter.drawEllipse(badge_x, badge_y, badge_diameter, badge_diameter)
         painter.drawPixmap(

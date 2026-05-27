@@ -14,7 +14,7 @@ from zipfile import ZipFile
 
 import qgis.utils as qgis_utils
 from qgis.PyQt import sip
-from qgis.PyQt.QtCore import QSettings, Qt
+from qgis.PyQt.QtCore import QSettings
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolBar
 from qgis.core import Qgis, QgsApplication, QgsMessageLog
@@ -26,6 +26,7 @@ from .nextcloud_integration import (
     normalize_remote_path,
 )
 from .overview_dialog import MasterOverviewDialog
+from .qt_compat import QMessageBoxCompat, QtCompat
 from .settings_dialog import MasterSettingsDialog
 from .shared_settings import (
     build_postgres_ogr_uri,
@@ -364,10 +365,10 @@ class TrassifyMasterToolsPlugin:
             self.iface.mainWindow(),
             self.MENU_TITLE,
             self._tr("plugin.uninstall.confirm", label=row["label"]),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBoxCompat.Yes | QMessageBoxCompat.No,
+            QMessageBoxCompat.No,
         )
-        if question != QMessageBox.Yes:
+        if question != QMessageBoxCompat.Yes:
             return False
 
         return self._uninstall_managed_module(spec)
@@ -1117,7 +1118,7 @@ class TrassifyMasterToolsPlugin:
         if toolbar is None:
             toolbar = self.iface.mainWindow().addToolBar(self.MENU_TITLE)
             toolbar.setObjectName(self.TOOLBAR_OBJECT_NAME)
-            toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            toolbar.setToolButtonStyle(QtCompat.ToolButtonIconOnly)
             self._toolbar_created = True
         else:
             self._toolbar_created = False

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QComboBox,
@@ -17,6 +16,7 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from .qt_compat import QDialogButtonBoxCompat, QLineEditCompat, QtCompat
 from .shared_settings import (
     DEFAULT_NEXTCLOUD_CATALOG_ROOT,
     DEFAULT_SHARED_SETTINGS,
@@ -106,7 +106,7 @@ class MasterSettingsWidget(QWidget):
 
         self.general_hint_label = QLabel(self.general_page)
         self.general_hint_label.setWordWrap(True)
-        self.general_hint_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.general_hint_label.setAlignment(QtCompat.AlignTop | QtCompat.AlignLeft)
         layout.addWidget(self.general_hint_label)
         layout.addStretch(1)
 
@@ -126,7 +126,7 @@ class MasterSettingsWidget(QWidget):
         self.nextcloud_user = QLineEdit(self.nextcloud_group)
         self.nextcloud_user.setPlaceholderText("name@example.com")
         self.nextcloud_app_password = QLineEdit(self.nextcloud_group)
-        self.nextcloud_app_password.setEchoMode(QLineEdit.Password)
+        self.nextcloud_app_password.setEchoMode(QLineEditCompat.Password)
         self.nextcloud_catalog_root = QLineEdit(self.nextcloud_group)
         self.nextcloud_catalog_root.setPlaceholderText(DEFAULT_NEXTCLOUD_CATALOG_ROOT)
         self.nextcloud_folder_marker = QLineEdit(self.nextcloud_group)
@@ -175,7 +175,7 @@ class MasterSettingsWidget(QWidget):
         self.database_user = QLineEdit(self.database_group)
         self.database_user.setPlaceholderText("geoserver")
         self.database_password = QLineEdit(self.database_group)
-        self.database_password.setEchoMode(QLineEdit.Password)
+        self.database_password.setEchoMode(QLineEditCompat.Password)
         self.database_sslmode = QComboBox(self.database_group)
         self.database_sslmode.addItems(["prefer", "require", "disable", "allow", "verify-ca", "verify-full"])
 
@@ -230,7 +230,7 @@ class MasterSettingsWidget(QWidget):
         self.clickup_form = QFormLayout(self.clickup_group)
 
         self.clickup_api_token = QLineEdit(self.clickup_group)
-        self.clickup_api_token.setEchoMode(QLineEdit.Password)
+        self.clickup_api_token.setEchoMode(QLineEditCompat.Password)
         self.clickup_api_token.setPlaceholderText("pk_...")
         self.clickup_list_id = QLineEdit(self.clickup_group)
         self.clickup_list_id.setPlaceholderText("901517875704")
@@ -313,7 +313,7 @@ class MasterSettingsWidget(QWidget):
         self.set_values(DEFAULT_SHARED_SETTINGS)
 
     def _set_combo_text(self, combo_box, text):
-        index = combo_box.findText(text, Qt.MatchFixedString)
+        index = combo_box.findText(text, QtCompat.MatchFixedString)
         if index >= 0:
             combo_box.setCurrentIndex(index)
             return
@@ -347,12 +347,14 @@ class MasterSettingsDialog(QDialog):
         layout.addWidget(self.settings_widget, 1)
 
         self.button_box = QDialogButtonBox(
-            QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults,
+            QDialogButtonBoxCompat.Save
+            | QDialogButtonBoxCompat.Cancel
+            | QDialogButtonBoxCompat.RestoreDefaults,
             self,
         )
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
-        restore_button = self.button_box.button(QDialogButtonBox.RestoreDefaults)
+        restore_button = self.button_box.button(QDialogButtonBoxCompat.RestoreDefaults)
         if restore_button is not None:
             restore_button.clicked.connect(self.settings_widget.restore_defaults)
         layout.addWidget(self.button_box)
@@ -363,15 +365,15 @@ class MasterSettingsDialog(QDialog):
         self.setWindowTitle(self.plugin_controller.tr("settings.window_title"))
         self.settings_widget.apply_language()
 
-        save_button = self.button_box.button(QDialogButtonBox.Save)
+        save_button = self.button_box.button(QDialogButtonBoxCompat.Save)
         if save_button is not None:
             save_button.setText(self.plugin_controller.tr("settings.button.save"))
 
-        cancel_button = self.button_box.button(QDialogButtonBox.Cancel)
+        cancel_button = self.button_box.button(QDialogButtonBoxCompat.Cancel)
         if cancel_button is not None:
             cancel_button.setText(self.plugin_controller.tr("settings.button.cancel"))
 
-        restore_button = self.button_box.button(QDialogButtonBox.RestoreDefaults)
+        restore_button = self.button_box.button(QDialogButtonBoxCompat.RestoreDefaults)
         if restore_button is not None:
             restore_button.setText(self.plugin_controller.tr("settings.button.restore"))
 
