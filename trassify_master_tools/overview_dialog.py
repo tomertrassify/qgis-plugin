@@ -38,6 +38,7 @@ from .qt_compat import (
     QPainterCompat,
     QSizePolicyCompat,
     QtCompat,
+    unwrap_qt_type,
 )
 from .settings_dialog import MasterSettingsWidget
 
@@ -524,15 +525,18 @@ class MasterOverviewDialog(QDialog):
 
         actions_layout.addStretch(1)
 
-        button_box = QDialogButtonBox(QDialogButtonBoxCompat.Close, self.footer_frame)
-        button_box.setObjectName("dialogButtonBox")
-        button_box.rejected.connect(self.reject)
-        close_button = button_box.button(QDialogButtonBoxCompat.Close)
+        self.dialog_button_box = QDialogButtonBox(
+            QDialogButtonBoxCompat.Close,
+            self.footer_frame,
+        )
+        self.dialog_button_box.setObjectName("dialogButtonBox")
+        self.dialog_button_box.rejected.connect(self.reject)
+        close_button = self.dialog_button_box.button(QDialogButtonBoxCompat.Close)
         if close_button is not None:
             close_button.setObjectName("subtleButton")
             close_button.setFixedHeight(button_height)
             close_button.setText(self._tr("overview.action.close"))
-        actions_layout.addWidget(button_box)
+        actions_layout.addWidget(self.dialog_button_box)
 
         self.page_stack.addWidget(self.catalog_page)
         self._apply_window_styling()
@@ -1017,9 +1021,14 @@ class MasterOverviewDialog(QDialog):
             if label is not None:
                 label.setText(self._tr(key))
 
-        close_button = self.findChild(QDialogButtonBox, "dialogButtonBox")
-        if close_button is not None:
-            button = close_button.button(QDialogButtonBoxCompat.Close)
+        button_box = getattr(self, "dialog_button_box", None)
+        if button_box is None:
+            button_box = self.findChild(
+                unwrap_qt_type(QDialogButtonBox),
+                "dialogButtonBox",
+            )
+        if button_box is not None:
+            button = button_box.button(QDialogButtonBoxCompat.Close)
             if button is not None:
                 button.setText(self._tr("overview.action.close"))
 

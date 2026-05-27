@@ -26,7 +26,7 @@ from .nextcloud_integration import (
     normalize_remote_path,
 )
 from .overview_dialog import MasterOverviewDialog
-from .qt_compat import QMessageBoxCompat, QtCompat
+from .qt_compat import QMessageBoxCompat, QtCompat, unwrap_qt_type
 from .settings_dialog import MasterSettingsDialog
 from .shared_settings import (
     build_postgres_ogr_uri,
@@ -1330,7 +1330,10 @@ class TrassifyMasterToolsPlugin:
             return None
 
         try:
-            return main_window.findChild(QToolBar, self.TOOLBAR_OBJECT_NAME)
+            return main_window.findChild(
+                unwrap_qt_type(QToolBar),
+                self.TOOLBAR_OBJECT_NAME,
+            )
         except RuntimeError:
             return None
         except ReferenceError:

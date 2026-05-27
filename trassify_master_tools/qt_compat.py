@@ -139,3 +139,9 @@ class QSizePolicyCompat:
     Fixed = _enum(QSizePolicy, "Fixed", "Policy")
     Minimum = _enum(QSizePolicy, "Minimum", "Policy")
     Preferred = _enum(QSizePolicy, "Preferred", "Policy")
+
+
+def unwrap_qt_type(value):
+    while hasattr(value, "_base"):
+        value = value._base
+    return value
