@@ -1,5 +1,5 @@
 {
-  "generated_on": "2026-05-27",
+  "generated_on": "2026-06-05",
   "plugins_xml_url": "https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugins.xml",
   "modules": [
     {
@@ -498,18 +498,18 @@
     },
     {
       "key": "parallel_offset_digitizer",
-      "label": "Parallel Offset Digitizer",
+      "label": "Telekom Helper",
       "package": "parallel_offset_digitizer",
       "source_path": "",
       "tool_type": "interactive",
       "zip_name": "parallel_offset_digitizer.zip",
       "download_url": "",
       "plugins_xml_url": "https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugins.xml",
-      "icon_relative_path": "",
-      "icon_url": "",
+      "icon_relative_path": "icons/parallel_offset_digitizer.svg",
+      "icon_url": "https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/trassify_master_tools/assets/parallel_offset_digitizer.svg",
       "metadata": {
-        "name": "Parallel Offset Digitizer",
-        "version": "1.2.1"
+        "name": "Telekom Helper",
+        "version": "1.5.16"
       }
     },
     {

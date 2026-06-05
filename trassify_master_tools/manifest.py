@@ -130,14 +130,16 @@ BUNDLED_PLUGINS = (
     },
     {
         "key": "parallel_offset_digitizer",
-        "label": "Parallel Offset Digitizer",
+        "label": "Telekom Helper",
         "package": "parallel_offset_digitizer",
         "source_path": "",
         "tool_type": INTERACTIVE_TOOL,
         "archive_path": "packages/parallel_offset_digitizer.zip",
+        "icon_source_path": "trassify_master_tools/assets/parallel_offset_digitizer.svg",
+        "icon_relative_path": "icons/parallel_offset_digitizer.svg",
         "metadata": {
-            "name": "Parallel Offset Digitizer",
-            "version": "1.2.1",
+            "name": "Telekom Helper",
+            "version": "1.5.16",
         },
     },
     {

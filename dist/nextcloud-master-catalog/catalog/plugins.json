@@ -138,9 +138,9 @@
     },
     {
       "key": "parallel_offset_digitizer",
-      "label": "Parallel Offset Digitizer",
+      "label": "Telekom Helper",
       "package": "parallel_offset_digitizer",
-      "version": "1.2.1",
+      "version": "1.5.16",
       "archive_path": "packages/parallel_offset_digitizer.zip",
       "groups": []
     },

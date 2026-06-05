@@ -135,7 +135,13 @@ def build_catalog_entries(root_dir: Path, raw_base_url: str) -> list[dict]:
                 metadata = {**metadata, **source_metadata}
 
         icon_source_path = None
-        if has_local_source:
+        explicit_icon_source_path = str(spec.get("icon_source_path") or "").strip()
+        if explicit_icon_source_path:
+            explicit_candidate = root_dir / explicit_icon_source_path
+            if explicit_candidate.is_file():
+                icon_source_path = explicit_candidate
+
+        if has_local_source and icon_source_path is None:
             icon_source_path = resolve_icon_source_path(source_dir, metadata.get("icon", ""))
 
         icon_relative_path = str(spec.get("icon_relative_path") or "").strip()
