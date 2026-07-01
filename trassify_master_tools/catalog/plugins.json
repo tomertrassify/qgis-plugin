@@ -1,5 +1,5 @@
 {
-  "generated_on": "2026-06-05",
+  "generated_on": "2026-07-01",
   "plugins_xml_url": "https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugins.xml",
   "modules": [
     {
@@ -380,6 +380,36 @@
         "experimental": "False",
         "deprecated": "False",
         "hasProcessingProvider": "no"
+      }
+    },
+    {
+      "key": "trassify_alkis",
+      "label": "Trassify ALKIS",
+      "package": "trassify_alkis",
+      "source_path": "",
+      "tool_type": "interactive",
+      "zip_name": "trassify_alkis.zip",
+      "download_url": "",
+      "plugins_xml_url": "https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/plugins.xml",
+      "icon_relative_path": "icons/trassify_alkis.png",
+      "icon_url": "https://raw.githubusercontent.com/tomertrassify/qgis-plugin/main/trassify_master_tools/catalog/icons/trassify_alkis.png",
+      "metadata": {
+        "name": "Trassify ALKIS",
+        "description": "Trassify ALKIS WFS Connection Tool",
+        "version": "0.1",
+        "qgisMinimumVersion": "3.0",
+        "author": "Trassify GmbH",
+        "email": "axt@trassify.de",
+        "about": "Vereinfachen des Abrufs der ALKIS Daten nach Kreis",
+        "category": "Database",
+        "icon": "icon.png",
+        "experimental": "True",
+        "deprecated": "False",
+        "hasProcessingProvider": "no",
+        "tracker": "http://bugs",
+        "repository": "http://repo",
+        "homepage": "",
+        "tags": "python"
       }
     },
     {

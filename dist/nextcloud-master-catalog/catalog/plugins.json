@@ -105,6 +105,14 @@
       "groups": []
     },
     {
+      "key": "trassify_alkis",
+      "label": "Trassify ALKIS",
+      "package": "trassify_alkis",
+      "version": "0.1",
+      "archive_path": "packages/trassify_alkis.zip",
+      "groups": []
+    },
+    {
       "key": "trassify_github",
       "label": "Trassify Github",
       "package": "trassify_github",
